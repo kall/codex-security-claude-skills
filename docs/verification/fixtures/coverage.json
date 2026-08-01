@@ -1,0 +1,20 @@
+{
+  "scanId": "scan_u4_min_001",
+  "mode": "scoped_path",
+  "completeness": "complete",
+  "inventoryStrategy": "scoped_path",
+  "includePaths": [
+    "src/"
+  ],
+  "excludePaths": [],
+  "surfaces": [
+    {
+      "id": "surface_archive_extraction",
+      "label": "Archive extraction",
+      "disposition": "reported",
+      "receiptRefs": []
+    }
+  ],
+  "explicitExclusions": [],
+  "deferred": []
+}

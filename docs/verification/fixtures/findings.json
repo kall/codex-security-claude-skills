@@ -1,0 +1,36 @@
+{
+  "scanId": "scan_u4_min_001",
+  "findings": [
+    {
+      "ruleId": "path-traversal.archive-extraction",
+      "identity": {
+        "anchor": "archive-entry-write-without-containment"
+      },
+      "title": "Unsafe archive extraction can escape the output directory",
+      "summary": "An attacker-controlled entry name reaches a filesystem write without containment validation.",
+      "severity": {
+        "level": "high"
+      },
+      "confidence": {
+        "level": "high",
+        "rationale": "Direct source trace reaches the filesystem write without a containment check."
+      },
+      "taxonomy": {
+        "category": "path-traversal",
+        "cwe": [
+          "CWE-22"
+        ]
+      },
+      "locations": [
+        {
+          "path": "src/extract.py",
+          "startLine": 5
+        }
+      ],
+      "remediation": "Normalize destinations and reject entries that escape the extraction root.",
+      "provenance": {
+        "source": "local_plugin"
+      }
+    }
+  ]
+}

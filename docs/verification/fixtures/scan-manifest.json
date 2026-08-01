@@ -1,0 +1,21 @@
+{
+  "scan": {
+    "id": "scan_u4_min_001",
+    "producer": {
+      "name": "codex-security-plugin",
+      "version": "0.1.1"
+    },
+    "target": {
+      "kind": "git_revision",
+      "targetId": "target_u4_min_001",
+      "displayName": "u4-min/source-root",
+      "revision": "0123456789abcdef0123456789abcdef01234567"
+    },
+    "scope": {
+      "includePaths": [
+        "src/"
+      ],
+      "excludePaths": []
+    }
+  }
+}
