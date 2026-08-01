@@ -580,7 +580,98 @@ def build_parser() -> argparse.ArgumentParser:
         dest="as_json",
         help="stdout 에 결과 JSON 을 출력한다(사람용 요약은 stderr 로 보낸다).",
     )
+    parser.add_argument(
+        "--fp-recheck",
+        action="store_true",
+        help=(
+            "R9/R10 정산 대신, finalize 이후 봉인된 findings.json 의 fingerprint 를 "
+            "false_positive_feedback.json 과 대조해 과거 false-positive 재등장을 경고한다(Phase 2 U3). "
+            "finalize 다음에 실행한다."
+        ),
+    )
     return parser
+
+
+def _fp_recheck(scan_dir: str, source_root: str, out) -> tuple[int, dict[str, Any]]:
+    """봉인된 findings 의 fingerprint 를 FP 피드백과 대조해 재등장을 경고(R9).
+
+    억제하지 않고 가시화만 한다(KTD3). 피드백 파일이 없으면 무경고 통과.
+    """
+    feedback_path = os.path.join(scan_dir, "artifacts", "01_context", "false_positive_feedback.json")
+    findings_path = os.path.join(scan_dir, "findings.json")
+    warnings: list[dict[str, Any]] = []
+    origin_note: str | None = None
+    if not os.path.isfile(feedback_path):
+        print("FP 재등장 검사: 피드백 파일 없음 — 대조 생략.", file=out)
+        result = {"status": "pass", "checked": False, "reason": "피드백 파일 없음", "warnings": []}
+        return EXIT_OK, result
+    feedback = _load_json_object(feedback_path, "false_positive_feedback.json")
+    findings_doc = _load_json_object(findings_path, "findings.json")
+    fps = feedback.get("falsePositives") or feedback.get("false_positives") or []
+    fp_by_fingerprint: dict[str, dict[str, Any]] = {}
+    for entry in fps:
+        if isinstance(entry, dict) and isinstance(entry.get("fingerprint"), str):
+            fp_by_fingerprint[entry["fingerprint"]] = entry
+    findings = findings_doc.get("findings")
+    if isinstance(findings, list):
+        for finding in findings:
+            if not isinstance(finding, dict):
+                continue
+            fp = (finding.get("fingerprints") or {}).get("primary")
+            if isinstance(fp, str) and fp in fp_by_fingerprint:
+                past = fp_by_fingerprint[fp]
+                warnings.append(
+                    {
+                        "title": finding.get("title"),
+                        "occurrenceId": finding.get("occurrenceId"),
+                        "fingerprint": fp,
+                        "pastReason": past.get("reason"),
+                    }
+                )
+    # targetId 경로 해시 부작용: 같은 경로에 다른 저장소가 체크아웃된 경우를 사용자가
+    # 알아볼 수 있도록 현재 저장소 origin/HEAD 를 기록한다.
+    origin = _git_origin(source_root)
+    if origin:
+        origin_note = origin
+    if warnings:
+        print(
+            f"FP 재등장 경고: 과거 false-positive 로 판정된 finding {len(warnings)}건이 다시 보고되었습니다 "
+            "(자동 억제하지 않음 — 판정 사유를 확인하세요):",
+            file=out,
+        )
+        for w in warnings:
+            print(f"  - {w.get('title')} (occ={w.get('occurrenceId')}) — 과거 사유: {w.get('pastReason')}", file=out)
+    else:
+        print("FP 재등장 검사: 과거 false-positive 와 동일 fingerprint 의 finding 없음.", file=out)
+    if origin_note:
+        print(f"소스 저장소 origin: {origin_note} (targetId 경로 해시 오연결 확인용)", file=out)
+    result = {
+        "status": "pass",  # 경고는 게이트 실패가 아님(가시화만)
+        "checked": True,
+        "reemergedCount": len(warnings),
+        "warnings": warnings,
+        "sourceOrigin": origin_note,
+    }
+    return EXIT_OK, result
+
+
+def _git_origin(source_root: str) -> str | None:
+    import subprocess
+
+    try:
+        head = subprocess.run(
+            ["git", "-C", source_root, "rev-parse", "HEAD"],
+            capture_output=True, text=True, timeout=10, check=False,
+        ).stdout.strip()
+        remote = subprocess.run(
+            ["git", "-C", source_root, "config", "--get", "remote.origin.url"],
+            capture_output=True, text=True, timeout=10, check=False,
+        ).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if not head and not remote:
+        return None
+    return f"origin={remote or '<none>'} HEAD={head[:12] or '<none>'}"
 
 
 def run(args: argparse.Namespace, out) -> tuple[int, dict[str, Any]]:
@@ -593,6 +684,9 @@ def run(args: argparse.Namespace, out) -> tuple[int, dict[str, Any]]:
             f"--source-root 이 디렉터리가 아닙니다: {source_root}", EXIT_INPUT_ERROR
         )
     root_real = os.path.realpath(source_root)
+
+    if getattr(args, "fp_recheck", False):
+        return _fp_recheck(scan_dir, source_root, out)
 
     # --- 입력 해석 --------------------------------------------------------- #
     in_scope_path, in_scope_candidates = _resolve_artifact(
