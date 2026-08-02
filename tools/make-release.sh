@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Claude 로컬 보안 스킬 배포본(tarball)을 만든다.
+# Claude 보안 스킬 배포본(tarball)을 만든다.
 #
 # 산출물:
 #   dist/codex-security-claude-skills-<version>.tar.gz
@@ -86,7 +86,7 @@ cp -- "$REPO_ROOT"/docs/verification/fixtures/*.json "$PKG/docs/verification/fix
 # --------------------------------------------------------------------------
 cp -- "$REPO_ROOT/LICENSE" "$PKG/LICENSE"
 cat > "$PKG/NOTICE" <<EOF
-Claude 로컬 보안 스킬 (codex-security-claude-skills) ${VERSION}
+Claude 보안 스킬 (codex-security-claude-skills) ${VERSION}
 
 이 배포본은 OpenAI 의 codex-security (https://github.com/openai/codex-security,
 Apache License 2.0) 파생물입니다. 포함된 스킬 문서와 스크립트는 별도로 작성되었으나,
@@ -104,7 +104,7 @@ EOF
 # 4. 배포본 README (설치 진입점)
 # --------------------------------------------------------------------------
 cat > "$PKG/README.md" <<EOF
-# Claude 로컬 보안 스킬 ${VERSION}
+# Claude 보안 스킬 ${VERSION}
 
 OpenAI/Codex 인증 없이 **Claude Code 구독 로그인만으로** codex-security 보안 스캔
 워크플로를 실행하는 Claude Code 스킬 ${skill_count}종.

@@ -1,4 +1,4 @@
-# 릴리즈 절차 (Claude 로컬 보안 스킬)
+# 릴리즈 절차 (Claude 보안 스킬)
 
 배포 형식은 **GitHub 공개 릴리즈 + tarball**이다. 사용자는 링크 하나만 받아 설치한다
 ([매뉴얼 0절](install-and-usage.md#0-빠른-설치-릴리즈-tarball--링크-하나로)).

@@ -1,4 +1,4 @@
-# Claude 로컬 보안 스킬 (codex-security-claude-skills)
+# Claude 보안 스킬 (codex-security-claude-skills)
 
 [English](README.md) | 한국어
 

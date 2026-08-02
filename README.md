@@ -1,4 +1,4 @@
-# Claude Local Security Skills (codex-security-claude-skills)
+# Claude Security Skills (codex-security-claude-skills)
 
 English | [한국어](README.ko.md)
 

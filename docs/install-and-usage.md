@@ -1,4 +1,4 @@
-# Claude 로컬 보안 스킬 — 설치 및 사용 가이드
+# Claude 보안 스킬 — 설치 및 사용 가이드
 
 **Claude Code만 설치된 PC**에서 이 스킬 6종을 설치해 쓰는 방법을 다룬다. OpenAI/Codex 인증
 (ChatGPT 로그인, `OPENAI_API_KEY`)은 **필요하지 않다** — Claude Code 구독 로그인만 있으면 된다.
