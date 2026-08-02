@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+
+# 릴리즈 배포본 빌드 산출물 (tools/make-release.sh)
+/dist/
