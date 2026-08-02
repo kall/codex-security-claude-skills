@@ -6,6 +6,11 @@
 - `security-scan-local/` — 메인 스캔 스킬 (`SKILL.md`, `scripts/`)
 - `install.sh` — 전역 스킬 디렉터리로 설치하는 스크립트
 
+> 스킬 6종의 전체 설치·사용 가이드(사전 요구사항, 환경변수, 스킬별 사용 예시, 워크벤치 이력 통합,
+> 트러블슈팅): [docs/install-and-usage.md](../docs/install-and-usage.md)
+>
+> 배포본(tarball) 빌드·릴리즈 절차: [docs/releasing.md](../docs/releasing.md)
+
 ## 설치
 
 ```bash

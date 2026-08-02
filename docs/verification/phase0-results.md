@@ -4,6 +4,11 @@
 **검증일**: 2026-07-30
 **측정 대상 플러그인**: `sdk/typescript/_bundled_plugin` (`.codex-plugin/plugin.json` version **0.1.14**, npm 패키지 `@openai/codex-security@0.1.1`)
 
+> **경로 기준**: 이 문서(및 `docs/solutions/`, `docs/plans/`)의 `sdk/typescript/...` 경로는 모두 업스트림
+> [openai/codex-security](https://github.com/openai/codex-security) 저장소 기준이다. 이 저장소에는 업스트림
+> 소스를 포함하지 않으므로, 해당 파일을 보려면 업스트림을 clone하거나 npm 설치본의 `_bundled_plugin`을
+> 확인한다.
+
 ## 종합 판정: **GO** — Phase 1~4 전체 진행 가능
 
 Verification Contract의 게이트별 판정:
