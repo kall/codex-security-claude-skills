@@ -19,8 +19,8 @@ LLM 두뇌 역할은 Claude Code 세션 자신이 맡고, 검증·ID 파생·봉
 릴리즈 링크를 Claude에게 주고 *"이거 설치해줘"* 라고 하면 아래를 수행한다. 직접 실행해도 된다.
 
 ```bash
-BASE=https://github.com/kall/codex-security-local-skills/releases/download/<version>
-PKG=codex-security-local-skills-<version>
+BASE=https://github.com/kall/codex-security-claude-skills/releases/download/<version>
+PKG=codex-security-claude-skills-<version>
 
 curl -fsSLO "$BASE/$PKG.tar.gz"
 curl -fsSL  "$BASE/SHA256SUMS" | sha256sum -c -     # 무결성 검증

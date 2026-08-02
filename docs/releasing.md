@@ -6,12 +6,12 @@
 ## 1. 배포본 빌드
 
 ```bash
-bash tools/make-release.sh --version v0.1.0 --repo kall/codex-security-local-skills
+bash tools/make-release.sh --version v0.1.0 --repo kall/codex-security-claude-skills
 ```
 
 산출물은 `dist/`에 생성된다(git 추적 제외).
 
-- `dist/codex-security-local-skills-<version>.tar.gz`
+- `dist/codex-security-claude-skills-<version>.tar.gz`
 - `dist/SHA256SUMS`
 
 스크립트가 하는 일:
@@ -33,9 +33,9 @@ bash tools/make-release.sh --version v0.1.0 --repo kall/codex-security-local-ski
 ```bash
 T=$(mktemp -d) && cp dist/*.tar.gz dist/SHA256SUMS "$T"/ && cd "$T"
 sha256sum -c SHA256SUMS
-tar xzf codex-security-local-skills-*.tar.gz
-CLAUDE_SKILLS_DIR="$T/skills" bash codex-security-local-skills-*/skills/install.sh --copy --check
-bash codex-security-local-skills-*/docs/verification/scripts/repro-u4.sh
+tar xzf codex-security-claude-skills-*.tar.gz
+CLAUDE_SKILLS_DIR="$T/skills" bash codex-security-claude-skills-*/skills/install.sh --copy --check
+bash codex-security-claude-skills-*/docs/verification/scripts/repro-u4.sh
 ```
 
 기대: 체크섬 OK → 스킬 6종 설치 → 프로브가 플러그인 경로·버전·게이트 사본 보고 →
@@ -47,9 +47,9 @@ bash codex-security-local-skills-*/docs/verification/scripts/repro-u4.sh
 ## 3. 업로드
 
 ```bash
-gh release create v0.1.0 --repo kall/codex-security-local-skills \
-  dist/codex-security-local-skills-v0.1.0.tar.gz dist/SHA256SUMS \
-  --title 'codex-security-local-skills-v0.1.0' --notes-file RELEASE_NOTES.md
+gh release create v0.1.0 --repo kall/codex-security-claude-skills \
+  dist/codex-security-claude-skills-v0.1.0.tar.gz dist/SHA256SUMS \
+  --title 'codex-security-claude-skills-v0.1.0' --notes-file RELEASE_NOTES.md
 ```
 
 빌드 스크립트가 종료 시 이 명령과 사용자용 설치 안내문을 실제 URL로 출력한다.

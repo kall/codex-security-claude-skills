@@ -2,7 +2,7 @@
 title: "codex-security 번들 플러그인을 OpenAI 인증 없이 Claude Code 스킬로 실행하기"
 date: 2026-07-30
 category: architecture-patterns
-module: codex-security-local-skills
+module: codex-security-claude-skills
 problem_type: architecture_pattern
 component: tooling
 severity: medium

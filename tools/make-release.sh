@@ -3,7 +3,7 @@
 # Claude 로컬 보안 스킬 배포본(tarball)을 만든다.
 #
 # 산출물:
-#   dist/codex-security-local-skills-<version>.tar.gz
+#   dist/codex-security-claude-skills-<version>.tar.gz
 #   dist/SHA256SUMS
 #
 # 사용법:
@@ -40,13 +40,13 @@ while [ "$#" -gt 0 ]; do
 done
 
 [ -n "$VERSION" ] || { echo "오류: --version 이 필요합니다 (예: --version v0.1.0)" >&2; exit 2; }
-[ -n "$GH_REPO" ] || { echo "오류: --repo 가 필요합니다 (예: --repo myorg/codex-security-local-skills)" >&2; exit 2; }
+[ -n "$GH_REPO" ] || { echo "오류: --repo 가 필요합니다 (예: --repo myorg/codex-security-claude-skills)" >&2; exit 2; }
 case "$GH_REPO" in
   */*) : ;;
   *) echo "오류: --repo 는 owner/repo 형식이어야 합니다: $GH_REPO" >&2; exit 2 ;;
 esac
 
-PKG_NAME="codex-security-local-skills-${VERSION}"
+PKG_NAME="codex-security-claude-skills-${VERSION}"
 STAGE="$(mktemp -d)"
 trap 'rm -rf -- "$STAGE"' EXIT
 PKG="$STAGE/$PKG_NAME"
@@ -86,7 +86,7 @@ cp -- "$REPO_ROOT"/docs/verification/fixtures/*.json "$PKG/docs/verification/fix
 # --------------------------------------------------------------------------
 cp -- "$REPO_ROOT/LICENSE" "$PKG/LICENSE"
 cat > "$PKG/NOTICE" <<EOF
-Claude 로컬 보안 스킬 (codex-security-local-skills) ${VERSION}
+Claude 로컬 보안 스킬 (codex-security-claude-skills) ${VERSION}
 
 이 배포본은 OpenAI 의 codex-security (https://github.com/openai/codex-security,
 Apache License 2.0) 파생물입니다. 포함된 스킬 문서와 스크립트는 별도로 작성되었으나,
