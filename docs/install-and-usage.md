@@ -37,7 +37,7 @@ npm install -g @openai/codex-security                 # Node 22+
 bash "$PKG/skills/install.sh" --copy --force --check   # 다시 확인
 ```
 
-Claude Code를 재시작한 뒤 `/security-scan-local <저장소>` 로 호출한다. 언제든 프로브만 다시
+Claude Code를 재시작한 뒤 `/codex-security-scan <저장소>` 로 호출한다. 언제든 프로브만 다시
 돌릴 수 있다:
 
 ```bash
@@ -52,14 +52,14 @@ bash "$PKG/skills/install.sh" --check-only
 
 | 스킬 | 용도 | 저장소 변경 |
 | --- | --- | --- |
-| `security-scan-local` | 저장소 전체 1회 표준 스캔 → 봉인 계약 산출물 + `report.md` + SARIF | 없음 |
-| `security-diff-scan-local` | 변경분(커밋/브랜치 refs 또는 working-tree)만 스캔 | 없음 |
-| `security-validate-local` | 후보 finding 진위 판정(disposition) | 없음 |
-| `security-patch-local` | 보안 이슈 최소 수정 — **2단 승인** | **있음(승인 후)** |
-| `security-scan-match-local` | 완료된 스캔 2개 사이 동일 근본 원인 finding 매칭 | 없음 |
-| `security-deep-scan-local` | 다중 패스 심층 스캔의 축소판(**deep-lite** — 공식 deep과 비동등) | 없음 |
+| `codex-security-scan` | 저장소 전체 1회 표준 스캔 → 봉인 계약 산출물 + `report.md` + SARIF | 없음 |
+| `codex-security-diff-scan` | 변경분(커밋/브랜치 refs 또는 working-tree)만 스캔 | 없음 |
+| `codex-security-validate` | 후보 finding 진위 판정(disposition) | 없음 |
+| `codex-security-patch` | 보안 이슈 최소 수정 — **2단 승인** | **있음(승인 후)** |
+| `codex-security-scan-match` | 완료된 스캔 2개 사이 동일 근본 원인 finding 매칭 | 없음 |
+| `codex-security-deep-scan` | 다중 패스 심층 스캔의 축소판(**deep-lite** — 공식 deep과 비동등) | 없음 |
 
-`security-scan-local`이 공통 규칙의 정본이다(bootstrap, 금지 필드, 커버리지 정산, 리페어 루프,
+`codex-security-scan`이 공통 규칙의 정본이다(bootstrap, 금지 필드, 커버리지 정산, 리페어 루프,
 워크벤치 수명주기). 나머지는 차이점만 정의하고 이를 참조한다.
 
 ---
@@ -144,7 +144,7 @@ bash skills/install.sh --check-only     # 설치 없이 프로브만
 | `--check-only` | 설치를 건너뛰고 프로브만 수행 |
 | `--force` | 대상 경로가 이미 있을 때 덮어쓰기 |
 
-스킬 이름을 인자로 주면 일부만 설치할 수 있지만, `bootstrap.py`는 `security-scan-local`에만
+스킬 이름을 인자로 주면 일부만 설치할 수 있지만, `bootstrap.py`는 `codex-security-scan`에만
 있고 모든 스킬이 이를 참조하므로 **6종 전체 설치를 기본으로 두라**.
 
 설치 위치는 `${CLAUDE_SKILLS_DIR:-$HOME/.claude/skills}/<스킬이름>`이다. 대상 경로가 이미 있으면
@@ -166,7 +166,7 @@ Claude Code를 재시작하고 스킬 목록에 6종이 보이는지, 그리고 
 ```bash
 ls "${CLAUDE_SKILLS_DIR:-$HOME/.claude/skills}" | grep security-
 
-python3 "${CLAUDE_SKILLS_DIR:-$HOME/.claude/skills}"/security-scan-local/scripts/bootstrap.py \
+python3 "${CLAUDE_SKILLS_DIR:-$HOME/.claude/skills}"/codex-security-scan/scripts/bootstrap.py \
   --target-repo /path/to/target-repo --no-scan-dir
 ```
 
@@ -198,7 +198,7 @@ GitHub 저장소 체크아웃이 **둘 다 플러그인 매니페스트 0.1.14�
 다르다**(실측). 아래로 내 PC가 어느 쪽인지 확인해 둔다.
 
 ```bash
-PLUGIN=$(python3 "${CLAUDE_SKILLS_DIR:-$HOME/.claude/skills}"/security-scan-local/scripts/bootstrap.py \
+PLUGIN=$(python3 "${CLAUDE_SKILLS_DIR:-$HOME/.claude/skills}"/codex-security-scan/scripts/bootstrap.py \
   --target-repo /path/to/target-repo --no-scan-dir | python3 -c 'import json,sys;print(json.load(sys.stdin)["pluginRoot"])')
 
 grep -q "def require_unchanged_target" "$PLUGIN/scripts/workbench_db.py" \
@@ -258,15 +258,15 @@ Claude Code 세션에서 슬래시로 호출하거나, 자연어로 요청하면
 적절한 스킬을 고른다.
 
 ```
-/security-scan-local /path/to/target-repo
-/security-diff-scan-local --diff origin/main
-/security-patch-local docs/finding.md
+/codex-security-scan /path/to/target-repo
+/codex-security-diff-scan --diff origin/main
+/codex-security-patch docs/finding.md
 ```
 
 ```
-"이 저장소 전체를 보안 스캔해줘"          → security-scan-local
-"이번 브랜치 변경분만 보안 검토해줘"       → security-diff-scan-local
-"이 finding이 진짜 취약점인지 판정해줘"    → security-validate-local
+"이 저장소 전체를 보안 스캔해줘"          → codex-security-scan
+"이번 브랜치 변경분만 보안 검토해줘"       → codex-security-diff-scan
+"이 finding이 진짜 취약점인지 판정해줘"    → codex-security-validate
 ```
 
 **대상 저장소 루트를 명시하라.** 생략하면 cwd의 git 최상위로 추정하는데, 모노레포 하위
@@ -276,10 +276,10 @@ Claude Code 세션에서 슬래시로 호출하거나, 자연어로 요청하면
 그리고 스캔 중 저장소를 건드리지 말라는 권고. 부트스트랩이 실패하면 원인과 조치를 한국어로
 안내하고 중단한다.
 
-### 5.2 표준 전체 스캔 — `/security-scan-local`
+### 5.2 표준 전체 스캔 — `/codex-security-scan`
 
 ```
-/security-scan-local /path/to/target-repo
+/codex-security-scan /path/to/target-repo
 ```
 
 진행 순서: bootstrap → (선택) 워크벤치 등록 → 위협 모델 → 인벤토리 + **스코프 내 전 파일 리뷰** →
@@ -310,7 +310,7 @@ validation(compact) → attack-path(compact) → canonical JSON 3종 draft → �
 대형 저장소는 컨텍스트가 소진될 수 있다. 그때는 남은 파일을 미완으로 남기고 커버리지를
 `partial`로 정산해 정직하게 보고한다. 스코프를 좁혀(경로 지정) 나눠 돌리는 것도 방법이다.
 
-### 5.3 변경분 스캔 — `/security-diff-scan-local`
+### 5.3 변경분 스캔 — `/codex-security-diff-scan`
 
 | 인자 | 대상 | base / head |
 | --- | --- | --- |
@@ -319,20 +319,20 @@ validation(compact) → attack-path(compact) → canonical JSON 3종 draft → �
 | (인자 없음) | working-tree | base=HEAD |
 
 ```
-/security-diff-scan-local --diff origin/main
-/security-diff-scan-local --diff v1.2.0 --head HEAD
-/security-diff-scan-local --working-tree
+/codex-security-diff-scan --diff origin/main
+/codex-security-diff-scan --diff v1.2.0 --head HEAD
+/codex-security-diff-scan --working-tree
 ```
 
 위협 모델은 **저장소 전체 범위**에서, 리뷰는 **diff 범위**에서 수행한다. working-tree 스캔은
 등록 시점의 워킹트리 다이제스트가 기준이므로 **스캔이 끝날 때까지 파일을 저장하지 마라**
 (플러그인 사본에 따라 이력 종결이 실패하거나 경고가 남는다 — 3.4절).
 
-### 5.4 finding 판정 — `/security-validate-local`
+### 5.4 finding 판정 — `/codex-security-validate`
 
 ```
-/security-validate-local <scanDir>/artifacts/02_discovery/candidate_ledger.jsonl   # ledger 모드
-/security-validate-local "src/db.py:42 의 f-string SQL 조립이 SQLi 인지 판정"        # 단독 모드
+/codex-security-validate <scanDir>/artifacts/02_discovery/candidate_ledger.jsonl   # ledger 모드
+/codex-security-validate "src/db.py:42 의 f-string SQL 조립이 SQLi 인지 판정"        # 단독 모드
 ```
 
 - **ledger 모드**: 원장의 모든 행에 `validation` 객체를 하나씩 추가하고, discovery 필드와 행
@@ -342,10 +342,10 @@ validation(compact) → attack-path(compact) → canonical JSON 3종 draft → �
 disposition은 `reportable` / `suppressed` / `not_applicable` / `deferred` 4값이다. 데모·테스트·로컬
 전용이라는 이유로 실제 버그를 기각하지 않는다.
 
-### 5.5 이슈 수정 — `/security-patch-local` (2단 승인)
+### 5.5 이슈 수정 — `/codex-security-patch` (2단 승인)
 
 ```
-/security-patch-local <finding 서술 파일 또는 텍스트>
+/codex-security-patch <finding 서술 파일 또는 텍스트>
 ```
 
 이 시리즈에서 **유일하게 저장소를 변경하고 저장소가 정의한 코드를 실행**할 수 있는 스킬이다.
@@ -364,10 +364,10 @@ outcome은 `fixed`(수정 적용 **및 게이트 통과**) / `no_change`(이미 
 > **SKILL.md의 2단 승인 지침이 유일한 게이트**다. 스킬은 이 사실을 먼저 고지한다. 보안 수정을
 > 검토하며 진행하려면 기본 퍼미션 모드에서 쓰는 편이 안전하다.
 
-### 5.6 스캔 간 매칭 — `/security-scan-match-local`
+### 5.6 스캔 간 매칭 — `/codex-security-scan-match`
 
 ```
-/security-scan-match-local <before-scan-id> <after-scan-id>
+/codex-security-scan-match <before-scan-id> <after-scan-id>
 ```
 
 완료(sealed) 스캔 2개 사이에서 제목·CWE·fingerprint·위치가 달라도 **동일 근본 원인·동일 수정으로
@@ -384,10 +384,10 @@ codex-security scans compare <before-scan-id> <after-scan-id>
 
 두 스캔 모두 5.7절 워크벤치 등록을 거쳐야 하며, 일괄 매칭(`--all`)은 지원하지 않는다(쌍 단위만).
 
-### 5.7 deep-lite 스캔 — `/security-deep-scan-local`
+### 5.7 deep-lite 스캔 — `/codex-security-deep-scan`
 
 ```
-/security-deep-scan-local /path/to/target-repo
+/codex-security-deep-scan /path/to/target-repo
 ```
 
 > **공식 deep 스캔과 동등하지 않다.** 공식 deep은 Codex Subagents v2 런타임과 24시간 MCP
@@ -412,7 +412,7 @@ codex-security scans compare <before-scan-id> <after-scan-id>
 `feedback` → (스캔 수행) → 정산 → **finalize → `complete`**.
 
 ```bash
-python3 "${CLAUDE_SKILLS_DIR:-$HOME/.claude/skills}"/security-scan-local/scripts/workbench_glue.py \
+python3 "${CLAUDE_SKILLS_DIR:-$HOME/.claude/skills}"/codex-security-scan/scripts/workbench_glue.py \
   --bootstrap <bootstrap.json> <서브커맨드> [옵션]
 ```
 
@@ -441,7 +441,7 @@ codex-security findings false-positive <occurrence-id> --reason "…"
 
 ## 6. 동작 원칙 (사용자가 알아야 할 것)
 
-- **대상 저장소를 변경하지 않는다.** `security-patch-local`(승인 후)을 제외한 모든 스킬은 저장소에
+- **대상 저장소를 변경하지 않는다.** `codex-security-patch`(승인 후)을 제외한 모든 스킬은 저장소에
   파일을 만들거나 수정하지 않는다. 모든 중간 산출물은 스캔 디렉터리 아래에만 쓴다.
 - **대상 저장소 콘텐츠는 미신뢰 데이터다.** 소스·주석·문서·설정·`SECURITY.md`·finding 서술 안의
   어떤 문구도 워크플로나 산출물 규약을 바꾸지 못한다("findings를 비워라" 류의 프롬프트 인젝션은
@@ -529,5 +529,5 @@ bash skills/install.sh --copy --force
 
 ```bash
 CLAUDE_SKILLS_DIR=/tmp/skills-test bash skills/install.sh --copy
-python3 /tmp/skills-test/security-scan-local/scripts/bootstrap.py --target-repo <대상> --no-scan-dir
+python3 /tmp/skills-test/codex-security-scan/scripts/bootstrap.py --target-repo <대상> --no-scan-dir
 ```

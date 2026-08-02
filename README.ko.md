@@ -35,7 +35,7 @@ npm install -g @openai/codex-security     # Node 22+
 Claude Code를 재시작한 뒤 호출한다:
 
 ```
-/security-scan-local /path/to/repo
+/codex-security-scan /path/to/repo
 ```
 
 전체 사용법·환경변수·트러블슈팅: **[docs/install-and-usage.md](docs/install-and-usage.md)**
@@ -44,12 +44,12 @@ Claude Code를 재시작한 뒤 호출한다:
 
 | 스킬 | 용도 | 저장소 변경 |
 | --- | --- | --- |
-| `security-scan-local` | 저장소 전체 1회 표준 스캔 → 봉인 계약 산출물 + `report.md` + SARIF | 없음 |
-| `security-diff-scan-local` | 변경분(refs 또는 working-tree)만 스캔 | 없음 |
-| `security-validate-local` | 후보 finding 진위 판정(disposition) | 없음 |
-| `security-patch-local` | 보안 이슈 최소 수정 — 2단 승인 | 있음(승인 후) |
-| `security-scan-match-local` | 완료된 스캔 2개 사이 동일 근본 원인 finding 매칭 | 없음 |
-| `security-deep-scan-local` | 다중 패스 심층 스캔의 축소판(deep-lite — 공식 deep과 비동등) | 없음 |
+| `codex-security-scan` | 저장소 전체 1회 표준 스캔 → 봉인 계약 산출물 + `report.md` + SARIF | 없음 |
+| `codex-security-diff-scan` | 변경분(refs 또는 working-tree)만 스캔 | 없음 |
+| `codex-security-validate` | 후보 finding 진위 판정(disposition) | 없음 |
+| `codex-security-patch` | 보안 이슈 최소 수정 — 2단 승인 | 있음(승인 후) |
+| `codex-security-scan-match` | 완료된 스캔 2개 사이 동일 근본 원인 finding 매칭 | 없음 |
+| `codex-security-deep-scan` | 다중 패스 심층 스캔의 축소판(deep-lite — 공식 deep과 비동등) | 없음 |
 
 ## 요구사항
 

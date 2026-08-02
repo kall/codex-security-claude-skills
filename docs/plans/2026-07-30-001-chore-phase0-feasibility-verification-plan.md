@@ -56,7 +56,7 @@ execution: code
 
 ### Scope Boundaries
 
-- 스킬 파일 본체(`skills/security-scan-local/SKILL.md`) 작성은 하지 않는다 — Phase 1의 몫. U6은 임시 프롬프트로 워크플로 완주 가능성만 본다.
+- 스킬 파일 본체(`skills/codex-security-scan/SKILL.md`) 작성은 하지 않는다 — Phase 1의 몫. U6은 임시 프롬프트로 워크플로 완주 가능성만 본다.
 - 워크벤치 DB 스키마의 마이그레이션·다운그레이드 검증은 하지 않는다 — Phase 2의 Risks 항목으로 넘긴다.
 - TS SDK/CLI 및 번들 플러그인 소스는 수정하지 않는다.
 
@@ -86,7 +86,7 @@ execution: code
 - **Goal**: 임의 cwd에서 신뢰 가능한 번들 플러그인 루트를 찾는 탐색 체인을 구현하고, 대상 저장소 사본을 거부함을 실증한다.
 - **Requirements**: R1
 - **Dependencies**: 없음
-- **Files**: 프로토타입 스크립트(임시 위치, Phase 1에서 `skills/security-scan-local/scripts/bootstrap.py`로 승격), 결과는 `docs/verification/phase0-results.md`
+- **Files**: 프로토타입 스크립트(임시 위치, Phase 1에서 `skills/codex-security-scan/scripts/bootstrap.py`로 승격), 결과는 `docs/verification/phase0-results.md`
 - **Approach**:
   1. 탐색 순서: `CODEX_SECURITY_PLUGIN_ROOT` 환경변수(스킬 자체 규약) → `npm root -g` 하위 → npx 캐시(`~/.npm/_npx/*/node_modules/...`) → 스킬 개발용 저장소 체크아웃(`sdk/typescript/_bundled_plugin`). **프로젝트 `node_modules`는 후보에서 제외한다**(KTD4).
   2. 신뢰 게이트: 확정된 pluginRoot의 realpath가 대상 저장소 realpath 하위이면 무조건 실패. `CODEX_SECURITY_PLUGIN_ROOT`도 같은 게이트를 통과해야만 채택한다.

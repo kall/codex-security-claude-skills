@@ -1,5 +1,5 @@
 ---
-name: security-scan-local
+name: codex-security-scan
 description: >-
   OpenAI/Codex 인증 없이 Claude Code 구독만으로 저장소 전체를 1회 보안 감사하고
   봉인된 계약 산출물(scan-manifest.json / findings.json / coverage.json + report.md
@@ -8,7 +8,7 @@ description: >-
   스캔에는 사용하지 않는다(그 스킬들은 아직 없음).
 ---
 
-# security-scan-local — Claude 로컬 보안 스캔
+# codex-security-scan — Claude 로컬 보안 스캔
 
 이 스킬은 **Codex 바이너리 없이** Claude Code 세션이 codex-security 번들 플러그인의
 표준 보안 스캔 워크플로를 수행하게 한다. LLM 두뇌 역할을 Claude 자신이 맡고,

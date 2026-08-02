@@ -69,7 +69,7 @@ cp -- "$REPO_ROOT/skills/install.sh" "$PKG/skills/install.sh"
 cp -- "$REPO_ROOT/skills/README.md" "$PKG/skills/README.md"
 
 # bootstrap.py 는 모든 스킬이 참조하는 공통 진입점이므로 반드시 있어야 한다.
-[ -f "$PKG/skills/security-scan-local/scripts/bootstrap.py" ] \
+[ -f "$PKG/skills/codex-security-scan/scripts/bootstrap.py" ] \
   || { echo "오류: bootstrap.py 가 배포본에 없습니다(부분 패키징 금지)." >&2; exit 1; }
 
 # --------------------------------------------------------------------------
@@ -90,7 +90,7 @@ Claude 보안 스킬 (codex-security-claude-skills) ${VERSION}
 
 이 배포본은 OpenAI 의 codex-security (https://github.com/openai/codex-security,
 Apache License 2.0) 파생물입니다. 포함된 스킬 문서와 스크립트는 별도로 작성되었으나,
-skills/security-scan-local/scripts/bootstrap.py 는 업스트림 sdk/typescript/src/runtime.ts
+skills/codex-security-scan/scripts/bootstrap.py 는 업스트림 sdk/typescript/src/runtime.ts
 및 trusted-executable.ts 의 플러그인 루트·인터프리터 판정 로직을 의도적으로 재현합니다
 (해당 파일 docstring에 참조 구현이 명시되어 있습니다).
 
@@ -128,7 +128,7 @@ bash skills/install.sh --copy --force --check
 설치 후 Claude Code 를 재시작하고 호출한다:
 
 \`\`\`
-/security-scan-local /path/to/repo
+/codex-security-scan /path/to/repo
 \`\`\`
 
 ## 검증된 조합

@@ -32,7 +32,7 @@ OpenAI 인증(ChatGPT 로그인, `OPENAI_API_KEY`)을 전혀 사용하지 않고
 
 ```
 [기존]  codex-security CLI ─► CodexSecurity SDK ─► codex 바이너리(OpenAI 인증) ─► 번들 플러그인
-[변경]  Claude Code 스킬(/security-scan-local)
+[변경]  Claude Code 스킬(/codex-security-scan)
           ├─ (결정적) 번들 플러그인 Python 스크립트 직접 호출  ← TS SDK 우회
           └─ (지능)   Claude Code 본인이 SKILL.md 워크플로 수행
                        └─ Agent 도구(서브에이전트)로 파일 리뷰 병렬화
@@ -51,7 +51,7 @@ TS SDK/CLI 코드는 **수정하지 않는다**(업스트림 추적 용이). 스
 
 ### Phase 1 — MVP: 워크벤치 없는 단독 스캔 스킬 (1~2일)
 
-`.claude/skills/security-scan-local/SKILL.md` 작성. 절차:
+`.claude/skills/codex-security-scan/SKILL.md` 작성. 절차:
 
 1. **환경 구성**: 스캔 디렉터리를 저장소 밖에 생성(예: `$CODEX_SECURITY_STATE_DIR/scans/<repo>-<ts>`), 환경변수 매핑:
    - `CODEX_SECURITY_REPOSITORY`, `CODEX_SECURITY_SCAN_DIR`, `CODEX_SECURITY_PLUGIN_ROOT`, `CODEX_SECURITY_SCAN_ID`(uuid), `CODEX_SECURITY_TARGET_ID`, `CODEX_SECURITY_TARGET_DISPLAY_NAME`, `PYTHON`
@@ -74,9 +74,9 @@ TS SDK/CLI 코드는 **수정하지 않는다**(업스트림 추적 용이). 스
 
 ### Phase 3 — 부가 커맨드 (1일)
 
-- `/security-validate-local <finding>`: 플러그인 `skills/validation/SKILL.md`을 Claude가 수행 (기존 `codex-security validate` 대체).
-- `/security-patch-local <issue>`: `skills/fix-finding/SKILL.md` 수행 (기존 `patch` 대체).
-- `/security-diff-scan-local`: `security-diff-scan/SKILL.md` 기반, `--working-tree`/`--diff BASE` 인자 지원.
+- `/codex-security-validate <finding>`: 플러그인 `skills/validation/SKILL.md`을 Claude가 수행 (기존 `codex-security validate` 대체).
+- `/codex-security-patch <issue>`: `skills/fix-finding/SKILL.md` 수행 (기존 `patch` 대체).
+- `/codex-security-diff-scan`: `security-diff-scan/SKILL.md` 기반, `--working-tree`/`--diff BASE` 인자 지원.
 - export는 수정 불필요: `finalize_scan_contract.py --export-format sarif|csv|json`이 이미 무인증.
 
 ### Phase 4 — 선택 확장
@@ -98,7 +98,7 @@ TS SDK/CLI 코드는 **수정하지 않는다**(업스트림 추적 용이). 스
 
 ## 6. 산출물
 
-1. `.claude/skills/security-scan-local/SKILL.md` — 메인 스캔 스킬
-2. `.claude/skills/security-scan-local/scripts/bootstrap.sh`(또는 .py) — 환경변수·스캔 디렉터리·워크벤치 등록 래퍼
-3. `/security-validate-local`, `/security-patch-local`, `/security-diff-scan-local` 스킬
+1. `.claude/skills/codex-security-scan/SKILL.md` — 메인 스캔 스킬
+2. `.claude/skills/codex-security-scan/scripts/bootstrap.sh`(또는 .py) — 환경변수·스캔 디렉터리·워크벤치 등록 래퍼
+3. `/codex-security-validate`, `/codex-security-patch`, `/codex-security-diff-scan` 스킬
 4. 사용 문서 (한국어): 설치, 제약(비 Codex 실행이므로 업스트림 지원 대상 아님), 기존 CLI와의 이력 호환 범위

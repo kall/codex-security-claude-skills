@@ -1,5 +1,5 @@
 ---
-name: security-patch-local
+name: codex-security-patch
 description: >-
   보안 이슈를 수정한다. 이슈 서술을 입력받아 codex-security 플러그인 fix-finding
   스킬 규약대로 최소 수정을 만들고 outcome(fixed/no_change/blocked)을 보고한다.
@@ -7,7 +7,7 @@ description: >-
   승인 구조. OpenAI/Codex 인증 없이 Claude Code 구독만으로 동작.
 ---
 
-# security-patch-local — 보안 이슈 수정 (2단 승인)
+# codex-security-patch — 보안 이슈 수정 (2단 승인)
 
 codex-security 플러그인의 `fix-finding` 스킬을 Claude가 직접 수행한다. 이 시리즈에서
 **유일하게 저장소를 변경하고 저장소가 정의한 코드를 실행**할 수 있으므로 승인 설계가 핵심이다.
@@ -16,7 +16,7 @@ codex-security 플러그인의 `fix-finding` 스킬을 Claude가 직접 수행�
 
 1. 플러그인 루트 해석:
    ```bash
-   python3 <security-scan-local 스킬 dir>/scripts/bootstrap.py --target-repo <저장소 루트> --no-scan-dir
+   python3 <codex-security-scan 스킬 dir>/scripts/bootstrap.py --target-repo <저장소 루트> --no-scan-dir
    ```
    `python3`가 없거나 3.10 미만이면 `PYTHON=<인터프리터>`를 붙인다(버전 매니저 환경이면 그
    실행 형태로 감싼다).

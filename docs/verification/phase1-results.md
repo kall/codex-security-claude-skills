@@ -2,11 +2,11 @@
 
 **계획**: [docs/plans/2026-07-30-002-feat-phase1-standalone-scan-skill-plan.md](../plans/2026-07-30-002-feat-phase1-standalone-scan-skill-plan.md)
 **검증일**: 2026-07-30
-**산출물**: `skills/security-scan-local/`(SKILL.md + scripts/bootstrap.py + scripts/coverage_reconcile.py), `skills/install.sh`, `skills/README.md`
+**산출물**: `skills/codex-security-scan/`(SKILL.md + scripts/bootstrap.py + scripts/coverage_reconcile.py), `skills/install.sh`, `skills/README.md`
 
 ## 종합 판정: **GO** — MVP 완성
 
-`/security-scan-local` 스킬이 OpenAI/Codex 인증 없이 소형 저장소에서 봉인된 계약 산출물
+`/codex-security-scan` 스킬이 OpenAI/Codex 인증 없이 소형 저장소에서 봉인된 계약 산출물
 일체(`scan-manifest.json`/`findings.json`/`coverage.json` + `report.md` + SARIF)를 생성함을 실측했다.
 
 ## 유닛별 결과

@@ -34,7 +34,7 @@ codex-security의 스캔 기능은 공식적으로 Codex 바이너리(OpenAI 인
 
 ## Guidance
 
-**전체 구조**: 전역 Claude Code 스킬(`skills/security-scan-local/` 등)이 TS SDK/CLI를 **수정하지 않고**
+**전체 구조**: 전역 Claude Code 스킬(`skills/codex-security-scan/` 등)이 TS SDK/CLI를 **수정하지 않고**
 번들 플러그인의 Python 스크립트를 직접 호출하고, 지능 계층(SKILL.md 워크플로 수행)은 Claude가 담당한다.
 플러그인 버전은 벤더링하지 않고 런타임에 읽는다.
 
@@ -45,7 +45,7 @@ codex-security의 스캔 기능은 공식적으로 Codex 바이너리(OpenAI 인
    realpath만 검사하면 대상 저장소가 저장소 밖을 가리키는 **심볼릭 링크**를 커밋해 게이트를 우회한다.
    `npm`도 `shutil.which` 대신 신뢰 PATH 머신러리로 해석하고 정화된 env로 실행해야 대상 저장소의
    `./node_modules/.bin/npm`으로 임의 코드가 실행되지 않는다.
-   → `skills/security-scan-local/scripts/bootstrap.py`의 `within_target`, `untrusted_provenance`,
+   → `skills/codex-security-scan/scripts/bootstrap.py`의 `within_target`, `untrusted_provenance`,
    `npm_global_root`, `default_target_repo`.
 
 1-b. **`pluginVersion`은 동작을 식별하지 못한다 — 사본별 능력 프로브가 필요하다.** npm 배포본

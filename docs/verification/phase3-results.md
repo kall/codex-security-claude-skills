@@ -2,8 +2,8 @@
 
 **계획**: [docs/plans/2026-07-30-004-feat-phase3-validate-patch-diff-plan.md](../plans/2026-07-30-004-feat-phase3-validate-patch-diff-plan.md)
 **검증일**: 2026-07-30
-**산출물**: `skills/security-validate-local/SKILL.md`, `skills/security-patch-local/SKILL.md`,
-`skills/security-diff-scan-local/SKILL.md`, `skills/install.sh`(다중 스킬 설치로 확장)
+**산출물**: `skills/codex-security-validate/SKILL.md`, `skills/codex-security-patch/SKILL.md`,
+`skills/codex-security-diff-scan/SKILL.md`, `skills/install.sh`(다중 스킬 설치로 확장)
 
 ## 종합 판정: **GO**
 
@@ -13,18 +13,18 @@ Phase 2의 워크벤치 수명주기를 재사용한다.
 
 ## 유닛별 결과
 
-### U1. /security-validate-local (Phase 2 불필요)
+### U1. /codex-security-validate (Phase 2 불필요)
 - 입력 분기: `.jsonl` → ledger 모드(전 행에 `validation` 객체 추가, 행 순서·discovery 필드 보존,
   원자적 rename 재작성, enriched ledger 재투입 금지), 텍스트/파일 → 단독 판정 모드(한국어 보고).
 - 플러그인 `validation` 스킬 compact 모드 직독. FP 피드백·입력 서술은 미신뢰 데이터로 취급(R11).
 
-### U2. /security-patch-local (Phase 2 불필요)
+### U2. /codex-security-patch (Phase 2 불필요)
 - 플러그인 `fix-finding` 스킬 직독. **2단 승인**(KTD5): ① 수정 diff 승인(승인 없이 저장소 무변경)
   ② 게이트 실행 승인(감지한 저장소 스크립트 명령의 **원문 + 정의 파일 경로** 제시, 기본 미실행).
 - outcome 3값: `fixed`는 게이트 통과 시에만, 미승인이면 최소 검사만 하고 "게이트 미실행" 명시(R6).
 - **퍼미션 모드 고지**: `acceptEdits`/`bypassPermissions` 세션에서는 이 지침이 유일한 게이트임을 시작 고지.
 
-### U3. /security-diff-scan-local (Phase 2 필요)
+### U3. /codex-security-diff-scan (Phase 2 필요)
 - 대상 3형태 해석표(`--diff BASE [--head]`→refs, `--working-tree [--base]`→working_tree, 무인자→working_tree).
 - 5단계 선형(위협모델=저장소 범위, discovery부터=diff 범위). Phase 2 수명주기(register·contract·
   finalize-first·complete 3선택지)와 Phase 1 공통 규칙을 참조.

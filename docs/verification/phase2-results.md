@@ -2,7 +2,7 @@
 
 **계획**: [docs/plans/2026-07-30-003-feat-phase2-workbench-integration-plan.md](../plans/2026-07-30-003-feat-phase2-workbench-integration-plan.md)
 **검증일**: 2026-07-30
-**산출물**: `skills/security-scan-local/scripts/workbench_glue.py`(신규), `SKILL.md`(수명주기 통합), `coverage_reconcile.py`(`--fp-recheck` 추가)
+**산출물**: `skills/codex-security-scan/scripts/workbench_glue.py`(신규), `SKILL.md`(수명주기 통합), `coverage_reconcile.py`(`--fp-recheck` 추가)
 
 ## 종합 판정: **GO** (품질 대조 게이트는 인증 제약으로 부분 대체)
 

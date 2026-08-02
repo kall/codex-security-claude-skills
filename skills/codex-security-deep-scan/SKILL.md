@@ -1,13 +1,13 @@
 ---
-name: security-deep-scan-local
+name: codex-security-deep-scan
 description: >-
   다중 패스 심층 보안 스캔의 실용적 축소판(deep-lite). 랭킹·샤딩은 플러그인 스크립트로,
   후보 발굴 팬아웃은 Claude 서브에이전트로, 수렴은 고정 2패스로 대체한다. 공식 deep 스캔과
   동등하지 않음(고지 필수). OpenAI/Codex 인증 없이 Claude Code 구독만으로 동작. 표준 단일
-  패스 스캔은 security-scan-local을 쓴다.
+  패스 스캔은 codex-security-scan을 쓴다.
 ---
 
-# security-deep-scan-local — deep-lite 스캔
+# codex-security-deep-scan — deep-lite 스캔
 
 공식 deep 스캔은 Codex Subagents v2 런타임과 24시간 MCP 오케스트레이터에 결박되어 있어 동등
 재현이 불가능하다. 이 스킬은 **정직한 축소판**이다 — 동등하지 않음을 이름·고지·요약에 명시한다(KTD3).

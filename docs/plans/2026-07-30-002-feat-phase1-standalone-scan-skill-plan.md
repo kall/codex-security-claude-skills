@@ -18,7 +18,7 @@ execution: code
 
 ## Goal Capsule
 
-- **목표**: OpenAI 인증·워크벤치 DB 없이, 임의 저장소에서 전체 보안 스캔을 수행해 봉인된 계약 산출물(`scan-manifest.json`/`findings.json`/`coverage.json` + `report.md` + SARIF)을 만드는 전역 스킬 `/security-scan-local`을 완성한다.
+- **목표**: OpenAI 인증·워크벤치 DB 없이, 임의 저장소에서 전체 보안 스캔을 수행해 봉인된 계약 산출물(`scan-manifest.json`/`findings.json`/`coverage.json` + `report.md` + SARIF)을 만드는 전역 스킬 `/codex-security-scan`을 완성한다.
 - **권위 순서**: 이 문서 → Phase 0 검증 보고서(매핑 표·픽스처·contract 필드 표) → 번들 플러그인 SKILL.md·references(번역 매핑 표를 통해).
 - **중지 조건**: `finalize_scan_contract.py`가 3회 리페어 후에도 실패하는 구조적 스키마 불일치 발견 시 중지하고 픽스처 재검토. Phase 0 U6이 no-go였다면 이 계획의 단일 스킬 구조 자체를 재설계한다.
 - **실행 프로파일**: 스킬 파일은 마크다운+Python 스크립트. 스캔 자체는 Claude Code 세션이 단일 에이전트로 수행(서브에이전트 팬아웃은 Phase 4).
@@ -91,7 +91,7 @@ codex-security의 스캔 지능은 프롬프트 워크플로(SKILL.md)에 있고
 
 ```mermaid
 flowchart TB
-    A["/security-scan-local [대상경로]"] --> B["bootstrap.py<br/>플러그인·Python·scan-dir 해석<br/>+ 신뢰 게이트 (R3)"]
+    A["/codex-security-scan [대상경로]"] --> B["bootstrap.py<br/>플러그인·Python·scan-dir 해석<br/>+ 신뢰 게이트 (R3)"]
     B -->|실패| B1[설치 안내 후 중단]
     B -->|성공 JSON| C["config_preflight 실행<br/>상태·degraded path 고지 (R5)"]
     C --> D["1. 위협 모델"]
@@ -113,7 +113,7 @@ flowchart TB
 ```
 skills/                                  # 이 저장소 (정본, KTD2)
 ├── install.sh                           # ~/.claude/skills/로 복사·링크
-└── security-scan-local/
+└── codex-security-scan/
     ├── SKILL.md                         # 스킬 본체: 워크플로 번역 지침
     └── scripts/
         ├── bootstrap.py                 # 탐색 체인 + 신뢰 게이트 + scan-dir
@@ -132,7 +132,7 @@ skills/                                  # 이 저장소 (정본, KTD2)
 - **Files**: `skills/install.sh`, `skills/README.md`
 - **Approach**: `skills/<스킬명>/`을 정본으로 두고, `install.sh`가 `~/.claude/skills/`에 심볼릭 링크(개발 중) 또는 복사(배포)를 선택적으로 수행한다. 링크 모드에서는 저장소 편집이 즉시 반영되어 반복 검증이 빠르다. 설치 후 링크 대상과 모드를 출력한다.
 - **Test scenarios**:
-  - 링크 모드 설치 후 `~/.claude/skills/security-scan-local/SKILL.md`가 저장소 파일을 가리킨다.
+  - 링크 모드 설치 후 `~/.claude/skills/codex-security-scan/SKILL.md`가 저장소 파일을 가리킨다.
   - 복사 모드 설치 후 저장소 편집이 전역에 반영되지 않는다.
   - 기존 설치가 있으면 덮어쓰기 전에 확인한다.
 - **Verification**: 두 모드 모두 Claude Code가 스킬을 인식한다.
@@ -142,7 +142,7 @@ skills/                                  # 이 저장소 (정본, KTD2)
 - **Goal**: 플러그인 루트·Python·scan-dir을 해석하는 단일 진입 스크립트를 완성한다.
 - **Requirements**: R1, R2, R3
 - **Dependencies**: U1, Phase 0 U1·U2 (프로토타입 승격)
-- **Files**: `skills/security-scan-local/scripts/bootstrap.py`
+- **Files**: `skills/codex-security-scan/scripts/bootstrap.py`
 - **Approach**:
   1. Phase 0 탐색 체인(신뢰 게이트 포함)을 그대로 승격한다.
   2. scan-dir 생성: 상태 디렉터리 규약과 동일한 해석(`CODEX_SECURITY_STATE_DIR` 정확한 대문자 → `CODEX_HOME`/`state/plugins/codex-security` → `~/.codex/state/plugins/codex-security`), 그 하위에 `scans/<repo-basename>-<ISO timestamp>/` 생성, 저장소 내부 여부 검사(realpath 기준), 빈 디렉터리 보장, 0700 퍼미션 생성과 umask 보정.
@@ -162,7 +162,7 @@ skills/                                  # 이 저장소 (정본, KTD2)
 - **Goal**: Claude가 플러그인 워크플로를 정확히 수행하도록 하는 스킬 문서를 작성한다.
 - **Requirements**: R4, R5, R6, R7, R8, R11
 - **Dependencies**: U2, Phase 0 U5 (매핑 표), Phase 0 U6 (완주 실측)
-- **Files**: `skills/security-scan-local/SKILL.md`
+- **Files**: `skills/codex-security-scan/SKILL.md`
 - **Approach**:
   1. frontmatter(name, description — 트리거 조건 명시) + 실행 절차: bootstrap 실행 → preflight 실행·고지(R5) → 플러그인 `skills/security-scan/SKILL.md`, `skills/security-scan/references/repository-wide-scan.md`(전 파일 인벤토리·리뷰 절차와 후보 원장 스키마의 소유 문서), `references/scan-artifacts.md`, `references/final-report.md`를 **읽고** 아래 번역 규칙으로 수행.
   2. 번역 규칙(Phase 0 매핑 표 반영): MCP 도구 호출·데스크톱 앱 지시는 무시, `$threat-model`/`$validation`/`$attack-path-analysis` 참조는 해당 플러그인 스킬 파일 직접 읽기로 대체, `<python_command>`는 bootstrap이 반환한 인터프리터로 치환. 플러그인 버전이 매핑 표 기준과 다르면 경고 고지.
@@ -183,7 +183,7 @@ skills/                                  # 이 저장소 (정본, KTD2)
 - **Goal**: 플러그인이 강제하지 않는 정직성 두 가지(R9, R10)를 결정론 스크립트로 강제한다.
 - **Requirements**: R9, R10
 - **Dependencies**: U2
-- **Files**: `skills/security-scan-local/scripts/coverage_reconcile.py`
+- **Files**: `skills/codex-security-scan/scripts/coverage_reconcile.py`
 - **Approach**:
   1. 입력: scan-dir, 저장소 루트. `in_scope_files.txt`와 `review_log.jsonl`을 대조해 surfaces를 파생하고, 리뷰 완료 파일 수가 목록에 미달하면 `coverage.json`의 `completeness`를 `partial`로 강제 수정하며 미완 파일 수를 `deferred`에 반영한다.
   2. `findings.json`의 모든 `locations[].path`를 저장소 루트 기준으로 realpath 정규화해 루트 하위 실존 파일인지 검사하고, 부재하거나 루트를 이탈하면(`../` 경로, 밖을 가리키는 심볼릭 링크) 해당 finding 목록을 exit≠0과 함께 보고.
@@ -201,7 +201,7 @@ skills/                                  # 이 저장소 (정본, KTD2)
 - **Goal**: finalizer 실패를 수렴시키는 반복 절차를 SKILL.md에 확립한다.
 - **Requirements**: R12
 - **Dependencies**: U3
-- **Files**: `skills/security-scan-local/SKILL.md` (섹션 추가)
+- **Files**: `skills/codex-security-scan/SKILL.md` (섹션 추가)
 - **Approach**: Phase 0 U4에서 수집한 오류 메시지 패턴(필드 경로 + 기대 형식)을 예시로 수록. 규칙: stderr 마지막 오류 줄 해석 → draft JSON만 수정(금지 필드는 여전히 작성 금지) → 재실행, 최대 3회, 초과 시 draft·오류 원문을 보존하고 사용자에게 보고. `validate_scan_contract.py`는 봉인 후 최종 확인용으로 1회 실행.
 - **Test scenarios**:
   - 대문자 ruleId를 의도적으로 넣은 draft가 1회 리페어로 통과한다.
@@ -214,7 +214,7 @@ skills/                                  # 이 저장소 (정본, KTD2)
 - **Requirements**: R13 (+ 전체 요구사항의 통합 검증)
 - **Dependencies**: U1~U5
 - **Files**: 검증 기록은 `docs/verification/phase1-results.md`
-- **Approach**: ① 의도적 취약점이 있는 소형 저장소(커맨드 인젝션 1건 + R11 인젝션 문구 1건을 심은 합성 레포) ② 이 저장소 일부 경로. 각각 `/security-scan-local` 실행 → 봉인 성공 → `validate_scan_contract.py` exit 0 → report.md·SARIF 확인 → 심은 취약점 검출 여부와 인젝션 무시 여부 기록.
+- **Approach**: ① 의도적 취약점이 있는 소형 저장소(커맨드 인젝션 1건 + R11 인젝션 문구 1건을 심은 합성 레포) ② 이 저장소 일부 경로. 각각 `/codex-security-scan` 실행 → 봉인 성공 → `validate_scan_contract.py` exit 0 → report.md·SARIF 확인 → 심은 취약점 검출 여부와 인젝션 무시 여부 기록.
 - **Execution note**: 합성 취약점 검출은 스캔 품질의 스모크 신호일 뿐 완전성 증명이 아님을 보고서에 명시한다. 공식 스캔과의 파인딩 대조는 Phase 2 U4의 게이트다.
 - **Test scenarios**:
   - 심은 취약점이 findings에 나타나고 severity·locations가 타당하다.
@@ -240,7 +240,7 @@ skills/                                  # 이 저장소 (정본, KTD2)
 
 ## Definition of Done
 
-- `/security-scan-local`이 임의 저장소에서 OpenAI 인증 없이 봉인된 산출물 일체를 생성한다.
+- `/codex-security-scan`이 임의 저장소에서 OpenAI 인증 없이 봉인된 산출물 일체를 생성한다.
 - R1~R13이 각각 U1~U6의 검증으로 입증된다.
 - 실패 경로(플러그인 미설치, 신뢰 게이트 위반, Python 미달, finalize 3회 실패)가 모두 한국어 안내로 종료된다.
 - 스킬 정본이 이 저장소 `skills/`에 커밋되고 설치 스크립트가 동작한다.

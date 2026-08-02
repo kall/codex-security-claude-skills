@@ -1,5 +1,5 @@
 ---
-name: security-scan-match-local
+name: codex-security-scan-match
 description: >-
   같은 저장소의 완료된 보안 스캔 2개 사이에서 "같은 근본 원인의 finding"을 의미 기반으로
   매칭해 이력을 연결한다(공식 scans match 대체). 제목·CWE·fingerprint·위치가 달라도 동일
@@ -7,7 +7,7 @@ description: >-
   수행한다. OpenAI/Codex 인증 없이 Claude Code 구독만으로 동작.
 ---
 
-# security-scan-match-local — 스캔 간 파인딩 매칭
+# codex-security-scan-match — 스캔 간 파인딩 매칭
 
 공식 CLI의 `scans match`는 SDK가 유일하게 Codex 스레드를 직접 여는 지점이라 OpenAI 인증 없이는
 막혀 있다. 이 스킬은 매칭 판정을 **도구를 제한한 격리 서브에이전트**가 수행하게 해 그 공백을 메운다.

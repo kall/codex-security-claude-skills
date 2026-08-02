@@ -38,7 +38,7 @@ npm install -g @openai/codex-security     # Node 22+
 Restart Claude Code, then invoke:
 
 ```
-/security-scan-local /path/to/repo
+/codex-security-scan /path/to/repo
 ```
 
 Full usage, environment variables, and troubleshooting:
@@ -48,12 +48,12 @@ Full usage, environment variables, and troubleshooting:
 
 | Skill | Purpose | Modifies the repo |
 | --- | --- | --- |
-| `security-scan-local` | One-shot full-repo standard scan → sealed contract artifacts + `report.md` + SARIF | No |
-| `security-diff-scan-local` | Scans only a diff (refs or working-tree) | No |
-| `security-validate-local` | Judges a candidate finding's disposition | No |
-| `security-patch-local` | Minimal fix for a security issue — two-stage approval | Yes (after approval) |
-| `security-scan-match-local` | Matches findings with the same root cause across two completed scans | No |
-| `security-deep-scan-local` | Reduced multi-pass deep scan (deep-lite — not equivalent to the official deep scan) | No |
+| `codex-security-scan` | One-shot full-repo standard scan → sealed contract artifacts + `report.md` + SARIF | No |
+| `codex-security-diff-scan` | Scans only a diff (refs or working-tree) | No |
+| `codex-security-validate` | Judges a candidate finding's disposition | No |
+| `codex-security-patch` | Minimal fix for a security issue — two-stage approval | Yes (after approval) |
+| `codex-security-scan-match` | Matches findings with the same root cause across two completed scans | No |
+| `codex-security-deep-scan` | Reduced multi-pass deep scan (deep-lite — not equivalent to the official deep scan) | No |
 
 ## Requirements
 

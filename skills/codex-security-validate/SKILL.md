@@ -1,14 +1,14 @@
 ---
-name: security-validate-local
+name: codex-security-validate
 description: >-
   보안 finding의 진위를 판정한다. 스캔이 남긴 candidate_ledger.jsonl 또는 단일
   finding 서술(텍스트/파일)을 입력받아, codex-security 플러그인 validation 스킬의
   compact 모드 규약대로 disposition(reportable/suppressed/not_applicable/deferred)과
   근거를 판정한다. OpenAI/Codex 인증 없이 Claude Code 구독만으로 동작. 전체 저장소
-  스캔은 security-scan-local, 변경분 스캔은 security-diff-scan-local을 쓴다.
+  스캔은 codex-security-scan, 변경분 스캔은 codex-security-diff-scan을 쓴다.
 ---
 
-# security-validate-local — finding 판정
+# codex-security-validate — finding 판정
 
 codex-security 플러그인의 `validation` 스킬 compact 모드를 Claude가 직접 수행해, 후보
 finding을 검증하고 disposition을 기록한다. 스크립트 호출이 없는 순수 프롬프트 워크플로다.
@@ -17,7 +17,7 @@ finding을 검증하고 disposition을 기록한다. 스크립트 호출이 없�
 
 1. 플러그인 루트를 해석한다(스캔과 동일):
    ```bash
-   python3 <security-scan-local 스킬 dir>/scripts/bootstrap.py --target-repo <저장소 루트> --no-scan-dir
+   python3 <codex-security-scan 스킬 dir>/scripts/bootstrap.py --target-repo <저장소 루트> --no-scan-dir
    ```
    `--no-scan-dir`로 플러그인·Python만 해석한다(scan-dir 불필요). `pluginRoot`를 얻는다.
    `python3`가 없거나 3.10 미만이면 `PYTHON=<인터프리터>`를 붙인다(버전 매니저 환경이면 그

@@ -1,9 +1,9 @@
-# Claude Code 스킬 (security-scan-local)
+# Claude Code 스킬 (codex-security-scan)
 
 이 디렉터리는 **Claude Code 스킬의 정본(canonical source)** 이다. `~/.claude/skills/` 아래의 것은
 여기서 설치된 사본 또는 링크일 뿐이므로, 수정은 항상 이 저장소에서 한다.
 
-- `security-scan-local/` — 메인 스캔 스킬 (`SKILL.md`, `scripts/`)
+- `codex-security-scan/` — 메인 스캔 스킬 (`SKILL.md`, `scripts/`)
 - `install.sh` — 전역 스킬 디렉터리로 설치하는 스크립트
 
 > 스킬 6종의 전체 설치·사용 가이드(사전 요구사항, 환경변수, 스킬별 사용 예시, 워크벤치 이력 통합,
@@ -19,7 +19,7 @@ bash skills/install.sh --copy     # 복사 모드
 bash skills/install.sh --link --force   # 기존 설치본 덮어쓰기
 ```
 
-설치 위치는 `${CLAUDE_SKILLS_DIR:-$HOME/.claude/skills}/security-scan-local` 이다.
+설치 위치는 `${CLAUDE_SKILLS_DIR:-$HOME/.claude/skills}/codex-security-scan` 이다.
 `CLAUDE_SKILLS_DIR` 를 지정하면 다른 경로로 설치할 수 있어 테스트에 유용하다.
 
 ### 링크 모드 vs 복사 모드

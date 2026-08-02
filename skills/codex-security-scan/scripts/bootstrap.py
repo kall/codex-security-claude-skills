@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""security-scan-local 스킬의 단일 부트스트랩 스크립트.
+"""codex-security-scan 스킬의 단일 부트스트랩 스크립트.
 
 세 가지를 한 번에 결정하고 그 결과를 JSON 한 덩어리로 stdout에 출력한다.
 

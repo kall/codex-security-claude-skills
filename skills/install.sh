@@ -2,8 +2,8 @@
 #
 # 이 저장소의 보안 스캔 스킬들(SKILL.md 를 가진 skills/ 하위 디렉터리 전부)을
 # Claude Code 전역 스킬 디렉터리에 설치한다.
-#   - security-scan-local, security-validate-local, security-patch-local,
-#     security-diff-scan-local 등 앞으로 추가되는 스킬도 자동 포함된다.
+#   - codex-security-scan, codex-security-validate, codex-security-patch,
+#     codex-security-diff-scan 등 앞으로 추가되는 스킬도 자동 포함된다.
 #
 # 사용법:
 #   bash skills/install.sh [--link|--copy] [--force] [스킬이름 …]
@@ -203,7 +203,7 @@ print("\n  스캔 정확도를 위해 스캔 전 commit/stash 를 권장합니�
 PYEOF
 }
 
-BOOTSTRAP_PATH="${SCRIPT_DIR}/security-scan-local/scripts/bootstrap.py"
+BOOTSTRAP_PATH="${SCRIPT_DIR}/codex-security-scan/scripts/bootstrap.py"
 
 if [ "$CHECK_ONLY" = "true" ]; then
   if [ ! -f "$BOOTSTRAP_PATH" ]; then
@@ -227,7 +227,7 @@ fi
 
 if [ "$CHECK" = "true" ]; then
   # 설치본(있으면)의 bootstrap 으로 프로브해 실제 실행 경로를 확인한다.
-  probe_bootstrap="${SKILLS_ROOT}/security-scan-local/scripts/bootstrap.py"
+  probe_bootstrap="${SKILLS_ROOT}/codex-security-scan/scripts/bootstrap.py"
   [ -f "$probe_bootstrap" ] || probe_bootstrap="$BOOTSTRAP_PATH"
   if [ -f "$probe_bootstrap" ]; then
     run_check "$probe_bootstrap" || failed=1

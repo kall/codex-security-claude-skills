@@ -12,7 +12,7 @@ execution: code
 
 **시리즈**: Claude Code 전역 스킬로 codex-security를 OpenAI 인증 없이 실행하기 (Phase 2/4)
 **선행 문서**: [Phase 1](2026-07-30-002-feat-phase1-standalone-scan-skill-plan.md) — 순수 로컬 스캔이 동작하는 상태에서 시작. [Phase 0](2026-07-30-001-chore-phase0-feasibility-verification-plan.md) U3의 `get-scan` contract 필드 표가 필수 입력이다.
-**산출물 위치**: `skills/security-scan-local/` (Phase 1 스킬 확장, 정본은 이 저장소)
+**산출물 위치**: `skills/codex-security-scan/` (Phase 1 스킬 확장, 정본은 이 저장소)
 
 ---
 
@@ -119,7 +119,7 @@ sequenceDiagram
 - **Goal**: 워크벤치 명령 5종 + 좀비 정리를 안전한 서브커맨드로 제공한다.
 - **Requirements**: R1, R2, R3, R4, R7, R10, R13
 - **Dependencies**: Phase 1 U2 (bootstrap JSON을 입력으로 사용), Phase 0 U3 (contract 필드 표)
-- **Files**: `skills/security-scan-local/scripts/workbench_glue.py`
+- **Files**: `skills/codex-security-scan/scripts/workbench_glue.py`
 - **Approach**:
   1. 서브커맨드: `register`(빈 scan-dir 검증, recipe 조립, scanId/targetId 반환), `contract`(`get-scan` 결과에서 draft 반영 필드만 추출해 JSON 반환), `feedback`(결과를 O_EXCL·0600으로 `01_context/false_positive_feedback.json`에 기록), `complete`, `fail`, `list-stale`(N시간 이상 `running`인 행을 scanId·시작 시각·저장소와 함께 나열, 종결하지 않음), `close-stale`(명시된 scanId만 `fail-scan`), `check-running`(시작 시 advisory 경고용).
   2. 모든 호출은 bootstrap이 해석한 플러그인의 `scripts/workbench_db.py`를 `python -I -B`로 실행하고(파싱 전용 모듈 `workbench_cli.py`가 아님), `CODEX_SECURITY_STATE_DIR`를 정확한 이름으로 주입하며 `OPENAI_API_KEY`/`CODEX_API_KEY`는 환경에서 제거한다 (SDK `runWorkbench`와 동일).
@@ -140,7 +140,7 @@ sequenceDiagram
 - **Goal**: Phase 1 워크플로에 등록·contract 반영·피드백 주입·종결 분기를 삽입한다.
 - **Requirements**: R5, R6, R8
 - **Dependencies**: U1
-- **Files**: `skills/security-scan-local/SKILL.md` (수정)
+- **Files**: `skills/codex-security-scan/SKILL.md` (수정)
 - **Approach**:
   1. 순서 계약 명문화: bootstrap → check-running(경고) → **register(빈 dir) → 하위 구조 생성 → contract 조회** → feedback 주입 → preflight·스캔 → `bind-repo-scopes` → 정산 → **finalize → complete** → 요약.
   2. contract 값을 canonical JSON에 반영하는 규칙을 표로 명시: 어떤 contract 필드가 manifest/coverage/findings의 어느 경로에 들어가는지. 금지 필드 목록(Phase 1 R6)은 그대로 유지 — contract 반영은 finalizer가 덮어쓰지 않는 좌표 필드에 한정한다.
@@ -159,7 +159,7 @@ sequenceDiagram
 - **Goal**: finalize 후 fingerprint를 피드백과 대조해 재등장 finding을 요약에 표시한다.
 - **Requirements**: R9
 - **Dependencies**: U1, U2
-- **Files**: `skills/security-scan-local/scripts/coverage_reconcile.py` (검사 추가)
+- **Files**: `skills/codex-security-scan/scripts/coverage_reconcile.py` (검사 추가)
 - **Approach**: 봉인된 `findings.json`의 `fingerprints`와 `false_positive_feedback.json`의 `fingerprint`를 대조(동일 targetId 전제). 일치 항목은 "과거 false-positive로 판정된 finding이 다시 보고됨 — 판정 사유: <note>"로 요약에 포함. 피드백 주입 시 저장소 origin/HEAD를 함께 기록해, 같은 경로에 다른 저장소가 체크아웃된 경우(targetId 경로 해시의 부작용)를 사용자가 알아볼 수 있게 한다.
 - **Test scenarios**:
   - 1차 스캔 → `findings false-positive` CLI로 기각 → 2차 스캔에서 동일 finding에 경고가 붙는다.

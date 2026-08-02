@@ -1,17 +1,17 @@
 ---
-name: security-diff-scan-local
+name: codex-security-diff-scan
 description: >-
   변경분(diff)만 보안 스캔한다. --diff BASE [--head HEAD](커밋/브랜치 refs) 또는
   --working-tree [--base REF](스테이지+미스테이지 로컬 패치)를 대상으로, 위협 모델은
   저장소 전체 범위에서, 리뷰는 diff 범위에서 수행하고 봉인된 계약 산출물을 만든다.
   OpenAI/Codex 인증 없이 Claude Code 구독만으로 동작. 전체 저장소 스캔은
-  security-scan-local을 쓴다.
+  codex-security-scan을 쓴다.
 ---
 
-# security-diff-scan-local — 변경분 스캔
+# codex-security-diff-scan — 변경분 스캔
 
 codex-security 플러그인의 `security-diff-scan` 스킬을 Claude가 직접 수행한다. Phase 1의
-전체 스캔 스킬(security-scan-local/SKILL.md)의 공통 규칙(bootstrap, R6 금지 필드, 정산,
+전체 스캔 스킬(codex-security-scan/SKILL.md)의 공통 규칙(bootstrap, R6 금지 필드, 정산,
 리페어 루프)과 Phase 2의 워크벤치 수명주기를 **그대로 참조**하며, 차이점(대상 해석·diff 인벤토리·
 범위 규칙)만 아래에 정의한다.
 
