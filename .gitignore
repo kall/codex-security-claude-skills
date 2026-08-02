@@ -3,3 +3,6 @@ __pycache__/
 
 # 릴리즈 배포본 빌드 산출물 (tools/make-release.sh)
 /dist/
+
+# 버전별 릴리즈 노트 초안 (gh release create --notes-file). 내용은 GitHub 릴리즈 페이지에 남는다.
+/RELEASE_NOTES.md
