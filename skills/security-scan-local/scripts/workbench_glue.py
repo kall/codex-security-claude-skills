@@ -223,14 +223,37 @@ def _extract_changed_files(text: str) -> list[str]:
 
 
 def cmd_complete(boot: dict, args: argparse.Namespace) -> int:
-    """complete-scan. 게이트 실패는 exit 0 + {ok:false, reason, changedFiles} 로 반환(R6)."""
+    """complete-scan. 게이트 실패는 exit 0 + {ok:false, reason, changedFiles} 로 반환(R6).
+
+    플러그인 사본에 따라 워킹트리 변경의 처리가 다르다(실측):
+      - 하드 게이트 사본: `require_unchanged_target` 이 있어 변경 시 complete 가 실패한다.
+      - 경고 사본(npm 배포본): 변경을 `warnings` 로만 남기고 성공 종결한다.
+    후자를 조용히 성공으로 보고하면 부정직하므로 `warnings` 를 최상위로 올려
+    SKILL.md 가 최종 보고에 반드시 싣게 한다.
+    """
     completed = run_workbench(boot, ["complete-scan", "--scan-id", args.scan_id])
     if completed.returncode == 0:
         try:
             raw = json.loads(completed.stdout.strip() or "{}")
         except json.JSONDecodeError:
             raw = {}
-        return emit({"ok": True, "status": raw.get("status", "complete"), "raw": raw}, True)
+        # 경고 위치는 플러그인 사본에 따라 다르다: 실측상 complete-scan 응답의
+        # `scan.warnings`(npm 배포본 scan_context). 최상위도 함께 본다.
+        warnings: list = []
+        if isinstance(raw, dict):
+            for holder in (raw.get("scan"), raw):
+                if isinstance(holder, dict) and isinstance(holder.get("warnings"), list):
+                    warnings = holder["warnings"]
+                    break
+        return emit(
+            {
+                "ok": True,
+                "status": raw.get("status", "complete"),
+                "warnings": [w for w in warnings if isinstance(w, str)],
+                "raw": raw,
+            },
+            True,
+        )
     detail = (completed.stderr or completed.stdout).strip()
     return emit(
         {

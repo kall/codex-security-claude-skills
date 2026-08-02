@@ -24,9 +24,24 @@ WORK="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 OUT="$(mktemp -d)"
 : "${OUT:?OUT 임시 디렉터리 생성 실패 — 중단}"
 trap 'rm -rf "$OUT"' EXIT
-PLUGIN="${CODEX_SECURITY_PLUGIN_DIR:-/data/workspace/codex-security/sdk/typescript/_bundled_plugin}"
+# 플러그인 경로: 환경변수 → 이 저장소 체크아웃(스크립트 위치 기준) → npm 전역 설치본.
+PLUGIN="${CODEX_SECURITY_PLUGIN_DIR:-}"
+if [ -z "$PLUGIN" ]; then
+  if [ -f "$WORK/../../../sdk/typescript/_bundled_plugin/.codex-plugin/plugin.json" ]; then
+    PLUGIN="$(cd "$WORK/../../../sdk/typescript/_bundled_plugin" && pwd -P)"
+  elif NPM_ROOT="$(npm root -g 2>/dev/null)" && \
+       [ -f "$NPM_ROOT/@openai/codex-security/_bundled_plugin/.codex-plugin/plugin.json" ]; then
+    PLUGIN="$NPM_ROOT/@openai/codex-security/_bundled_plugin"
+  else
+    echo "오류: 플러그인을 찾지 못했습니다. CODEX_SECURITY_PLUGIN_DIR=<_bundled_plugin 경로> 를 지정하세요." >&2
+    exit 1
+  fi
+fi
 SCRIPTS="$PLUGIN/scripts"
-PY=(mise exec -- python3)
+# Python: PYTHON 환경변수 → python3 → python. 버전 매니저 환경이면
+#   PYTHON="$(mise which python3)" bash repro-u3.sh
+PY=("${PYTHON:-$(command -v python3 || command -v python)}")
+: "${PY[0]:?Python 3.10+ 인터프리터를 찾지 못했습니다. PYTHON=<경로> 로 지정하세요.}"
 
 export CODEX_SECURITY_STATE_DIR="$OUT/state"
 # 플러그인 디렉터리에 __pycache__ 를 남기지 않는다 (레포는 읽기 전용으로 유지).

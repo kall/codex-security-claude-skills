@@ -29,16 +29,20 @@ description: >-
 1. **bootstrap 실행** — 경로 진실 원천을 얻는다.
 
    ```bash
-   mise exec -- python3 <이 스킬 dir>/scripts/bootstrap.py --target-repo <스캔 대상 저장소 루트>
+   python3 <이 스킬 dir>/scripts/bootstrap.py --target-repo <스캔 대상 저장소 루트>
    ```
 
+   - `python3`가 PATH에 없거나 3.10 미만이면 `PYTHON=<인터프리터 경로>`를 앞에 붙여 재시도한다.
+     버전 매니저를 쓰는 환경(mise/asdf 등)이면 그 실행 형태(`mise exec -- python3 …`)로 감싼다.
+     이 부트스트랩 호출에만 해당하며, 이후 플러그인 스크립트는 아래 `<python_command>`를 쓴다.
    - `--target-repo`를 **명시**하라(스캔 대상 저장소의 루트). 생략하면 cwd의 git 최상위로
      추정하지만, 모노레포 하위 패키지에서 호출하면 신뢰 경계가 좁아지므로 명시가 안전하다.
    - 성공 시 단일 JSON을 출력한다:
      `{"ok": true, "pluginRoot", "pluginVersion", "pluginSource", "python": {"path","version"}, "scanDir", "scansRoot", "stateDir", "repoRoot"}`.
      **이 JSON이 이후 모든 단계의 경로·인터프리터 진실 원천이다.** 아래에서
-     `<plugin_dir>` = `pluginRoot`, `<python_command>` = `mise exec -- python3`(이 저장소 규칙;
-     bootstrap의 `python.path`도 병기 가능), `<scan_dir>` = `scanDir`, `<repo_root>` = `repoRoot`.
+     `<plugin_dir>` = `pluginRoot`, `<python_command>` = bootstrap이 반환한 **`python.path`**
+     (3.10+·tomli 조건을 통과한 절대 경로 — 이걸 그대로 쓴다), `<scan_dir>` = `scanDir`,
+     `<repo_root>` = `repoRoot`.
    - **시작 고지**: 선택된 플러그인의 절대 경로와 `pluginVersion`을 사용자에게 알린다.
      `pluginVersion`이 이 번역 지침 작성 기준(0.1.14)과 다르면 "플러그인 버전이 매핑 기준과
      다름 — 워크플로 지시가 바뀌었을 수 있음"을 경고한다.
@@ -250,7 +254,12 @@ draft — R6 금지 필드 없음), `findings.json`, `coverage.json`을 쓰고, 
 5. 시작 고지에 **commit/stash 권고**를 넣는다: "스캔 중 저장소가 변경되면 이력 기록(complete)이 실패합니다
    (로컬 report.md·SARIF는 보존됩니다)."
 6. finalize 성공 후 `complete --scan-id <id>`. 결과 분기(R6):
-   - `{"ok": true, "status": "complete"}` → 이력 등록 완료.
+   - `{"ok": true, "status": "complete", "warnings": []}` → 이력 등록 완료.
+   - `{"ok": true, ..., "warnings": [...]}` → **등록은 됐지만 경고가 있다.** 플러그인 사본에 따라
+     워킹트리 변경이 하드 실패가 아니라 경고로 처리된다(npm 배포본 실측: "Working-tree contents
+     changed while the scan was running; results were saved for the original snapshot."). 이 경우
+     **경고 문구를 최종 보고에 그대로 싣고**, 결과가 등록 시점 스냅샷 기준임을 명시한다. 조용히
+     "완료"로만 보고하지 않는다.
    - `{"ok": false, "reason": "...", "changedFiles": [...]}` → **워킹트리 불변 게이트 실패**. 스캔 행은
      `running`으로 남는다(자동 실패 처리 금지 — 종결하면 비교·FP 이력에서 영구 제외됨, KTD4). 사용자에게
      변경 파일과 report.md 경로를 제시하고 세 선택지를 묻는다: **(a)** 변경을 되돌린 뒤 `complete` 재시도,

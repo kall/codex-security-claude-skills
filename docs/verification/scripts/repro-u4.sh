@@ -7,7 +7,19 @@ WORK="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 # cd 실패로 WORK가 비면 아래 rm -rf 가 루트 수준 경로를 지운다. set -u 는
 # set-but-empty 에 발동하지 않으므로 명시적으로 가드한다.
 : "${WORK:?WORK 경로 해석 실패 — 중단}"
-PLUGIN="${CODEX_SECURITY_PLUGIN_DIR:-/data/workspace/codex-security/sdk/typescript/_bundled_plugin}"
+# 플러그인 경로: 환경변수 → 이 저장소 체크아웃(스크립트 위치 기준) → npm 전역 설치본.
+PLUGIN="${CODEX_SECURITY_PLUGIN_DIR:-}"
+if [ -z "$PLUGIN" ]; then
+  if [ -f "$WORK/../../../sdk/typescript/_bundled_plugin/.codex-plugin/plugin.json" ]; then
+    PLUGIN="$(cd "$WORK/../../../sdk/typescript/_bundled_plugin" && pwd -P)"
+  elif NPM_ROOT="$(npm root -g 2>/dev/null)" && \
+       [ -f "$NPM_ROOT/@openai/codex-security/_bundled_plugin/.codex-plugin/plugin.json" ]; then
+    PLUGIN="$NPM_ROOT/@openai/codex-security/_bundled_plugin"
+  else
+    echo "오류: 플러그인을 찾지 못했습니다. CODEX_SECURITY_PLUGIN_DIR=<_bundled_plugin 경로> 를 지정하세요." >&2
+    exit 1
+  fi
+fi
 FINALIZE="$PLUGIN/scripts/finalize_scan_contract.py"
 VALIDATE="$PLUGIN/scripts/validate_scan_contract.py"
 # 픽스처는 스크립트의 상위 디렉터리(docs/verification/fixtures)에 있다.
@@ -20,7 +32,11 @@ trap 'rm -rf "$RUN"' EXIT
 # 플러그인 디렉터리에 __pycache__ 를 남기지 않는다 (레포는 읽기 전용으로 유지).
 export PYTHONDONTWRITEBYTECODE=1
 
-PY() { mise exec -- python3 "$@"; }
+# Python: PYTHON 환경변수 → python3 → python. 버전 매니저 환경이면
+#   PYTHON="$(mise which python3)" bash repro-u4.sh
+PYTHON_BIN="${PYTHON:-$(command -v python3 || command -v python)}"
+: "${PYTHON_BIN:?Python 3.10+ 인터프리터를 찾지 못했습니다. PYTHON=<경로> 로 지정하세요.}"
+PY() { "$PYTHON_BIN" "$@"; }
 
 FAILED=0
 step() { printf '\n=== %s ===\n' "$1"; }
@@ -159,7 +175,7 @@ SCAN="$RUN/scan-e"
 mkdir -p "$SCAN"
 cp "$FIXTURES"/scan-manifest.json "$FIXTURES"/findings.json "$FIXTURES"/coverage.json "$SCAN/"
 echo "\$ python3 finalize_scan_contract.py --scan-dir $SCAN --source-root $SRC   # env 없음, stderr:"
-env -u CODEX_SECURITY_STARTED_AT mise exec -- python3 "$FINALIZE" --scan-dir "$SCAN" --source-root "$SRC"
+env -u CODEX_SECURITY_STARTED_AT "$PYTHON_BIN" "$FINALIZE" --scan-dir "$SCAN" --source-root "$SRC"
 expect_exit 2 "$?" "E finalize (실패 기대)"
 
 printf '\n=== 결과 ===\n'

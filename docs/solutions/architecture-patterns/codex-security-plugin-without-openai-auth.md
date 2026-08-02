@@ -15,6 +15,10 @@ tags: [codex-security, claude-code-skill, no-auth, security-scan, plugin-archite
 
 # codex-security 번들 플러그인을 OpenAI 인증 없이 Claude Code 스킬로 실행하기
 
+> **경로 기준**: 이 문서의 `sdk/typescript/...` 경로는 업스트림
+> [openai/codex-security](https://github.com/openai/codex-security) 기준이다(이 저장소에는 업스트림
+> 소스를 포함하지 않는다). `skills/...` 경로는 이 저장소 기준이다.
+
 ## Context
 
 codex-security의 스캔 기능은 공식적으로 Codex 바이너리(OpenAI 인증)를 통해서만 실행된다. 그러나
@@ -43,6 +47,15 @@ codex-security의 스캔 기능은 공식적으로 Codex 바이너리(OpenAI 인
    `./node_modules/.bin/npm`으로 임의 코드가 실행되지 않는다.
    → `skills/security-scan-local/scripts/bootstrap.py`의 `within_target`, `untrusted_provenance`,
    `npm_global_root`, `default_target_repo`.
+
+1-b. **`pluginVersion`은 동작을 식별하지 못한다 — 사본별 능력 프로브가 필요하다.** npm 배포본
+   (`@openai/codex-security@0.1.3`)과 GitHub 저장소 체크아웃이 **둘 다 플러그인 매니페스트 `0.1.14`를
+   보고하면서** 워킹트리 게이트 처리가 다르다(실측): 체크아웃은 `require_unchanged_target`으로
+   **하드 실패**("… Start a new scan."), npm 배포본은 `scan_target_warning`으로 **경고 후 성공 종결**
+   ("… results were saved for the original snapshot.")한다. 게이트 조건(등록 시 저장한 스냅샷
+   다이제스트 비교)은 동일하고 위반 시 처리만 다르다. 따라서 (a) 버전 문자열로 계약을 가정하지 말고
+   필요한 심볼의 존재를 프로브하고, (b) 종결 결과는 실패 분기와 **경고 분기**를 모두 처리해야 한다.
+   경고는 complete-scan 응답의 `scan.warnings`에 실린다(최상위가 아님).
 
 2. **finalize-first, 그다음 complete.** 워크벤치의 워킹트리 불변 게이트(`require_unchanged_target`)는
    우회 불가하고 finalization 전후로 재검사한다. `finalize_scan_contract.py`를 워크벤치 `complete-scan`

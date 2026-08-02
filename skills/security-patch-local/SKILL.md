@@ -16,8 +16,10 @@ codex-security 플러그인의 `fix-finding` 스킬을 Claude가 직접 수행�
 
 1. 플러그인 루트 해석:
    ```bash
-   mise exec -- python3 <security-scan-local 스킬 dir>/scripts/bootstrap.py --target-repo <저장소 루트> --no-scan-dir
+   python3 <security-scan-local 스킬 dir>/scripts/bootstrap.py --target-repo <저장소 루트> --no-scan-dir
    ```
+   `python3`가 없거나 3.10 미만이면 `PYTHON=<인터프리터>`를 붙인다(버전 매니저 환경이면 그
+   실행 형태로 감싼다).
 2. **퍼미션 모드 고지(중요)**: 현재 Claude Code 세션이 `acceptEdits`/`bypassPermissions`이면 파일 편집·
    명령 실행이 프롬프트 없이 진행되므로, **이 SKILL.md의 2단 승인 지침이 유일한 게이트**임을 사용자에게
    먼저 알린다. 그런 세션에서도 아래 승인 절차를 건너뛰지 않는다.

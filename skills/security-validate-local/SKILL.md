@@ -17,9 +17,11 @@ finding을 검증하고 disposition을 기록한다. 스크립트 호출이 없�
 
 1. 플러그인 루트를 해석한다(스캔과 동일):
    ```bash
-   mise exec -- python3 <security-scan-local 스킬 dir>/scripts/bootstrap.py --target-repo <저장소 루트> --no-scan-dir
+   python3 <security-scan-local 스킬 dir>/scripts/bootstrap.py --target-repo <저장소 루트> --no-scan-dir
    ```
    `--no-scan-dir`로 플러그인·Python만 해석한다(scan-dir 불필요). `pluginRoot`를 얻는다.
+   `python3`가 없거나 3.10 미만이면 `PYTHON=<인터프리터>`를 붙인다(버전 매니저 환경이면 그
+   실행 형태로 감싼다). 이후 플러그인 스크립트는 bootstrap이 반환한 `python.path`로 실행한다.
 2. **입력 분기**:
    - 인자가 `.jsonl` 파일 경로면 → **ledger 모드(R2)**.
    - 텍스트 서술이거나 일반 파일이면 → **단독 finding 모드(R3)**.
