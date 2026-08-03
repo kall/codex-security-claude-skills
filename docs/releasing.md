@@ -44,7 +44,19 @@ bash codex-security-claude-skills-*/docs/verification/scripts/repro-u4.sh
 플러그인이 없는 PC도 함께 확인하려면 npm 전역 경로를 빈 디렉터리로 가려 프로브가 exit 1 +
 설치 안내를 내는지 본다.
 
-## 3. 업로드
+## 3. 루트 README 갱신 (자동 아님)
+
+`make-release.sh`는 배포본 **내부** README(`$PKG/README.md`)만 `${VERSION}`으로 채워서
+생성한다. 저장소 루트의 `README.md`·`README.ko.md`는 별도 파일이라 스크립트가 건드리지
+않는다 — 태그만 새로 따고 이 두 파일을 그대로 두면 "설치" 섹션의 복사/붙여넣기 문구가
+이전 버전 태그(`.../releases/tag/<이전 버전>`)를 계속 가리키게 된다.
+
+버전마다 다음을 수동으로 갱신하고 같은 커밋에 포함한다:
+
+- `README.md`: "Install (users)" 아래 복사/붙여넣기 코드 블록의 태그 URL
+- `README.ko.md`: "설치 (사용자)" 아래 복사/붙여넣기 코드 블록의 태그 URL
+
+## 4. 업로드
 
 ```bash
 gh release create v0.1.0 --repo kall/codex-security-claude-skills \
@@ -54,7 +66,7 @@ gh release create v0.1.0 --repo kall/codex-security-claude-skills \
 
 빌드 스크립트가 종료 시 이 명령과 사용자용 설치 안내문을 실제 URL로 출력한다.
 
-## 4. 릴리즈 노트에 반드시 넣을 것
+## 5. 릴리즈 노트에 반드시 넣을 것
 
 순서대로, **맨 위 항목이 가장 중요하다** — 끝까지 읽지 않는 독자가 많으므로 가장 먼저
 전달해야 할 내용을 최상단에 둔다.
@@ -69,7 +81,7 @@ gh release create v0.1.0 --repo kall/codex-security-claude-skills \
   https://github.com/kall/codex-security-claude-skills/releases/tag/v0.1.0 이거 설치해줘
   ```
 
-  버전마다 이 URL을 갱신해야 한다(§5 버전 정책과 동일한 이유).
+  버전마다 이 URL을 갱신해야 한다(§3 루트 README 갱신, §6 버전 정책과 동일한 이유).
 - **검증된 플러그인 조합**: `@openai/codex-security@<npm 버전>` / 플러그인 매니페스트
   `<manifest 버전>`. 스킬은 플러그인 문서를 런타임에 읽으므로 이 조합이 호환성의 기준이다.
 - **게이트 사본 차이**: 같은 매니페스트 버전에서도 워킹트리 게이트가 하드 실패/경고로 갈린다.
@@ -77,13 +89,13 @@ gh release create v0.1.0 --repo kall/codex-security-claude-skills \
 - 플러그인 자동 설치를 하지 않는다는 사실과 `npm install -g @openai/codex-security` 안내.
 - 지원 범위: 비 Codex 경로이며 업스트림 OpenAI 지원 대상이 아님.
 
-## 5. 버전 정책
+## 6. 버전 정책
 
 tarball 이름·최상위 디렉터리·`NOTICE`·문서 링크가 모두 `--version` 값을 쓴다. 링크가 태그에
 고정되므로 **태그를 만든 뒤(또는 같은 이름으로 만들 예정으로) 빌드**한다. 이미 배포한 버전의
 tarball을 교체하지 말고 새 버전을 올린다 — 사용자가 체크섬으로 무결성을 검증한다.
 
-## 6. 플러그인 업데이트 대응
+## 7. 플러그인 업데이트 대응
 
 업스트림이 번들 플러그인을 갱신하면 스킬 동작이 바뀔 수 있다. 순서:
 
