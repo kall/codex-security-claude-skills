@@ -56,6 +56,20 @@ gh release create v0.1.0 --repo kall/codex-security-claude-skills \
 
 ## 4. 릴리즈 노트에 반드시 넣을 것
 
+순서대로, **맨 위 항목이 가장 중요하다** — 끝까지 읽지 않는 독자가 많으므로 가장 먼저
+전달해야 할 내용을 최상단에 둔다.
+
+- **Claude에게 링크만 주고 설치를 맡겨도 된다**: 릴리즈 URL을 Claude Code 세션에 주고
+  "설치해줘"라고 하면 아래 curl/sha256sum/tar/install.sh 과정을 그대로 수행한다.
+  첫 문단에 **그대로 복사/붙여넣기할 수 있는 문구**를 코드 블록으로 넣는다. 반드시
+  `.../releases/tag/<version>` 형태의 **태그가 박힌 URL**을 쓴다(`/releases` 인덱스
+  페이지는 Claude가 최신 버전과 에셋 파일명을 다시 추론해야 해서 모호함). 예:
+
+  ```
+  https://github.com/kall/codex-security-claude-skills/releases/tag/v0.1.0 이거 설치해줘
+  ```
+
+  버전마다 이 URL을 갱신해야 한다(§5 버전 정책과 동일한 이유).
 - **검증된 플러그인 조합**: `@openai/codex-security@<npm 버전>` / 플러그인 매니페스트
   `<manifest 버전>`. 스킬은 플러그인 문서를 런타임에 읽으므로 이 조합이 호환성의 기준이다.
 - **게이트 사본 차이**: 같은 매니페스트 버전에서도 워킹트리 게이트가 하드 실패/경고로 갈린다.

@@ -15,8 +15,11 @@ is installed at runtime.
 
 ## Install (users)
 
-Download the release tarball and install it. You can also just hand the link to a Claude Code
-session and say "install this."
+Download the release tarball and install it. Or just paste this into a Claude Code session:
+
+```
+Install https://github.com/kall/codex-security-claude-skills/releases/tag/v0.1.0
+```
 
 ```bash
 BASE=https://github.com/kall/codex-security-claude-skills/releases/latest/download
