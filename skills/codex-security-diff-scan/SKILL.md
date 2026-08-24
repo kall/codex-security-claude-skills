@@ -51,8 +51,22 @@ codex-security 플러그인의 `security-diff-scan` 스킬을 Claude가 직접 �
    ```bash
    <python> <plugin_dir>/scripts/generate_rank_input.py copy-deep-review-input --rank-input <scan_dir>/artifacts/02_discovery/rank_input.jsonl --out <scan_dir>/artifacts/02_discovery/deep_review_input.jsonl
    ```
-   변경된 source-like 파일만 리뷰한다. 후보는 `normalize_candidates.py`로 단일 원장에 병합한다
-   (Phase 1과 동일).
+   diff 범위 인벤토리(`in_scope_files.txt`)도 **플러그인 스크립트로** 만든다. Phase 1의 `rg --files`
+   전체 목록을 쓰면 안 된다(범위가 저장소 전체가 된다):
+   ```bash
+   # refs
+   <python> <plugin_dir>/scripts/generate_in_scope_files.py --repo <repo_root> --scope . --diff-base <base> --diff-head <head> --diff-mode revisions --out <scan_dir>/artifacts/02_discovery/in_scope_files.txt
+   # working-tree
+   <python> <plugin_dir>/scripts/generate_in_scope_files.py --repo <repo_root> --scope . --diff-base <base> --diff-mode local-patch --out <scan_dir>/artifacts/02_discovery/in_scope_files.txt
+   ```
+   변경된 source-like 파일만 리뷰한다. 후보는 `normalize_candidates.py`로 단일 원장에 병합하되
+   (Phase 1과 동일), **diff 스캔은 `--allow-missing-in-scope`를 반드시 붙인다**:
+   ```bash
+   <python> <plugin_dir>/scripts/normalize_candidates.py --input <raw1.jsonl> [...] --out <scan_dir>/artifacts/02_discovery/candidate_ledger.jsonl --repo-root <repo_root> --in-scope-files <scan_dir>/artifacts/02_discovery/in_scope_files.txt --allow-missing-in-scope
+   ```
+   diff 인벤토리에는 **삭제된 경로**가 포함되며(예: `git rm` 된 파일), 이 플래그가 없으면
+   `in-scope file row N: No such file or directory`로 정규화가 실패한다(실측). 플래그를 붙여도
+   후보 location 파일의 실존 검사는 그대로 수행된다.
 3. **Validation (compact)** — Phase 1과 동일.
 4. **Attack Path (compact)** — Phase 1과 동일.
 5. **Canonical JSON** — Phase 1의 순서 있는 결과 매핑 적용. `coverage.mode`는 kind별 기대값
