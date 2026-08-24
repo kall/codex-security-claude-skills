@@ -133,7 +133,7 @@ bash skills/install.sh --copy --force --check
 
 ## 검증된 조합
 
-- 번들 플러그인: \`@openai/codex-security@0.1.3\` (플러그인 매니페스트 \`0.1.14\`)
+- 번들 플러그인: \`@openai/codex-security@0.1.18\` (플러그인 매니페스트 \`0.1.22\`)
 - Python 3.10+ / git / Node 22+(플러그인 npm 설치 시)
 - Linux · macOS (Windows 는 WSL)
 

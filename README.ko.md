@@ -60,7 +60,7 @@ Claude Code를 재시작한 뒤 호출한다:
 Claude Code(구독 로그인) · Python 3.10+ · git · codex-security 번들 플러그인.
 Node 22+는 플러그인 npm 설치와 공식 CLI 이력 조회에만 필요하다. Linux·macOS(Windows는 WSL).
 
-검증된 조합: `@openai/codex-security@0.1.3` (플러그인 매니페스트 `0.1.14`).
+검증된 조합: `@openai/codex-security@0.1.18` (플러그인 매니페스트 `0.1.22`).
 
 ## 개발
 

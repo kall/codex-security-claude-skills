@@ -170,20 +170,20 @@ python3 "${CLAUDE_SKILLS_DIR:-$HOME/.claude/skills}"/codex-security-scan/scripts
   --target-repo /path/to/target-repo --no-scan-dir
 ```
 
-새 PC(mise·저장소 없음, npm 전역 설치)에서의 실측 성공 출력:
+npm 전역 설치 환경에서의 성공 출력(플러그인 0.1.22 기준. 경로·Python 값은 환경마다 다르다):
 
 ```json
 {
   "ok": true,
   "pluginRoot": "<npm root -g>/@openai/codex-security/_bundled_plugin",
-  "pluginVersion": "0.1.14",
+  "pluginVersion": "0.1.22",
   "pluginSource": "npm-global",
   "python": { "path": "/usr/bin/python3.14", "version": "3.14.4", "source": "python3" },
   "scanDir": null,
   "scansRoot": null,
   "stateDir": "/home/<user>/.codex/state/plugins/codex-security",
   "repoRoot": "/path/to/target-repo",
-  "diagnostics": { "pluginAttempts": [ { "source": "npm-global", "result": "accepted", "pluginVersion": "0.1.14" } ] }
+  "diagnostics": { "pluginAttempts": [ { "source": "npm-global", "result": "accepted", "pluginVersion": "0.1.22" } ] }
 }
 ```
 
@@ -478,7 +478,7 @@ codex-security findings false-positive <occurrence-id> --reason "…"
 | `rg: command not found` | `git ls-files` 폴백으로 자동 진행(그 사실이 보고에 남는다) |
 | `running` 상태 좀비 행 | `list-stale --hours N`으로 나열 후 `close-stale --scan-id <id>`로 **명시적으로만** 정리 |
 | `codex-security: command not found` | 공식 CLI 조회 명령에만 필요하다. `npm install -g @openai/codex-security`(Node 22+) 또는 `npx @openai/codex-security …` |
-| 플러그인 버전 경고 | `pluginVersion`이 매핑 기준(0.1.14)과 다름 → 워크플로 지시가 바뀌었을 수 있으니 8절 재검증을 수행. 버전이 같아도 동작이 다를 수 있으므로 3.4절 프로브를 함께 본다 |
+| 플러그인 버전 경고 | `pluginVersion`이 매핑 기준(0.1.22)과 다름 → 워크플로 지시가 바뀌었을 수 있으니 8절 재검증을 수행. 버전이 같아도 동작이 다를 수 있으므로 3.4절 프로브를 함께 본다 |
 
 ---
 

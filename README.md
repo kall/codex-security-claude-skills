@@ -64,7 +64,7 @@ Claude Code (subscription login) · Python 3.10+ · git · the codex-security bu
 Node 22+ is only needed for the plugin's npm install and for querying the official CLI's
 history. Linux/macOS (Windows via WSL).
 
-Verified combination: `@openai/codex-security@0.1.3` (plugin manifest `0.1.14`).
+Verified combination: `@openai/codex-security@0.1.18` (plugin manifest `0.1.22`).
 
 ## Development
 

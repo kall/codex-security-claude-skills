@@ -44,7 +44,7 @@ description: >-
      (3.10+·tomli 조건을 통과한 절대 경로 — 이걸 그대로 쓴다), `<scan_dir>` = `scanDir`,
      `<repo_root>` = `repoRoot`.
    - **시작 고지**: 선택된 플러그인의 절대 경로와 `pluginVersion`을 사용자에게 알린다.
-     `pluginVersion`이 이 번역 지침 작성 기준(0.1.14)과 다르면 "플러그인 버전이 매핑 기준과
+     `pluginVersion`이 이 번역 지침 작성 기준(0.1.22)과 다르면 "플러그인 버전이 매핑 기준과
      다름 — 워크플로 지시가 바뀌었을 수 있음"을 경고한다.
    - `ok: false`이면 `stage`·`error`의 한국어 안내를 그대로 사용자에게 전하고 **중단**한다
      (플러그인 미설치 → `npm install -g @openai/codex-security`, 신뢰 게이트 위반 → 대상 저장소
