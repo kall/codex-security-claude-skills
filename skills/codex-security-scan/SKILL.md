@@ -79,6 +79,9 @@ description: >-
   `findingId`, `occurrenceId`, `fingerprints`, `sealedAt`, `artifacts`, `documentType`,
   `schemaVersion`, `scan.status`, `coverageRef`, `findingsRef`. `scan-manifest.json`은
   `scan.sealedAt`·`scan.artifacts`가 **없는 unsealed draft**로 쓴다.
+  (플러그인 0.1.22의 `scan.status`는 `completed`/`failed`/`canceled`/`interrupted` 열거형이며
+  finalizer가 결정한다. 이 경로는 항상 `completed`로 봉인되고, 값은 `report.md` 요약표의
+  `Scan outcome` 행에 표시된다.)
 - **모델 소유 식별자**: `ruleId`, `identity.anchor`, 선택 `identity.instance`는 **소문자 slug**
   규칙을 지킨다(예: `path-traversal.unvalidated-read`).
 - **R7 저장소 불변**: 스캔 중 **대상 저장소에 어떤 파일도 생성·수정하지 않는다.** 모든 중간
@@ -279,6 +282,11 @@ draft — R6 금지 필드 없음), `findings.json`, `coverage.json`을 쓰고, 
      변경 파일과 report.md 경로를 제시하고 세 선택지를 묻는다: **(a)** 변경을 되돌린 뒤 `complete` 재시도,
      **(b)** `fail --scan-id <id> --message <사유>`로 실패 기록 종결, **(c)** 보류(기본값). 좀비 `running` 행은
      `list-stale`로 나열하고 `close-stale --scan-id <id>`로 명시적으로만 정리한다.
+   - **플러그인 0.1.18(매니페스트 0.1.22)부터**: `complete-scan`이 계약 오류로 실패할 때, 봉인 문서를
+     이미 쓴 뒤이거나 `--mode deep` 스캔이면 플러그인이 **자동으로 `fail-scan`을 수행**한다. 이때
+     스캔 행은 `running`이 아니라 `failed`로 남으므로 (a) 재시도가 불가능하다 — 상태를 `contract`
+     조회로 먼저 확인하고, 재스캔이 필요하면 새 스캔으로 등록한다. 워킹트리 게이트 실패는 이
+     자동 전이 대상이 아니므로 3선택지 분기를 그대로 쓴다.
 
 ## 최종 보고 (R13, 한국어)
 
