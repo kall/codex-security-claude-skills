@@ -67,6 +67,12 @@ codex-security 플러그인의 `security-diff-scan` 스킬을 Claude가 직접 �
    diff 인벤토리에는 **삭제된 경로**가 포함되며(예: `git rm` 된 파일), 이 플래그가 없으면
    `in-scope file row N: No such file or directory`로 정규화가 실패한다(실측). 플래그를 붙여도
    후보 location 파일의 실존 검사는 그대로 수행된다.
+
+   **삭제된 파일에 대한 finding 처리**: head 시점에 존재하지 않는 경로만 `locations`에 갖는
+   finding은 `coverage_reconcile.py`가 거부한다("소스 루트 하위에 존재하지 않습니다" — 플러그인
+   finalizer 자체는 통과시키지만 우리 정산 게이트가 더 엄격하다, 실측). 그런 후보는 finding 대신
+   `coverage.deferred`(또는 `not_applicable` 서피스)로 기록하고 삭제 사실을 사유에 적는다.
+   review_log에는 base 시점에서 읽었음을 남긴다.
 3. **Validation (compact)** — Phase 1과 동일.
 4. **Attack Path (compact)** — Phase 1과 동일.
 5. **Canonical JSON** — Phase 1의 순서 있는 결과 매핑 적용. `coverage.mode`는 kind별 기대값
