@@ -193,9 +193,12 @@ npm 전역 설치 환경에서의 성공 출력(플러그인 0.1.22 기준. 경�
 
 ### 3.4 플러그인 사본별 동작 차이 확인 (권장)
 
-**`pluginVersion`만으로는 동작을 구분할 수 없다.** npm 배포본(`@openai/codex-security@0.1.3`)과
-GitHub 저장소 체크아웃이 **둘 다 플러그인 매니페스트 0.1.14를 보고하면서 워킹트리 게이트 동작이
-다르다**(실측). 아래로 내 PC가 어느 쪽인지 확인해 둔다.
+**플러그인 0.1.22(npm 0.1.18) 기준으로는 두 사본이 같게 동작한다** — npm 배포본과 GitHub 저장소
+체크아웃 모두 워킹트리가 변경돼도 **종결은 성공하고 경고만** 남긴다(2026-08-25 실측). 하드 실패
+사본을 만드는 심볼(`require_unchanged_target`)은 현재 배포본에 존재하지 않는다.
+
+과거(플러그인 0.1.14)에는 **같은 매니페스트 버전에서도 사본에 따라 처리가 달랐으므로**(하드 실패
+vs 경고), 오래된 사본을 쓰거나 상류가 다시 바꿀 수 있다는 전제로 아래 프로브를 유지한다.
 
 ```bash
 PLUGIN=$(python3 "${CLAUDE_SKILLS_DIR:-$HOME/.claude/skills}"/codex-security-scan/scripts/bootstrap.py \
@@ -206,14 +209,16 @@ grep -q "def require_unchanged_target" "$PLUGIN/scripts/workbench_db.py" \
   || echo "경고 사본: 변경돼도 종결은 성공하고 경고만 남는다(결과는 등록 시점 스냅샷 기준)"
 ```
 
-| 사본 | 스캔 중 워킹트리 변경 후 종결 시 | 실측 메시지 |
+| 사본 / 시점 | 스캔 중 워킹트리 변경 후 종결 시 | 실측 메시지 |
 | --- | --- | --- |
-| GitHub 저장소 체크아웃 | `complete-scan` **실패**(스캔 행은 `running` 유지) → 스킬이 3선택지를 묻는다 | `Working-tree contents changed while the scan was running. Start a new scan.` |
-| npm 배포본 0.1.3 | **성공 종결 + 경고** | `Working-tree contents changed while the scan was running; results were saved for the original snapshot.` |
+| npm 배포본 0.1.18 (매니페스트 0.1.22) | **성공 종결 + 경고** | `Working-tree contents changed while the scan was running; results were saved for the original snapshot.` |
+| GitHub 저장소 체크아웃 0.1.18 (매니페스트 0.1.22) | **성공 종결 + 경고**(과거의 하드 실패 동작 없음) | 위와 동일 |
+| npm 배포본 0.1.3 (매니페스트 0.1.14, 과거 실측) | **성공 종결 + 경고** | 위와 동일 |
+| GitHub 저장소 체크아웃 0.1.14 (과거 실측) | `complete-scan` **실패**(스캔 행은 `running` 유지) → 스킬이 3선택지를 묻는다 | `Working-tree contents changed while the scan was running. Start a new scan.` |
 
-두 사본은 게이트 조건(등록 시 저장한 스냅샷 다이제스트 비교)은 같고 **위반 시 처리만** 다르다
-(하드 실패 vs 경고). 어느 쪽이든 스킬은 정직하게 보고한다 — 실패면 3선택지를 묻고, 경고면 그
-문구를 최종 보고에 그대로 싣는다(둘 다 실측 확인).
+게이트 조건(등록 시 저장한 스냅샷 다이제스트 비교)은 어느 사본이든 같고 **위반 시 처리만** 달랐다.
+스킬은 양쪽 모두 정직하게 보고한다 — 실패면 3선택지를 묻고, 경고면 그 문구를 최종 보고에 그대로
+싣는다. 현재 배포본에서는 경고 경로만 관측되지만, 하드 실패 분기는 오래된 사본 대비로 남겨 둔다.
 
 다만 **결과의 기준 시점은 등록 시점 스냅샷**이므로, 정확한 스캔을 원하면 사본과 무관하게 스캔 전
 commit/stash를 권한다.

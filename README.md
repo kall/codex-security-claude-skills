@@ -76,9 +76,10 @@ bash skills/install.sh --link --check     # linked install: edits take effect im
 
 This repository does not contain the upstream source (`sdk/`), so developers also need to
 obtain the plugin separately — either `npm install -g @openai/codex-security`, or clone the
-upstream repo and set `CODEX_SECURITY_SDK_REPO=<clone path>`. **Working-tree gate handling
-differs between copies even at the same plugin manifest version** (hard failure vs. warning),
-so comparing two copies requires an upstream clone. See section 3.4 of the manual for details.
+upstream repo and set `CODEX_SECURITY_SDK_REPO=<clone path>`. As of plugin manifest `0.1.22`
+both copies handle the working-tree gate the same way (completion succeeds with a warning);
+older copies (`0.1.14`) diverged between hard failure and warning, so `--check` still probes
+for it. See section 3.4 of the manual for details.
 
 Check for contract regressions after updating the plugin:
 
