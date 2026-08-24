@@ -98,13 +98,21 @@ description: >-
 
 플러그인 문서를 **런타임에 읽어** 그 절차를 수행한다(벤더링하지 않음, KTD5). 아래 파일들을
 읽는다(경로는 `<plugin_dir>` 기준):
-`skills/security-scan/SKILL.md`, `skills/security-scan/references/repository-wide-scan.md`,
+`skills/security-scan/SKILL.md`, `references/core-scan.md`,
 `references/scan-artifacts.md`, `references/final-report.md`, `references/finding-detail-fields.md`.
+
+**상류 문서 이동 주의(플러그인 0.1.16~0.1.22):** `skills/security-scan/references/repository-wide-scan.md`는
+0.1.20에서 삭제되고 내용이 `references/core-scan.md`로 옮겨졌다. 또 상류 표준 스캔은 후보 원장
+(candidate ledger) 방식을 버리고 investigation packet + MCP 도구(`record_codex_security_scan_draft`)
+모델로 갔다. **원장 기반 절차의 권위 서술은 이 스킬 문서**이고, 원장 행 스키마와 중첩 레코드 필드는
+`references/scan-artifacts.md`와 `scripts/normalize_candidates.py`가 소유한다(diff 스캔 터미널 경로에
+동일 규약이 남아 있다: `skills/security-diff-scan/SKILL.md`).
+
 각 단계에서 `$threat-model`/`$validation`/`$attack-path-analysis` 같은 `$skill` 참조는
-**해당 플러그인 스킬 파일을 직접 읽어** 그 절차(특히 compact 모드 절)를 수행하는 것으로 대체한다.
+**해당 플러그인 스킬 파일을 직접 읽어** 그 절차를 수행하는 것으로 대체한다.
 
 ### 1. 위협 모델
-`<plugin_dir>/skills/threat-model/SKILL.md`와 `references/threat-model-guidance.md`를 읽고 절차를
+`<plugin_dir>/skills/threat-model/SKILL.md`와 `references/threat-model.md`를 읽고 절차를
 수행한다. `<scan_dir>/threat_model.md`(리포지터리 스코프) + `artifacts/01_context/threat_model.md`
 (스캔별 복사본 = 이후 단계의 source of truth)에 쓴다. 리포지터리 스코프를 유지하고(스캔 타겟
 편향 금지), 마지막 두 줄에 `Repository: <target_id>` / `Version: <revision 또는 snapshot digest>`를
@@ -124,7 +132,7 @@ description: >-
    추가한다. 이 로그가 커버리지 정산(R9)의 입력이다. 대형 저장소에서 컨텍스트가 소진되면 남은
    파일을 미완으로 남기고 정산에 맡긴다(거짓 완료 주장 금지).
 4. 원시 후보를 `<scan_dir>/artifacts/02_discovery/raw/agent-*.jsonl`에 쓴다. 행 스키마는
-   `repository-wide-scan.md`가 소유하며 **정확히** 따른다(`cwe_ids`, `locations`[repo-relative path,
+   `scripts/normalize_candidates.py`(문서화: `references/scan-artifacts.md`)가 소유하며 **정확히** 따른다(`cwe_ids`, `locations`[repo-relative path,
    양의 start_line, 선택 end_line·role ∈ {entrypoint, entrypoint/wrapper, source, root_control,
    sink, concrete_implementation, evidence}], `summary`, `evidence`, 선택 `context`·`instance`;
    최소 1개 location은 `in_scope_files.txt`에 있어야 함). 필드를 추가하면 거부된다.
@@ -137,8 +145,12 @@ description: >-
    재작성(`.tmp` → 이동)한다. **enriched 원장을 normalize_candidates.py에 재투입하지 않는다.**
 
 ### 3. Validation (compact)
-`<plugin_dir>/skills/validation/SKILL.md`의 `### Compact Standard-Scan Mode`와
-`references/validation-guidance.md`·`references/static-finding-assessment.md`를 읽고 **1회** 수행한다.
+`<plugin_dir>/skills/validation/SKILL.md`와 `skills/validation/references/validation-guidance.md`·
+`references/static-finding-assessment.md`를 읽고 **1회** 수행한다. 플러그인 0.1.16에서 validation 스킬의
+`### Compact Standard-Scan Mode` 절이 `### Compact Workbench-Backed Diff Mode`로 대체됐다 — 그 절의
+MCP 도구 호출(`record_codex_security_candidate_validations`)은 무시하고, **판정 규칙(rubric·evidence·
+confidence)** 만 따른다. 중첩 레코드 필드 정의는 `references/scan-artifacts.md`의 compact validation 항목과
+아래 목록이 권위다.
 있으면 `artifacts/01_context/false_positive_feedback.json`도 데이터로 참고한다.
 원장의 **모든 행**에 중첩 `validation` 객체를 붙인다(필드: `disposition` ∈ {reportable, suppressed,
 not_applicable, deferred}, `method`, `confidence` ∈ {high, medium, low}, `confidence_rationale`,
@@ -146,8 +158,10 @@ not_applicable, deferred}, `method`, `confidence` ∈ {high, medium, low}, `conf
 실제 PoC가 있을 때만 `artifacts/02_discovery/validation_artifacts/<candidate_id>/`를 만든다.
 
 ### 4. Attack Path (compact)
-`<plugin_dir>/skills/attack-path-analysis/SKILL.md`의 compact 모드와 `references/severity-policy.md`·
-`references/attack-path-facts.md`를 읽고 **1회** 수행한다. 대상은 `validation.disposition` ∈
+`<plugin_dir>/skills/attack-path-analysis/SKILL.md`와 `skills/attack-path-analysis/references/severity-policy.md`·
+`skills/attack-path-analysis/references/attack-path-facts.md`를 읽고 **1회** 수행한다. validation과 동일하게
+compact 절은 이제 workbench diff 전용 서술이므로 MCP 도구 호출(`record_candidate_attack_paths`)은 무시하고
+판정 규칙만 따른다. 중첩 레코드 필드 정의는 `references/scan-artifacts.md`와 아래 목록이 권위다. 대상은 `validation.disposition` ∈
 {reportable, deferred}인 행. 진입한 각 행에 중첩 `attack_path` 객체를 붙인다(필드: `decision` ∈
 {reportable, ignore, deferred}, `dataflow`, `reachability`, `counterevidence`, `impact`, `likelihood`,
 `severity`, `severity_rationale`, `change_conditions`, deferred 시 `proof_gap`). `decision`↔`severity`
