@@ -18,7 +18,7 @@ is installed at runtime.
 Download the release tarball and install it. Or just paste this into a Claude Code session:
 
 ```
-Install https://github.com/kall/codex-security-claude-skills/releases/tag/v0.1.0
+Install https://github.com/kall/codex-security-claude-skills/releases/tag/v0.1.18
 ```
 
 ```bash

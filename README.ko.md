@@ -16,7 +16,7 @@ LLM 두뇌 역할은 Claude Code 세션 자신이 맡고, 검증·ID 파생·봉
 릴리즈 tarball을 받아 설치한다. 아니면 Claude Code 세션에 이 문구를 그대로 복사/붙여넣기해도 된다:
 
 ```
-https://github.com/kall/codex-security-claude-skills/releases/tag/v0.1.0 이거 설치해줘
+https://github.com/kall/codex-security-claude-skills/releases/tag/v0.1.18 이거 설치해줘
 ```
 
 ```bash
