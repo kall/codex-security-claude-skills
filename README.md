@@ -2,7 +2,7 @@
 
 English | [한국어](README.ko.md)
 
-6 Claude Code skills that run the [codex-security](https://github.com/openai/codex-security)
+7 Claude Code skills that run the [codex-security](https://github.com/openai/codex-security)
 security scan workflow using **only a Claude Code subscription login** — no OpenAI/Codex
 authentication required.
 
@@ -55,6 +55,7 @@ Full usage, environment variables, and troubleshooting:
 | `codex-security-diff-scan` | Scans only a diff (refs or working-tree) | No |
 | `codex-security-validate` | Judges a candidate finding's disposition | No |
 | `codex-security-patch` | Minimal fix for a security issue — two-stage approval | Yes (after approval) |
+| `codex-security-verify-fix` | Verifies whether an applied fix actually closed the original vulnerability (read-only) | No |
 | `codex-security-scan-match` | Matches findings with the same root cause across two completed scans | No |
 | `codex-security-deep-scan` | Reduced multi-pass deep scan (deep-lite — not equivalent to the official deep scan) | No |
 
@@ -64,7 +65,7 @@ Claude Code (subscription login) · Python 3.10+ · git · the codex-security bu
 Node 22+ is only needed for the plugin's npm install and for querying the official CLI's
 history. Linux/macOS (Windows via WSL).
 
-Verified combination: `@openai/codex-security@0.1.3` (plugin manifest `0.1.14`).
+Verified combination: `@openai/codex-security@0.1.18` (plugin manifest `0.1.22`).
 
 ## Development
 
@@ -76,9 +77,10 @@ bash skills/install.sh --link --check     # linked install: edits take effect im
 
 This repository does not contain the upstream source (`sdk/`), so developers also need to
 obtain the plugin separately — either `npm install -g @openai/codex-security`, or clone the
-upstream repo and set `CODEX_SECURITY_SDK_REPO=<clone path>`. **Working-tree gate handling
-differs between copies even at the same plugin manifest version** (hard failure vs. warning),
-so comparing two copies requires an upstream clone. See section 3.4 of the manual for details.
+upstream repo and set `CODEX_SECURITY_SDK_REPO=<clone path>`. As of plugin manifest `0.1.22`
+both copies handle the working-tree gate the same way (completion succeeds with a warning);
+older copies (`0.1.14`) diverged between hard failure and warning, so `--check` still probes
+for it. See section 3.4 of the manual for details.
 
 Check for contract regressions after updating the plugin:
 

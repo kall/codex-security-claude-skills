@@ -3,7 +3,7 @@
 [English](README.md) | 한국어
 
 OpenAI/Codex 인증 없이 **Claude Code 구독 로그인만으로** [codex-security](https://github.com/openai/codex-security)
-의 보안 스캔 워크플로를 실행하는 Claude Code 스킬 6종.
+의 보안 스캔 워크플로를 실행하는 Claude Code 스킬 7종.
 
 LLM 두뇌 역할은 Claude Code 세션 자신이 맡고, 검증·ID 파생·봉인·리포트 생성은 codex-security
 번들 플러그인의 결정론(deterministic) Python 스크립트가 담당한다. 플러그인은 벤더링하지 않고
@@ -52,6 +52,7 @@ Claude Code를 재시작한 뒤 호출한다:
 | `codex-security-diff-scan` | 변경분(refs 또는 working-tree)만 스캔 | 없음 |
 | `codex-security-validate` | 후보 finding 진위 판정(disposition) | 없음 |
 | `codex-security-patch` | 보안 이슈 최소 수정 — 2단 승인 | 있음(승인 후) |
+| `codex-security-verify-fix` | 적용된 수정이 원래 취약점을 실제로 닫았는지 검증(읽기 전용) | 없음 |
 | `codex-security-scan-match` | 완료된 스캔 2개 사이 동일 근본 원인 finding 매칭 | 없음 |
 | `codex-security-deep-scan` | 다중 패스 심층 스캔의 축소판(deep-lite — 공식 deep과 비동등) | 없음 |
 
@@ -60,7 +61,7 @@ Claude Code를 재시작한 뒤 호출한다:
 Claude Code(구독 로그인) · Python 3.10+ · git · codex-security 번들 플러그인.
 Node 22+는 플러그인 npm 설치와 공식 CLI 이력 조회에만 필요하다. Linux·macOS(Windows는 WSL).
 
-검증된 조합: `@openai/codex-security@0.1.3` (플러그인 매니페스트 `0.1.14`).
+검증된 조합: `@openai/codex-security@0.1.18` (플러그인 매니페스트 `0.1.22`).
 
 ## 개발
 
@@ -72,9 +73,9 @@ bash skills/install.sh --link --check     # 링크 설치: 수정이 즉시 반�
 
 이 저장소에는 업스트림 소스(`sdk/`)가 없으므로 개발자도 플러그인을 별도로 확보한다 —
 `npm install -g @openai/codex-security`, 또는 업스트림을 clone해 두고
-`CODEX_SECURITY_SDK_REPO=<clone 경로>`를 지정한다. **같은 플러그인 매니페스트 버전에서도 사본에
-따라 워킹트리 게이트 처리가 다르므로**(하드 실패 vs 경고), 두 사본을 비교하려면 업스트림 clone이
-필요하다. 자세한 내용은 매뉴얼 3.4절.
+`CODEX_SECURITY_SDK_REPO=<clone 경로>`를 지정한다. 플러그인 매니페스트 `0.1.22`에서는 두 사본의
+워킹트리 게이트 처리가 **같다**(종결 성공 + 경고). 과거 `0.1.14`에서는 사본에 따라 하드 실패와
+경고로 갈렸으므로 `--check`는 여전히 이를 프로브한다. 자세한 내용은 매뉴얼 3.4절.
 
 플러그인 업데이트 후 계약 회귀 확인:
 

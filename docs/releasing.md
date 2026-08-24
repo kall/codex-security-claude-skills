@@ -38,7 +38,7 @@ CLAUDE_SKILLS_DIR="$T/skills" bash codex-security-claude-skills-*/skills/install
 bash codex-security-claude-skills-*/docs/verification/scripts/repro-u4.sh
 ```
 
-기대: 체크섬 OK → 스킬 6종 설치 → 프로브가 플러그인 경로·버전·게이트 사본 보고 →
+기대: 체크섬 OK → 스킬 7종 설치 → 프로브가 플러그인 경로·버전·게이트 사본 보고 →
 `ALL ASSERTIONS PASSED`.
 
 플러그인이 없는 PC도 함께 확인하려면 npm 전역 경로를 빈 디렉터리로 가려 프로브가 exit 1 +

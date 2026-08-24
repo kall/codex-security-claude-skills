@@ -1,6 +1,6 @@
 # Claude 보안 스킬 — 설치 및 사용 가이드
 
-**Claude Code만 설치된 PC**에서 이 스킬 6종을 설치해 쓰는 방법을 다룬다. OpenAI/Codex 인증
+**Claude Code만 설치된 PC**에서 이 스킬 7종을 설치해 쓰는 방법을 다룬다. OpenAI/Codex 인증
 (ChatGPT 로그인, `OPENAI_API_KEY`)은 **필요하지 않다** — Claude Code 구독 로그인만 있으면 된다.
 
 LLM 두뇌 역할은 Claude Code 세션 자신이 맡고, 검증·ID 파생·봉인·리포트 생성은 `codex-security`
@@ -56,6 +56,7 @@ bash "$PKG/skills/install.sh" --check-only
 | `codex-security-diff-scan` | 변경분(커밋/브랜치 refs 또는 working-tree)만 스캔 | 없음 |
 | `codex-security-validate` | 후보 finding 진위 판정(disposition) | 없음 |
 | `codex-security-patch` | 보안 이슈 최소 수정 — **2단 승인** | **있음(승인 후)** |
+| `codex-security-verify-fix` | 적용된 수정이 원래 취약점을 실제로 닫았는지 검증(**읽기 전용**) | 없음 |
 | `codex-security-scan-match` | 완료된 스캔 2개 사이 동일 근본 원인 finding 매칭 | 없음 |
 | `codex-security-deep-scan` | 다중 패스 심층 스캔의 축소판(**deep-lite** — 공식 deep과 비동등) | 없음 |
 
@@ -145,7 +146,7 @@ bash skills/install.sh --check-only     # 설치 없이 프로브만
 | `--force` | 대상 경로가 이미 있을 때 덮어쓰기 |
 
 스킬 이름을 인자로 주면 일부만 설치할 수 있지만, `bootstrap.py`는 `codex-security-scan`에만
-있고 모든 스킬이 이를 참조하므로 **6종 전체 설치를 기본으로 두라**.
+있고 모든 스킬이 이를 참조하므로 **7종 전체 설치를 기본으로 두라**.
 
 설치 위치는 `${CLAUDE_SKILLS_DIR:-$HOME/.claude/skills}/<스킬이름>`이다. 대상 경로가 이미 있으면
 설치를 **거부**하며 `--force`로만 덮어쓴다.
@@ -160,7 +161,7 @@ bash skills/install.sh --check-only     # 설치 없이 프로브만
 
 ### 3.3 설치 확인
 
-Claude Code를 재시작하고 스킬 목록에 6종이 보이는지, 그리고 부트스트랩이 플러그인을 찾는지
+Claude Code를 재시작하고 스킬 목록에 7종이 보이는지, 그리고 부트스트랩이 플러그인을 찾는지
 확인한다.
 
 ```bash
@@ -170,20 +171,20 @@ python3 "${CLAUDE_SKILLS_DIR:-$HOME/.claude/skills}"/codex-security-scan/scripts
   --target-repo /path/to/target-repo --no-scan-dir
 ```
 
-새 PC(mise·저장소 없음, npm 전역 설치)에서의 실측 성공 출력:
+npm 전역 설치 환경에서의 성공 출력(플러그인 0.1.22 기준. 경로·Python 값은 환경마다 다르다):
 
 ```json
 {
   "ok": true,
   "pluginRoot": "<npm root -g>/@openai/codex-security/_bundled_plugin",
-  "pluginVersion": "0.1.14",
+  "pluginVersion": "0.1.22",
   "pluginSource": "npm-global",
   "python": { "path": "/usr/bin/python3.14", "version": "3.14.4", "source": "python3" },
   "scanDir": null,
   "scansRoot": null,
   "stateDir": "/home/<user>/.codex/state/plugins/codex-security",
   "repoRoot": "/path/to/target-repo",
-  "diagnostics": { "pluginAttempts": [ { "source": "npm-global", "result": "accepted", "pluginVersion": "0.1.14" } ] }
+  "diagnostics": { "pluginAttempts": [ { "source": "npm-global", "result": "accepted", "pluginVersion": "0.1.22" } ] }
 }
 ```
 
@@ -193,9 +194,12 @@ python3 "${CLAUDE_SKILLS_DIR:-$HOME/.claude/skills}"/codex-security-scan/scripts
 
 ### 3.4 플러그인 사본별 동작 차이 확인 (권장)
 
-**`pluginVersion`만으로는 동작을 구분할 수 없다.** npm 배포본(`@openai/codex-security@0.1.3`)과
-GitHub 저장소 체크아웃이 **둘 다 플러그인 매니페스트 0.1.14를 보고하면서 워킹트리 게이트 동작이
-다르다**(실측). 아래로 내 PC가 어느 쪽인지 확인해 둔다.
+**플러그인 0.1.22(npm 0.1.18) 기준으로는 두 사본이 같게 동작한다** — npm 배포본과 GitHub 저장소
+체크아웃 모두 워킹트리가 변경돼도 **종결은 성공하고 경고만** 남긴다(2026-08-25 실측). 하드 실패
+사본을 만드는 심볼(`require_unchanged_target`)은 현재 배포본에 존재하지 않는다.
+
+과거(플러그인 0.1.14)에는 **같은 매니페스트 버전에서도 사본에 따라 처리가 달랐으므로**(하드 실패
+vs 경고), 오래된 사본을 쓰거나 상류가 다시 바꿀 수 있다는 전제로 아래 프로브를 유지한다.
 
 ```bash
 PLUGIN=$(python3 "${CLAUDE_SKILLS_DIR:-$HOME/.claude/skills}"/codex-security-scan/scripts/bootstrap.py \
@@ -206,14 +210,16 @@ grep -q "def require_unchanged_target" "$PLUGIN/scripts/workbench_db.py" \
   || echo "경고 사본: 변경돼도 종결은 성공하고 경고만 남는다(결과는 등록 시점 스냅샷 기준)"
 ```
 
-| 사본 | 스캔 중 워킹트리 변경 후 종결 시 | 실측 메시지 |
+| 사본 / 시점 | 스캔 중 워킹트리 변경 후 종결 시 | 실측 메시지 |
 | --- | --- | --- |
-| GitHub 저장소 체크아웃 | `complete-scan` **실패**(스캔 행은 `running` 유지) → 스킬이 3선택지를 묻는다 | `Working-tree contents changed while the scan was running. Start a new scan.` |
-| npm 배포본 0.1.3 | **성공 종결 + 경고** | `Working-tree contents changed while the scan was running; results were saved for the original snapshot.` |
+| npm 배포본 0.1.18 (매니페스트 0.1.22) | **성공 종결 + 경고** | `Working-tree contents changed while the scan was running; results were saved for the original snapshot.` |
+| GitHub 저장소 체크아웃 0.1.18 (매니페스트 0.1.22) | **성공 종결 + 경고**(과거의 하드 실패 동작 없음) | 위와 동일 |
+| npm 배포본 0.1.3 (매니페스트 0.1.14, 과거 실측) | **성공 종결 + 경고** | 위와 동일 |
+| GitHub 저장소 체크아웃 0.1.14 (과거 실측) | `complete-scan` **실패**(스캔 행은 `running` 유지) → 스킬이 3선택지를 묻는다 | `Working-tree contents changed while the scan was running. Start a new scan.` |
 
-두 사본은 게이트 조건(등록 시 저장한 스냅샷 다이제스트 비교)은 같고 **위반 시 처리만** 다르다
-(하드 실패 vs 경고). 어느 쪽이든 스킬은 정직하게 보고한다 — 실패면 3선택지를 묻고, 경고면 그
-문구를 최종 보고에 그대로 싣는다(둘 다 실측 확인).
+게이트 조건(등록 시 저장한 스냅샷 다이제스트 비교)은 어느 사본이든 같고 **위반 시 처리만** 달랐다.
+스킬은 양쪽 모두 정직하게 보고한다 — 실패면 3선택지를 묻고, 경고면 그 문구를 최종 보고에 그대로
+싣는다. 현재 배포본에서는 경고 경로만 관측되지만, 하드 실패 분기는 오래된 사본 대비로 남겨 둔다.
 
 다만 **결과의 기준 시점은 등록 시점 스냅샷**이므로, 정확한 스캔을 원하면 사본과 무관하게 스캔 전
 commit/stash를 권한다.
@@ -364,7 +370,28 @@ outcome은 `fixed`(수정 적용 **및 게이트 통과**) / `no_change`(이미 
 > **SKILL.md의 2단 승인 지침이 유일한 게이트**다. 스킬은 이 사실을 먼저 고지한다. 보안 수정을
 > 검토하며 진행하려면 기본 퍼미션 모드에서 쓰는 편이 안전하다.
 
-### 5.6 스캔 간 매칭 — `/codex-security-scan-match`
+### 5.6 수정 검증 — `/codex-security-verify-fix` (읽기 전용)
+
+```
+/codex-security-verify-fix <findings.json 또는 finding 서술 파일/텍스트>
+```
+
+이미 적용된 수정이 **원래 취약점을 실제로 닫았는지**만 판정한다. 저장소를 변경하지 않는다
+(파일 생성·수정·패치 적용·커밋·아티팩트 쓰기 없음). `findings.json`을 주면 파일 순서 그대로
+finding별로 1건씩 판정한다.
+
+판정값은 `fixed`(경계가 닫혔고 정상 동작도 유지됨이 입증) / `still_vulnerable`(원래 경로가 여전히
+도달 가능함이 입증) / `inconclusive`(저장소 불일치·컨텍스트 부족·관련 검사 실행 불가 등 증명 공백)
+3값이며, JSON 결과 뒤에 한국어 요약이 붙는다.
+
+**파일이 사라졌거나 함수명이 바뀐 것은 수정의 증거가 아니다** — 스킬은 이동·리팩터링된 코드를
+따라가 재추적한다. 티켓 종료·무관한 테스트 통과·"새 스캔에 안 나옴"도 증거로 인정하지 않는다.
+
+> 재현기·테스트 등 **저장소가 정의한 명령**을 돌리려면 `codex-security-patch`와 같은 방식으로
+> 명령 원문과 정의 파일을 제시하고 **별도 승인**을 받는다(기본 미실행). 미승인이면 정적 근거로만
+> 판정하고 못 돌린 검사를 증명 공백으로 남긴다 — 대개 `inconclusive`가 된다.
+
+### 5.7 스캔 간 매칭 — `/codex-security-scan-match`
 
 ```
 /codex-security-scan-match <before-scan-id> <after-scan-id>
@@ -382,9 +409,9 @@ outcome은 `fixed`(수정 적용 **및 게이트 통과**) / `no_change`(이미 
 codex-security scans compare <before-scan-id> <after-scan-id>
 ```
 
-두 스캔 모두 5.7절 워크벤치 등록을 거쳐야 하며, 일괄 매칭(`--all`)은 지원하지 않는다(쌍 단위만).
+두 스캔 모두 5.9절 워크벤치 등록을 거쳐야 하며, 일괄 매칭(`--all`)은 지원하지 않는다(쌍 단위만).
 
-### 5.7 deep-lite 스캔 — `/codex-security-deep-scan`
+### 5.8 deep-lite 스캔 — `/codex-security-deep-scan`
 
 ```
 /codex-security-deep-scan /path/to/target-repo
@@ -402,7 +429,7 @@ codex-security scans compare <before-scan-id> <after-scan-id>
 표준 스캔보다 시간과 컨텍스트를 훨씬 많이 쓴다. 최종 요약에는 워커별 후보 분포 표가 포함되어
 조용히 "후보 없음"을 반환한 워커를 감지할 수 있다.
 
-### 5.8 워크벤치 이력 통합 (선택)
+### 5.9 워크벤치 이력 통합 (선택)
 
 스캔을 공식 CLI 이력과 호환시키려면 워크벤치 상태 DB에 등록·종결한다. 순수 로컬 스캔만 원하면
 건너뛰면 되고, 그 스캔은 `scans list`에 나타나지 않는다. 스킬에 "이력에 등록해줘"라고 말하면
@@ -478,7 +505,7 @@ codex-security findings false-positive <occurrence-id> --reason "…"
 | `rg: command not found` | `git ls-files` 폴백으로 자동 진행(그 사실이 보고에 남는다) |
 | `running` 상태 좀비 행 | `list-stale --hours N`으로 나열 후 `close-stale --scan-id <id>`로 **명시적으로만** 정리 |
 | `codex-security: command not found` | 공식 CLI 조회 명령에만 필요하다. `npm install -g @openai/codex-security`(Node 22+) 또는 `npx @openai/codex-security …` |
-| 플러그인 버전 경고 | `pluginVersion`이 매핑 기준(0.1.14)과 다름 → 워크플로 지시가 바뀌었을 수 있으니 8절 재검증을 수행. 버전이 같아도 동작이 다를 수 있으므로 3.4절 프로브를 함께 본다 |
+| 플러그인 버전 경고 | `pluginVersion`이 매핑 기준(0.1.22)과 다름 → 워크플로 지시가 바뀌었을 수 있으니 8절 재검증을 수행. 버전이 같아도 동작이 다를 수 있으므로 3.4절 프로브를 함께 본다 |
 
 ---
 

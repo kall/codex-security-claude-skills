@@ -240,6 +240,10 @@ make_draft() { "${PY[@]}" "$DRAFT_PY" "$@"; }
 say "0. 작업 영역 초기화 + 합성 git 저장소 생성"
 rm -rf "$REPO" "$SCAN" "$SCAN2" "$OUT/state" "$OUT"/scan3 "$OUT"/probe-*
 mkdir -p "$REPO" "$SCAN" "$SCAN2" "$OUT/state"
+# 플러그인 0.1.16(npm 0.1.9)부터 register-cli-scan 은 scan-dir 이 0700 이 아니면 거부한다
+# ("Scan directory must not be accessible to other users (chmod 700)."). 실제 스킬 경로에서는
+# bootstrap.py 가 0700 으로 만들지만, 이 스크립트는 직접 만들므로 여기서 맞춘다.
+chmod 700 "$SCAN" "$SCAN2" "$OUT/state"
 (
   cd "$REPO"
   # -b 플래그 대신 init.defaultBranch 설정으로 결정론적 브랜치명을 준다.
@@ -305,7 +309,7 @@ echo "report.md sha256     = $REPORT_SHA_BEFORE" | tee -a "$LOG"
 echo "results.sarif sha256 = $SARIF_SHA_BEFORE" | tee -a "$LOG"
 
 # ---------------------------------------------------------------------------
-say "S5. 저장소 1줄 수정 후 complete-scan — working-tree 게이트 실패 기대 (exit 1)"
+say "S5. 저장소 1줄 수정 후 complete-scan — 게이트 반응 관측 (하드 실패 사본 exit 1 / 경고 사본 exit 0)"
 printf 'def extract(path):\n    return open(path).read()  # u3 modification\n' > "$REPO/src/extract.py"
 git -C "$REPO" status --porcelain | tee -a "$LOG"
 run "S5 complete-scan (modified repo)" wb complete-scan --scan-id "$SCAN_ID"
@@ -316,7 +320,7 @@ if [ -n "$REPORT_SHA_BEFORE" ] && [ "$REPORT_SHA_BEFORE" = "$(sha "$SCAN/report.
   echo "report.md     : 무변경 OK" | tee -a "$LOG"; else echo "report.md     : 변경됨/소실 FAIL" | tee -a "$LOG"; fi
 if [ -n "$SARIF_SHA_BEFORE" ] && [ "$SARIF_SHA_BEFORE" = "$(sha "$SCAN/exports/results.sarif")" ]; then
   echo "results.sarif : 무변경 OK" | tee -a "$LOG"; else echo "results.sarif : 변경됨/소실 FAIL" | tee -a "$LOG"; fi
-run "S5 validate_scan_contract (게이트 실패 후)" "${PY[@]}" "$SCRIPTS/validate_scan_contract.py" --scan-dir "$SCAN"
+run "S5 validate_scan_contract (게이트 반응 후)" "${PY[@]}" "$SCRIPTS/validate_scan_contract.py" --scan-dir "$SCAN"
 
 say "S6. 수정 되돌리고 complete-scan 재시도 — 성공 기대 (exit 0)"
 git -C "$REPO" checkout -- src/extract.py
@@ -357,7 +361,7 @@ print('finding_occurrences:', c.execute('SELECT COUNT(*) FROM finding_occurrence
 probe() {
   local label="$1" mismatch="$2" seal="$3"
   local dir="$OUT/probe-$label"
-  rm -rf "$dir"; mkdir -p "$dir"
+  rm -rf "$dir"; mkdir -p "$dir"; chmod 700 "$dir"
   local out sid
   out="$(wb register-cli-scan --scan-dir "$dir" --repository "$REPO" --recipe-json "$(recipe "$REPO")")"
   sid="$("${PY[@]}" -c "import json,sys;print(json.loads(sys.argv[1])['scanId'])" "$out")"
@@ -393,7 +397,7 @@ probe unsealed-targetId  targetId     no
 probe unsealed-covMode   coverageMode no
 
 say "S9. complete-scan --claim-token — do-not-pass 규약 (exit 1 기대)"
-rm -rf "$OUT/scan3"; mkdir -p "$OUT/scan3"
+rm -rf "$OUT/scan3"; mkdir -p "$OUT/scan3"; chmod 700 "$OUT/scan3"
 run "S9 register-cli-scan (3rd)" wb register-cli-scan \
   --scan-dir "$OUT/scan3" --repository "$REPO" --recipe-json "$(recipe "$REPO")"
 SCAN_ID3="$("${PY[@]}" -c "import json;print(json.load(open('$OUT/.stdout'))['scanId'])")"
@@ -409,7 +413,7 @@ S9B_CODE=$LAST_CODE
 
 # ---------------------------------------------------------------------------
 say "요약 (관측 종료코드 / 기대값)"
-printf 'S5  complete-scan (repo 수정됨)     exit=%s  기대 1 (working-tree 게이트)\n' "$S5_CODE" | tee -a "$LOG"
+printf 'S5  complete-scan (repo 수정됨)     exit=%s  기대 1=하드 실패 사본 / 0=경고 사본 (0.1.22 실측: 0)\n' "$S5_CODE" | tee -a "$LOG"
 printf 'S6  complete-scan (repo 무수정)     exit=%s  기대 0\n' "$S6_CODE" | tee -a "$LOG"
 printf 'S9  complete-scan --claim-token     exit=%s  기대 1\n' "$S9_CODE" | tee -a "$LOG"
 printf 'S9b complete-scan (토큰 없이)       exit=%s  기대 0\n' "$S9B_CODE" | tee -a "$LOG"

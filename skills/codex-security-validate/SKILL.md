@@ -28,9 +28,11 @@ finding을 검증하고 disposition을 기록한다. 스크립트 호출이 없�
 
 ## 워크플로 (플러그인 validation 스킬 준수)
 
-`<plugin_dir>/skills/validation/SKILL.md`의 `### Compact Standard-Scan Mode`(및
-`references/validation-guidance.md`, `references/static-finding-assessment.md`)를 **읽고** 그
-절차를 따른다. 후보별로 최대 5기준 루브릭 → 최강 검증 경로 선택(crash/ASan/디버거/테스트/
+`<plugin_dir>/skills/validation/SKILL.md`(및 `skills/validation/references/validation-guidance.md`,
+`references/static-finding-assessment.md`)를 **읽고** 그 절차를 따른다. 플러그인 0.1.16에서
+`### Compact Standard-Scan Mode` 절이 `### Compact Workbench-Backed Diff Mode`로 대체됐다 —
+그 절의 MCP 도구 호출(`list_codex_security_candidates`,
+`record_codex_security_candidate_validations`)은 무시하고 **판정 규칙만** 따른다. 후보별로 최대 5기준 루브릭 → 최강 검증 경로 선택(crash/ASan/디버거/테스트/
 실제 인터페이스 재현 → 불가 시 정적 소스-싱크 추적).
 
 각 finding에 대해 다음 중첩 `validation` 레코드를 만든다(`references/scan-artifacts.md` 정의):
