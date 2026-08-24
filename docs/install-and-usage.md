@@ -1,6 +1,6 @@
 # Claude 보안 스킬 — 설치 및 사용 가이드
 
-**Claude Code만 설치된 PC**에서 이 스킬 6종을 설치해 쓰는 방법을 다룬다. OpenAI/Codex 인증
+**Claude Code만 설치된 PC**에서 이 스킬 7종을 설치해 쓰는 방법을 다룬다. OpenAI/Codex 인증
 (ChatGPT 로그인, `OPENAI_API_KEY`)은 **필요하지 않다** — Claude Code 구독 로그인만 있으면 된다.
 
 LLM 두뇌 역할은 Claude Code 세션 자신이 맡고, 검증·ID 파생·봉인·리포트 생성은 `codex-security`
@@ -56,6 +56,7 @@ bash "$PKG/skills/install.sh" --check-only
 | `codex-security-diff-scan` | 변경분(커밋/브랜치 refs 또는 working-tree)만 스캔 | 없음 |
 | `codex-security-validate` | 후보 finding 진위 판정(disposition) | 없음 |
 | `codex-security-patch` | 보안 이슈 최소 수정 — **2단 승인** | **있음(승인 후)** |
+| `codex-security-verify-fix` | 적용된 수정이 원래 취약점을 실제로 닫았는지 검증(**읽기 전용**) | 없음 |
 | `codex-security-scan-match` | 완료된 스캔 2개 사이 동일 근본 원인 finding 매칭 | 없음 |
 | `codex-security-deep-scan` | 다중 패스 심층 스캔의 축소판(**deep-lite** — 공식 deep과 비동등) | 없음 |
 
@@ -145,7 +146,7 @@ bash skills/install.sh --check-only     # 설치 없이 프로브만
 | `--force` | 대상 경로가 이미 있을 때 덮어쓰기 |
 
 스킬 이름을 인자로 주면 일부만 설치할 수 있지만, `bootstrap.py`는 `codex-security-scan`에만
-있고 모든 스킬이 이를 참조하므로 **6종 전체 설치를 기본으로 두라**.
+있고 모든 스킬이 이를 참조하므로 **7종 전체 설치를 기본으로 두라**.
 
 설치 위치는 `${CLAUDE_SKILLS_DIR:-$HOME/.claude/skills}/<스킬이름>`이다. 대상 경로가 이미 있으면
 설치를 **거부**하며 `--force`로만 덮어쓴다.
@@ -160,7 +161,7 @@ bash skills/install.sh --check-only     # 설치 없이 프로브만
 
 ### 3.3 설치 확인
 
-Claude Code를 재시작하고 스킬 목록에 6종이 보이는지, 그리고 부트스트랩이 플러그인을 찾는지
+Claude Code를 재시작하고 스킬 목록에 7종이 보이는지, 그리고 부트스트랩이 플러그인을 찾는지
 확인한다.
 
 ```bash
@@ -369,7 +370,28 @@ outcome은 `fixed`(수정 적용 **및 게이트 통과**) / `no_change`(이미 
 > **SKILL.md의 2단 승인 지침이 유일한 게이트**다. 스킬은 이 사실을 먼저 고지한다. 보안 수정을
 > 검토하며 진행하려면 기본 퍼미션 모드에서 쓰는 편이 안전하다.
 
-### 5.6 스캔 간 매칭 — `/codex-security-scan-match`
+### 5.6 수정 검증 — `/codex-security-verify-fix` (읽기 전용)
+
+```
+/codex-security-verify-fix <findings.json 또는 finding 서술 파일/텍스트>
+```
+
+이미 적용된 수정이 **원래 취약점을 실제로 닫았는지**만 판정한다. 저장소를 변경하지 않는다
+(파일 생성·수정·패치 적용·커밋·아티팩트 쓰기 없음). `findings.json`을 주면 파일 순서 그대로
+finding별로 1건씩 판정한다.
+
+판정값은 `fixed`(경계가 닫혔고 정상 동작도 유지됨이 입증) / `still_vulnerable`(원래 경로가 여전히
+도달 가능함이 입증) / `inconclusive`(저장소 불일치·컨텍스트 부족·관련 검사 실행 불가 등 증명 공백)
+3값이며, JSON 결과 뒤에 한국어 요약이 붙는다.
+
+**파일이 사라졌거나 함수명이 바뀐 것은 수정의 증거가 아니다** — 스킬은 이동·리팩터링된 코드를
+따라가 재추적한다. 티켓 종료·무관한 테스트 통과·"새 스캔에 안 나옴"도 증거로 인정하지 않는다.
+
+> 재현기·테스트 등 **저장소가 정의한 명령**을 돌리려면 `codex-security-patch`와 같은 방식으로
+> 명령 원문과 정의 파일을 제시하고 **별도 승인**을 받는다(기본 미실행). 미승인이면 정적 근거로만
+> 판정하고 못 돌린 검사를 증명 공백으로 남긴다 — 대개 `inconclusive`가 된다.
+
+### 5.7 스캔 간 매칭 — `/codex-security-scan-match`
 
 ```
 /codex-security-scan-match <before-scan-id> <after-scan-id>
@@ -387,9 +409,9 @@ outcome은 `fixed`(수정 적용 **및 게이트 통과**) / `no_change`(이미 
 codex-security scans compare <before-scan-id> <after-scan-id>
 ```
 
-두 스캔 모두 5.7절 워크벤치 등록을 거쳐야 하며, 일괄 매칭(`--all`)은 지원하지 않는다(쌍 단위만).
+두 스캔 모두 5.9절 워크벤치 등록을 거쳐야 하며, 일괄 매칭(`--all`)은 지원하지 않는다(쌍 단위만).
 
-### 5.7 deep-lite 스캔 — `/codex-security-deep-scan`
+### 5.8 deep-lite 스캔 — `/codex-security-deep-scan`
 
 ```
 /codex-security-deep-scan /path/to/target-repo
@@ -407,7 +429,7 @@ codex-security scans compare <before-scan-id> <after-scan-id>
 표준 스캔보다 시간과 컨텍스트를 훨씬 많이 쓴다. 최종 요약에는 워커별 후보 분포 표가 포함되어
 조용히 "후보 없음"을 반환한 워커를 감지할 수 있다.
 
-### 5.8 워크벤치 이력 통합 (선택)
+### 5.9 워크벤치 이력 통합 (선택)
 
 스캔을 공식 CLI 이력과 호환시키려면 워크벤치 상태 DB에 등록·종결한다. 순수 로컬 스캔만 원하면
 건너뛰면 되고, 그 스캔은 `scans list`에 나타나지 않는다. 스킬에 "이력에 등록해줘"라고 말하면

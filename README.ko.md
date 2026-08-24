@@ -3,7 +3,7 @@
 [English](README.md) | 한국어
 
 OpenAI/Codex 인증 없이 **Claude Code 구독 로그인만으로** [codex-security](https://github.com/openai/codex-security)
-의 보안 스캔 워크플로를 실행하는 Claude Code 스킬 6종.
+의 보안 스캔 워크플로를 실행하는 Claude Code 스킬 7종.
 
 LLM 두뇌 역할은 Claude Code 세션 자신이 맡고, 검증·ID 파생·봉인·리포트 생성은 codex-security
 번들 플러그인의 결정론(deterministic) Python 스크립트가 담당한다. 플러그인은 벤더링하지 않고
@@ -52,6 +52,7 @@ Claude Code를 재시작한 뒤 호출한다:
 | `codex-security-diff-scan` | 변경분(refs 또는 working-tree)만 스캔 | 없음 |
 | `codex-security-validate` | 후보 finding 진위 판정(disposition) | 없음 |
 | `codex-security-patch` | 보안 이슈 최소 수정 — 2단 승인 | 있음(승인 후) |
+| `codex-security-verify-fix` | 적용된 수정이 원래 취약점을 실제로 닫았는지 검증(읽기 전용) | 없음 |
 | `codex-security-scan-match` | 완료된 스캔 2개 사이 동일 근본 원인 finding 매칭 | 없음 |
 | `codex-security-deep-scan` | 다중 패스 심층 스캔의 축소판(deep-lite — 공식 deep과 비동등) | 없음 |
 

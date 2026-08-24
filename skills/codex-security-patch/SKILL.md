@@ -113,6 +113,12 @@ Investigation / Patch Candidate Review)를 요구한다. 아래 두 절이 그 �
 - **`blocked`** — 재현 불가, 동작 변경 유발, 제품 정책/공개 API/교차 소유권 결정 필요 등. 선택지와
   보안 트레이드오프, 가능하면 owner를 함께 제시한다.
 
+## 수정 후 검증 위임 (선택)
+
+사용자가 **별도 세션·다른 시점**에 수정 여부를 다시 확인하고 싶어 하면 `codex-security-verify-fix`를
+안내한다(읽기 전용, `fixed`/`still_vulnerable`/`inconclusive` 판정). 이 스킬의 검증 게이트를
+대체하지는 않는다 — `fixed` 보고 요건은 그대로다.
+
 ## scan-dir 컨텍스트 (R7)
 
 스캔 디렉터리 컨텍스트가 주어지면 `fix_report.md`를 `<scan-dir>/artifacts/` 아래에 남긴다.

@@ -2,7 +2,7 @@
 
 English | [한국어](README.ko.md)
 
-6 Claude Code skills that run the [codex-security](https://github.com/openai/codex-security)
+7 Claude Code skills that run the [codex-security](https://github.com/openai/codex-security)
 security scan workflow using **only a Claude Code subscription login** — no OpenAI/Codex
 authentication required.
 
@@ -55,6 +55,7 @@ Full usage, environment variables, and troubleshooting:
 | `codex-security-diff-scan` | Scans only a diff (refs or working-tree) | No |
 | `codex-security-validate` | Judges a candidate finding's disposition | No |
 | `codex-security-patch` | Minimal fix for a security issue — two-stage approval | Yes (after approval) |
+| `codex-security-verify-fix` | Verifies whether an applied fix actually closed the original vulnerability (read-only) | No |
 | `codex-security-scan-match` | Matches findings with the same root cause across two completed scans | No |
 | `codex-security-deep-scan` | Reduced multi-pass deep scan (deep-lite — not equivalent to the official deep scan) | No |
 
