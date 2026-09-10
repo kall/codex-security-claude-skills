@@ -1124,3 +1124,72 @@ mise exec -- python3 <plugin>/scripts/config_preflight.py \
   - `report.md`, `scan-manifest.json`, `findings.json`, `coverage.json`, `exports/results.sarif`
   - `artifacts/01_context/threat_model.md`, `artifacts/02_discovery/in_scope_files.txt`, `artifacts/02_discovery/candidate_ledger.jsonl`, `artifacts/02_discovery/validation_artifacts/<candidate_id>/poc_*.{py,log}`, `artifacts/03_coverage/reviewed_surfaces.md`
 - 합성 저장소: `/tmp/claude-1000/-data-workspace-codex-security/61240253-3dd3-4025-8a44-463e02a973a7/scratchpad/phase0/u6/flasknotes/`
+
+---
+
+## 부록 — npm 0.1.25(매니페스트 0.1.94) 재실측 (2026-09-02)
+
+기준선을 npm 0.1.18(매니페스트 0.1.22)에서 npm 0.1.25(매니페스트 0.1.94)로 올리면서 재실측한
+결과다. 위 본문은 0.1.18 시점 기록이므로 덮어쓰지 않고 여기에 덧붙인다.
+
+### 회귀 없음
+
+| 항목 | 결과 |
+| --- | --- |
+| `repro-u4.sh`(봉인 계약 A~E) | `ALL ASSERTIONS PASSED` — 회귀 없음 |
+| `repro-u3.sh` 요약 | S5 `exit=0`, S6 `exit=0`, S9 `exit=1`, S9b `exit=0` — 0.1.22 실측치와 동일 |
+| 워킹트리 게이트 | 여전히 "경고 사본"(수정된 저장소에서도 종결 성공 + 경고) |
+| 봉인 계약 스키마 3종 | `findings`/`coverage`/`scan-manifest` 무변경 |
+| `producer.version` | 매니페스트 값이 실리므로 `0.1.94`로 표시된다 |
+
+### 새로 관측한 계약 변화
+
+1. **SARIF 성공 판정 의미가 바뀌었다.** 이전에는 `status == completed && completeness == complete`
+   였으나 이제 **종결 상태만** 반영한다. 세 형상을 실측했다(`repro-u4.sh` 블록 F가 고정):
+   - `completeness=complete` → `invocations` 키가 **아예 생성되지 않는다**(이전에는 항상 있었다).
+   - `completeness=partial` → `executionSuccessful: true` + `properties.codexSecurityCoverageCompleteness: "partial"`.
+   - `completeness=partial` + `deferred=[]` → 경고가 **0건**. SARIF만으로는 불완전 스캔임을 알 수 없다.
+     deferred가 비었을 때 기본 경고 문구를 만들어주던 로직이 사라졌다.
+
+2. **인벤토리에서 무시 파일 처리가 바뀌었다.** `generate_in_scope_files.py`가 `rg --no-ignore`를
+   제거하고, 대신 `git ls-files --cached --ignored --exclude-standard`로 **추적 중인 무시 파일만**
+   되살린다. 합성 저장소 실측(`repro-u4.sh` 블록 G):
+
+   | 파일 | 상태 | 인벤토리 |
+   | --- | --- | --- |
+   | `src/tracked.py` | 추적 + 무시 안 됨 | 포함 |
+   | `src/untracked.py` | 미추적 + 무시 안 됨 | 포함 |
+   | `dist/generated.py` | 추적 + 무시됨 | **포함**(add-back) |
+   | `dist/loose.py` | 미추적 + 무시됨 | 제외 |
+
+   따라서 우리가 `rg`를 직접 부르면 `dist/generated.py`가 빠지고, `git ls-files`로 폴백하면
+   `src/untracked.py`가 빠진다. 두 경우 다 커버리지 분모가 상류와 달라진다 → 계약 9로 고정.
+
+3. **`rg` 실행 파일이 없는 환경 실측.** 이 머신에는 `rg` 바이너리가 없고 Claude Code가 셸 함수로만
+   제공하므로 파이썬 `subprocess`에서는 `No such file or directory: 'rg'`로 실패한다. Claude Code
+   바이너리는 multicall이라 `argv[0]`이 `rg`면 내장 ripgrep(14.1.1)으로 동작하며, `rg` 이름의
+   **심링크**를 PATH에 얹으면 상류 스크립트가 수정 없이 성공한다(실측). 상류 스크립트의 **diff
+   모드는 `rg`를 쓰지 않으므로**(git diff 기반) 변경분 스캔은 이 의존성의 영향을 받지 않는다.
+
+4. **매칭 계약이 확장됐다.** `related` 배열과 `knownFindingGroups`가 추가됐고, 상류 저장 단계는
+   기확정 그룹 모순 검사를 **하지 않는다** — 우리 `validate_matches.py`가 유일한 방어선이다.
+   능력 프로브 문자열 `Comparison payload supports related findings.`가 0.1.25 `save-scan-comparison
+   --help`에 실재함을 확인했다. `matchingInputs`의 키 집합은 정확히 `before`/`after`/`knownFindingGroups`다.
+
+5. **중단 스캔 복구가 신설됐다.** `workbench_db.py recover-scan-results --scan-id`는
+   `status == "failed"` 이고 취소되지 않은 스캔만 받는다(`Only a stopped scan can recover terminal
+   results.`). 워킹트리 게이트 실패로 행이 `running`으로 남은 경우는 대상이 아니다.
+
+### 상류 변경이 도입된 구간
+
+npm 태그와 매니페스트 번호는 별개 축이다. git 이력으로 확정한 값:
+
+| 변경 | 도입 |
+| --- | --- |
+| 수정 스킬 절차 재작성(5게이트 → 3단 + 공격 단계) | npm 0.1.21 (매니페스트 0.1.60) — 0.1.20은 아직 구버전 |
+| 파인딩 서술 필드 규약 강화 | npm 0.1.22 (매니페스트 0.1.79) |
+| 매칭 계약에 `related`·기확정 그룹 추가 | npm 0.1.25 (매니페스트 0.1.94) |
+| 중단 스캔 복구 절 신설 | npm 0.1.24 (0.1.23에는 없음) |
+
+참고 매니페스트 대응: npm 0.1.19 → 0.1.22, 0.1.20 → 0.1.37, 0.1.21 → 0.1.60,
+0.1.22~0.1.24 → 0.1.79, 0.1.25 → 0.1.94.
