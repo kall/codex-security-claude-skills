@@ -277,6 +277,23 @@ compact 절은 이제 workbench diff 전용 서술이므로 MCP 도구 호출(`r
 draft — R6 금지 필드 없음), `findings.json`, `coverage.json`을 쓰고, `artifacts/03_coverage/reviewed_surfaces.md`도
 작성한다. `report.md`는 **직접 쓰지 않는다**(finalizer 생성). 3개 파일이 디스크에 존재하는지 확인한다.
 
+**쓰기 직전 자기검사(P5-KTD9 · P5-R23)** — 필드 정의는 `references/finding-detail-fields.md`가 소유하므로
+그 문서를 읽어 따르되, 그 읽기 지시는 이 워크플로 앞머리에 있고 실제로 문장을 쓰는 시점은 여기다.
+파일을 쓰기 전에 각 finding에 대해 네 항목을 직접 확인한다:
+
+1. `title`과 `summary` 첫 문장이 **사용자 행동과 제품 영향**으로 시작하는가. 코드 구조나 CWE 이름으로
+   시작하지 않는다.
+2. 모든 `codeEvidence[]` 항목에 `id`·`label`·`path`·`startLine`·`code`·`explanation`이 **전부** 있는가
+   (`endLine`·`language`·`role`은 선택). 필드명은 `code`이며 **`snippet`이 아니다**. 루트 원인은
+   `rootCause`이며 **`root_cause`가 아니다**.
+3. 각 `explanation`이 "이 단계의 공격자 제어 값 → 다음 호출·상태 → 불변식 보존 또는 위반"의 **연결
+   추론**인가. 코드를 다시 읽어주는 문장이 아니다.
+4. `attackPath.summary`가 **재현 방법**을 담고, `rootCause.summary`가 **코드가 그 제품 동작을 만드는
+   이유**를 담는가.
+
+`report.md`의 요약 순서(재현 방법 → 제품에서 벌어지는 일 → 코드 원인)는 finalizer가 생성하므로
+직접 통제할 수 없다. **정본 JSON의 `summary` 품질로만 통제된다** — 위 1·4항목이 그 통제 지점이다.
+
 ### 6. 완료(Finalize)
 1. **scoped-path 스캔이면** finalize 직전에 필수 호출(KTD7):
    ```bash
