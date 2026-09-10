@@ -40,9 +40,19 @@ MODES = ("standard", "diff", "deep")
 
 
 class GlueError(Exception):
-    def __init__(self, message: str, detail: str | None = None):
+    """글루 계층 실패.
+
+    `kind` 는 실패의 성격을 구분한다 — 호출자가 사용자에게 줄 안내가 다르다.
+      "gate"  : 상류 명령이 정상 실행됐고 스스로 거부했다(전제 불충족).
+      "infra" : 상류 명령을 실행조차 못했거나 출력이 계약을 벗어났다.
+    둘을 뭉치면 프로세스 기동 실패에 "전제를 확인하세요" 안내가 붙어
+    사용자가 없는 문제를 쫓게 된다.
+    """
+
+    def __init__(self, message: str, detail: str | None = None, kind: str = "gate"):
         super().__init__(message)
         self.detail = detail
+        self.kind = kind
 
 
 def emit(payload: dict, ok: bool) -> int:
@@ -55,12 +65,25 @@ def load_bootstrap(path: str) -> dict:
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as error:
-        raise GlueError(f"bootstrap JSON 파싱 실패: {path} ({error})") from error
+        raise GlueError(f"bootstrap JSON 파싱 실패: {path} ({error})", kind="infra") from error
     if not isinstance(data, dict) or not data.get("ok"):
-        raise GlueError("bootstrap JSON 이 성공 상태가 아닙니다(ok!=true).")
+        raise GlueError("bootstrap JSON 이 성공 상태가 아닙니다(ok!=true).", kind="infra")
     for key in ("pluginRoot", "stateDir", "repoRoot"):
         if not isinstance(data.get(key), str) or not data[key]:
-            raise GlueError(f"bootstrap JSON 에 {key} 가 없습니다.")
+            raise GlueError(f"bootstrap JSON 에 {key} 가 없습니다.", kind="infra")
+        # 이 게이트는 **분류의 전제가 아니다.** 분류(_failure_kind)는 실제 개행만
+        # 보므로 경로 문자에 흔들리지 않는다. 여기서 막는 이유는 좁다:
+        #   - `\x00` 은 argv 에 들어가면 subprocess 가 ValueError 를 던지고 그것은
+        #     run_workbench 의 except 에 잡히지 않아 트레이스백으로 새어 나간다.
+        #   - `\n`·`\r` 은 상류 오류 메시지를 여러 줄로 만들어 `reason` 추출
+        #     (detail.splitlines()[-1])이 사유를 절단한다.
+        # 사용자가 고칠 수 있는 입력 문제이므로 gate 다.
+        if any(ch in data[key] for ch in "\n\r\x00"):
+            raise GlueError(
+                f"bootstrap JSON 의 {key} 에 개행·NUL 이 있습니다: {data[key]!r}. "
+                "경로에 그런 문자가 있으면 상류 오류 메시지가 여러 줄이 되어 실패 원인을 "
+                "가릴 수 있습니다 — 경로를 바꾼 뒤 다시 실행하세요."
+            )
     return data
 
 
@@ -83,8 +106,15 @@ def python_argv(boot: dict) -> list[str]:
 def run_workbench(boot: dict, args: list[str]) -> subprocess.CompletedProcess[str]:
     """workbench_db.py <args> 를 -I -B 로 실행. claim-token 은 호출자가 절대 넣지 않는다."""
     if any(a == "--claim-token" for a in args):
-        raise GlueError("내부 오류: --claim-token 은 전달할 수 없습니다(R4).")
+        raise GlueError("내부 오류: --claim-token 은 전달할 수 없습니다(R4).", kind="infra")
     script = str(Path(boot["pluginRoot"]) / "scripts" / "workbench_db.py")
+    # bootstrap 은 매니페스트 존재만 검사하고 이 스크립트의 실존은 보지 않는다.
+    # 없으면 인터프리터는 정상 기동한 뒤 rc=2 로 끝나므로 아래 비-0 분기로 흘러
+    # "게이트 거부"로 오분류된다 — 여기서 infra 로 못 박는다.
+    if not Path(script).is_file():
+        raise GlueError(
+            f"플러그인 사본에 workbench_db.py 가 없습니다: {script}", kind="infra"
+        )
     cmd = [*python_argv(boot), "-I", "-B", script, *args]
     try:
         return subprocess.run(
@@ -96,7 +126,69 @@ def run_workbench(boot: dict, args: list[str]) -> subprocess.CompletedProcess[st
             check=False,
         )
     except (OSError, subprocess.SubprocessError) as error:
-        raise GlueError(f"workbench_db.py 실행 실패: {error}") from error
+        raise GlueError(f"workbench_db.py 실행 실패: {error}", kind="infra") from error
+
+
+# 상류의 출력 규약(실물 workbench_db.py 를 서브커맨드별로 실행해 확립):
+#   거부 = raise SystemExit("한 줄 문구") → rc=1, stdout 공백, stderr 1줄 평문
+#   성공 = stdout 에 JSON 1건, rc=0
+# 즉 stdout 은 **성공에만** 쓰인다. 초기 구현은 "stdout 이 있으면 상류가 판단해
+# 거부한 것"이라고 봤는데 정반대였다 — 비-0 인데 stdout 이 있으면 성공 페이로드를
+# 쓰다 죽은 것이므로 infra 다.
+#
+# 그래서 1차 판정은 어휘가 아니라 **형상**으로 한다. 서드파티 stderr 문자열
+# 매칭만으로는 끝이 없다 — 최상위 SyntaxError 는 CPython 이 Traceback 헤더를
+# 찍지 않고(실측), 시그널 사망과 무출력 종료는 어떤 문구도 남기지 않는다.
+# 마커 문자열 목록은 두지 않는다. 화이트리스트 순서상 도달 불가한 데드 코드가
+# 되기 때문이다(실측: 모든 후보 마커가 앞선 rc·줄수 규칙에서 이미 걸린다 —
+# `can't open file`·`invalid choice` 는 rc=2, `Traceback`·`ModuleNotFoundError`·
+# `SyntaxError`·`database is locked` 는 4줄 stderr). 남는 것은 false-infra 위험뿐이다:
+# 정상 거부 문장이 우연히 마커를 포함하면 뒤집힌다. `Permission denied` 를 뺀 것과
+# 같은 이유이므로 목록 자체를 없앤다.
+#
+# 그 대가로 판별하지 못하는 것: 상류가 `ContractError` 를 `SystemExit(str(exc))` 로
+# 재포장하는 사이트(플랫폼 비호환 등)는 rc=1 + 1줄 stderr 라 gate 로 분류된다.
+# 형상이 정상 거부와 같아 규칙으로는 가를 수 없다 — gate 안내가 "상류가 남긴 사유를
+# 먼저 읽으세요"로 시작하는 이유다.
+
+
+def _failure_kind(completed: subprocess.CompletedProcess[str]) -> str:
+    """비-0 종료를 gate(상류가 거부) / infra(상류가 깨짐)로 분류한다.
+
+    **화이트리스트**다 — 거부의 형상을 정의하고 벗어나는 것은 전부 infra 로 본다.
+    gate 를 폴백으로 두면 모델링하지 않은 실패가 전부 "전제 불충족"으로 새어
+    사용자가 없는 문제를 쫓는다(실측: rc=1 인터프리터 래퍼 파손, rc=120 stdout
+    플러시 실패가 둘 다 gate 로 샜다).
+
+    상류 거부의 형상(실물 사본 전수 확인):
+      - rc=1 — `raise SystemExit("한 줄")` 뿐이다. 리터럴 `SystemExit(2)` 는 없고,
+        rc=2 는 argparse 사용법 오류, rc<0 은 시그널, rc=120 은 stdout 플러시 실패다.
+      - stdout 공백 — stdout 은 성공 페이로드에만 쓴다(쓰기 지점 전부 result 확정 후).
+      - stderr 정확히 1줄 — SystemExit 335건·ContractError 150건 중 개행을 담은
+        메시지가 0건이다. 여러 줄이면 래퍼나 인터프리터가 낸 것이다.
+
+    판별 불가로 남는 것: 상류가 `sys.exit("한 줄")` 로 깨지면 정상 거부와 형상이
+    완전히 같다. 어떤 규칙으로도 가를 수 없어 문서화 대상이다.
+    """
+    if completed.returncode != 1:
+        return "infra"
+    out = (completed.stdout or "").strip()
+    err = (completed.stderr or "").strip()
+    if out:
+        # 비-0 인데 stdout 이 있다 = 성공 페이로드를 쓰다 죽었다.
+        return "infra"
+    if not err:
+        # 거부는 항상 사유를 남긴다. 말없이 비-0 이면 거부가 아니다.
+        return "infra"
+    # `splitlines()` 를 쓰면 안 된다 — 그것은 `\x0b \x0c \x1c \x1d \x1e \x85`
+    # `U+2028 U+2029` 에서도 쪼갠다. 상류는 거부 메시지에 경로를 보간하므로
+    # (workbench_db.py:270), 그 문자가 든 경로면 정상 거부가 여러 줄로 세어져
+    # infra 로 뒤집힌다 — 8문자 전수 확인했다. 진입 시점에 문자를 막는 접근은
+    # 필연적으로 불완전하다(막을 목록을 늘려도 다음 문자가 남는다). 분류가
+    # **실제 개행만** 보게 하는 것이 옳은 층이다.
+    if "\n" in err or "\r" in err:
+        return "infra"
+    return "gate"
 
 
 def workbench_json(boot: dict, args: list[str]) -> dict:
@@ -105,6 +197,7 @@ def workbench_json(boot: dict, args: list[str]) -> dict:
         raise GlueError(
             f"workbench {args[0]} 실패(exit {completed.returncode})",
             detail=(completed.stderr or completed.stdout).strip(),
+            kind=_failure_kind(completed),
         )
     text = completed.stdout.strip()
     if not text:
@@ -112,7 +205,9 @@ def workbench_json(boot: dict, args: list[str]) -> dict:
     try:
         return json.loads(text)
     except json.JSONDecodeError as error:
-        raise GlueError(f"workbench {args[0]} 가 JSON 이 아닌 출력을 냄", detail=str(error)) from error
+        raise GlueError(
+            f"workbench {args[0]} 가 JSON 이 아닌 출력을 냄", detail=str(error), kind="infra"
+        ) from error
 
 
 # --------------------------------------------------------------------------
@@ -121,7 +216,8 @@ def workbench_json(boot: dict, args: list[str]) -> dict:
 def cmd_register(boot: dict, args: argparse.Namespace) -> int:
     scan_dir = Path(boot.get("scanDir") or "")
     if not scan_dir or not scan_dir.is_dir():
-        raise GlueError("bootstrap 의 scanDir 가 없거나 디렉터리가 아닙니다.")
+        # bootstrap 출력 계약 위반이다 — load_bootstrap 의 키 누락과 같은 등급.
+        raise GlueError("bootstrap 의 scanDir 가 없거나 디렉터리가 아닙니다.", kind="infra")
     existing = [p for p in os.listdir(str(scan_dir))]
     if existing:
         raise GlueError(
@@ -147,7 +243,12 @@ def cmd_register(boot: dict, args: argparse.Namespace) -> int:
     scan_id = result.get("scanId") or result.get("scan_id")
     target_id = result.get("targetId") or result.get("target_id")
     if not scan_id:
-        raise GlueError("register-cli-scan 이 scanId 를 반환하지 않았습니다.", detail=json.dumps(result))
+        # 상류 응답이 계약을 벗어났다(스캔 전제 문제가 아니다).
+        raise GlueError(
+            "register-cli-scan 이 scanId 를 반환하지 않았습니다.",
+            detail=json.dumps(result),
+            kind="infra",
+        )
     return emit({"ok": True, "scanId": scan_id, "targetId": target_id, "raw": result}, True)
 
 
@@ -211,9 +312,23 @@ def cmd_feedback(boot: dict, args: argparse.Namespace) -> int:
     return emit({"ok": True, "written": True, "count": len(entries), "path": str(dest)}, True)
 
 
+def _split_lines(text: str) -> list[str]:
+    """상류 메시지를 **실제 줄**로만 자른다.
+
+    `str.splitlines()` 를 쓰면 안 된다 — `\x0b \x0c \x1c \x1d \x1e \x85`
+    U+2028 U+2029 까지 줄 구분자로 취급하므로, 상류가 저장소에서 온 문자열(파일
+    경로·설정 값)을 메시지에 보간하면 저장소가 줄 나누기를 통제하게 된다. 실측:
+    `detail = "not a readable local directory: /tmp/a\x0bsrc/app.py"` 에서
+    `splitlines()[-1]` 은 `"src/app.py"` 로 **사유 전체를 절단**하고,
+    `_extract_changed_files` 는 **존재하지 않는 워킹트리 변경을 날조**한다.
+    `reason` 은 SKILL.md 가 에이전트에게 먼저 읽으라고 지시하는 단 하나의 필드다.
+    """
+    return text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+
+
 def _extract_changed_files(text: str) -> list[str]:
     files: list[str] = []
-    for line in text.splitlines():
+    for line in _split_lines(text):
         stripped = line.strip().lstrip("-*• ").strip()
         # 게이트 메시지는 변경 파일을 목록으로 나열한다. 경로처럼 보이는 줄만 수집.
         if stripped and ("/" in stripped or stripped.endswith((".py", ".js", ".ts", ".md", ".json"))) \
@@ -255,10 +370,39 @@ def cmd_complete(boot: dict, args: argparse.Namespace) -> int:
             True,
         )
     detail = (completed.stderr or completed.stdout).strip()
+    _kind = _failure_kind(completed)
     return emit(
         {
             "ok": False,
-            "reason": detail.splitlines()[-1] if detail else "complete-scan 실패",
+            # complete 는 게이트 실패를 예외가 아니라 구조화 결과로 돌려주므로
+            # GlueError 를 타지 않는다. failureKind 를 여기서도 실어야 SKILL.md 의
+            # R6 3선택지 분기가 "게이트가 막았다"와 "상류가 깨졌다"를 가를 수 있다.
+            "failureKind": _kind,
+            # **분류마다 다른 안내다.** `cmd_recover` 가 `error.kind` 로 힌트를
+            # 분기하는 것과 같은 이유다 — 두 분류에 같은 문장을 실으면 프로세스
+            # 기동 실패에 "변경을 되돌리세요"가 붙어 사용자가 없는 문제를 쫓는다.
+            # 문안은 SKILL.md R6 의 두 항목과 정합해야 한다: infra 는 3선택지를
+            # 제시하지 않고 changedFiles 를 신뢰하지 않으며, gate 는 3선택지를
+            # 적용한다. (npm 배포본에는 `require_unchanged_target` 이 없어 gate
+            # 분류가 실제 워킹트리 게이트가 아닐 수 있다 — 그래서 gate 안내도
+            # reason/detail 을 먼저 읽으라고 말한다. R6 에도 명기했다.)
+            "hint": (
+                (
+                    "상류 complete-scan 을 계약대로 완료하지 못했습니다 — 워킹트리 "
+                    "게이트 문제가 아닙니다. 3선택지를 제시하지 마세요. 플러그인 사본, "
+                    "Python 실행 경로, 상태 DB 잠금·타임아웃을 점검하세요. 이 분류에서는 "
+                    "changedFiles 를 신뢰하지 마세요(트레이스백의 경로 줄이 섞입니다)."
+                )
+                if _kind == "infra"
+                else (
+                    "상류가 남긴 reason/detail 을 먼저 읽고, R6 의 3선택지(변경 되돌린 뒤 "
+                    "재시도 / fail 기록 / 보류)를 적용하세요. 스캔 행은 running 으로 "
+                    "남습니다 — 자동 실패 처리 금지. npm 배포본에는 워킹트리 불변 게이트가 "
+                    "없어 changedFiles 가 비어 있을 수 있으니, 그때는 reason 이 지목하는 "
+                    "전제를 확인하세요."
+                )
+            ),
+            "reason": _split_lines(detail)[-1] if detail else "complete-scan 실패",
             "changedFiles": _extract_changed_files(detail),
             "detail": detail,
         },
@@ -269,6 +413,48 @@ def cmd_complete(boot: dict, args: argparse.Namespace) -> int:
 def cmd_fail(boot: dict, args: argparse.Namespace) -> int:
     """명시적 실패 종결(KTD4 — 사용자가 선택할 때만)."""
     result = workbench_json(boot, ["fail-scan", "--scan-id", args.scan_id, "--message", args.message])
+    return emit({"ok": True, "raw": result}, True)
+
+
+def cmd_recover(boot: dict, args: argparse.Namespace) -> int:
+    """recover-scan-results — 자동 종결된 스캔의 보존 체크포인트 재발행(P5-KTD8).
+
+    상류 recover_scan_results 는 `status == "failed"` 이고 취소되지 않은 스캔만 받는다.
+    워킹트리 게이트 실패로 행이 `running` 으로 남은 경우는 대상이 아니다 — 그때는
+    `complete` 재시도·`fail`·보류 3선택지를 쓴다. 자동 종결(계약 오류 또는 deep 모드)로
+    행이 `failed` 가 된 경우에만 이 명령이 의미가 있다.
+
+    실패는 게이트 실패와 같은 형태로 구조화 반환한다(exit 0 + ok:false) — 비가역
+    작업이 아니므로 사용자가 다른 선택지로 넘어갈 수 있어야 한다(계약 6 승계).
+    """
+    try:
+        result = workbench_json(boot, ["recover-scan-results", "--scan-id", args.scan_id])
+    except GlueError as error:
+        detail = error.detail or str(error)
+        if error.kind == "infra":
+            # 상류가 거부한 것이 아니다 — 전제 안내를 붙이면 사용자가 엉뚱한 곳을 본다.
+            hint = (
+                "상류 recover-scan-results 를 계약대로 완료하지 못했습니다"
+                "(스캔 전제 문제가 아닙니다). 플러그인 사본과 Python 실행 경로, "
+                "그리고 상태 DB 잠금·타임아웃 여부를 확인하세요."
+            )
+        else:
+            hint = (
+                "상류가 남긴 사유(reason/detail)를 먼저 읽으세요 — 권한·디스크 같은 "
+                "환경 문제도 이 경로로 옵니다. 스캔 전제 문제라면: 복구는 "
+                "status=failed 이고 취소되지 않은 스캔만 대상이고, running 행은 "
+                "complete 재시도·fail·보류 중에서 고르세요."
+            )
+        return emit(
+            {
+                "ok": False,
+                "failureKind": error.kind,
+                "reason": _split_lines(detail)[-1] if detail else "recover-scan-results 실패",
+                "detail": detail,
+                "hint": hint,
+            },
+            True,
+        )
     return emit({"ok": True, "raw": result}, True)
 
 
@@ -350,6 +536,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--message", required=True)
     p.set_defaults(func=cmd_fail)
 
+    p = sub.add_parser(
+        "recover",
+        help="recover-scan-results (자동 종결된 failed 스캔의 보존 체크포인트 재발행)",
+    )
+    p.add_argument("--scan-id", required=True)
+    p.set_defaults(func=cmd_recover)
+
     p = sub.add_parser("check-running", help="시작 시 같은 저장소 running 행 advisory")
     p.set_defaults(func=cmd_check_running)
 
@@ -373,7 +566,11 @@ def main(argv: list[str]) -> int:
         boot = load_bootstrap(args.bootstrap)
         return args.func(boot, args)
     except GlueError as error:
-        payload = {"ok": False, "error": str(error)}
+        # kind 를 버리면 recover 이외의 서브커맨드에서는 게이트/인프라 구분이
+        # 소비자에게 닿지 않는다(register/contract/feedback/fail/check-running/
+        # list-stale/close-stale). complete 는 게이트 실패를 예외가 아니라 구조화
+        # 결과로 돌려주므로 여기가 아니라 cmd_complete 안에서 실어 준다.
+        payload = {"ok": False, "failureKind": error.kind, "error": str(error)}
         if error.detail:
             payload["detail"] = error.detail
         return emit(payload, False)

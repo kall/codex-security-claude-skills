@@ -85,6 +85,14 @@ description: >-
 validation(compact 1회) → attack-path(compact 1회) → canonical JSON(순서 있는 결과 매핑) →
 `bind-repo-scopes`(필요 시) → `coverage_reconcile.py`(정산 R9·경로 R10) → `finalize_scan_contract.py`
 (리페어 루프) → `workbench_glue.py complete`(게이트 실패 3선택지). Phase 1·2 SKILL.md를 참조한다.
+
+- **정산의 빈 인벤토리**: `coverage_reconcile.py`는 빈 `in_scope_files.txt`를 하드 실패(exit 3)로
+  처리한다. deep-lite는 랭킹으로 대상을 좁히므로 인벤토리가 정당하게 빌 수 있다 — 그 경우에만
+  `--allow-empty-inventory`를 붙인다. 랭킹이 실패해서 빈 것과 구분되지 않으면 붙이지 말고
+  랭킹 단계의 종료 상태를 먼저 확인한다.
+- **자동 종결된 스캔의 복구**: deep 모드는 상류가 스캔을 자동으로 `failed`로 종결시킬 수 있다.
+  그 경우 `workbench_glue.py recover --scan-id <id>`로 보존 체크포인트 재발행을 시도할 수
+  있다(exit 0 + `ok:false`면 대상이 아니다 — Phase 1 SKILL.md 6단계의 판정 규칙이 정본).
 위협 모델은 저장소 전체 범위에서 1회, validation·attack-path도 각 1회의 중앙화 tail(플러그인
 deep-security-scan의 중앙화 tail 패턴)로 수행한다.
 

@@ -104,6 +104,17 @@ codex-security 플러그인의 `security-diff-scan` 스킬을 Claude가 직접 �
 (리페어 루프 R12) → `workbench_glue.py complete`(게이트 실패 3선택지 분기). Phase 1·2 SKILL.md의
 해당 절차를 그대로 따른다.
 
+- **정산은 `--json`과 함께 호출한다** — 최종 보고가 `coverage.completenessAfter`·`deferredCount`·
+  `partialWithoutDeferred` 키를 인용한다. `--json`이면 JSON은 stdout, 사람용 요약은 stderr로 나간다.
+- **빈 인벤토리**: diff 범위에 리뷰 대상 파일이 없는 것(문서만 바뀐 커밋 등)은 diff 스캔에서
+  정직한 상태다. 그 경우에만 `--allow-empty-inventory`를 붙인다 — 통과시켜도 경고는 남는다.
+  인벤토리 생성 자체가 실패해서 비었을 가능성이 있으면 붙이지 말고 상류 스크립트의 종료 상태를
+  먼저 확인한다.
+- **중단된 스캔의 복구**: 계약 오류로 상류가 스캔을 자동 `failed` 종결시킨 경우
+  `workbench_glue.py recover --scan-id <id>`를 시도할 수 있다. 판정 규칙은 Phase 1 SKILL.md
+  6단계가 정본이다 — exit 0 + `ok:false`면 이 명령의 대상이 아니고, `failureKind`가 `infra`면
+  전제 문제가 아니라 실행 환경 문제다.
+
 ## 범위 이탈 가시화
 
 정산 단계에서 diff에 없는 파일의 finding이 나오면 경고한다(리뷰는 diff 범위인데 finding이 범위를

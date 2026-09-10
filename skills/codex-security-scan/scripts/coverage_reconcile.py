@@ -23,7 +23,8 @@ R10 finding 경로 실존
     0  정산 성공(무변경 또는 정직한 하향 수정) + 모든 경로 유효
     1  정직성 위반 — 리뷰 로그 부재, 또는 유효하지 않은 finding 경로
     2  CLI 오사용(argparse)
-    3  입력 오류 — 필수 산출물 부재, JSON/JSONL 파싱 실패
+    3  입력 오류 — 필수 산출물 부재, JSON/JSONL 파싱 실패,
+       빈 `in_scope_files.txt`(커버리지 분모가 없으면 완결성을 주장할 수 없다)
 
 이 스크립트는 `--scan-dir` 하위의 `coverage.json` 외에는 아무것도 쓰지 않는다.
 """
@@ -302,9 +303,17 @@ def _upsert_deferred(coverage: dict[str, Any], unreviewed: list[str], in_scope: 
 
 
 def reconcile_coverage(
-    coverage: dict[str, Any], in_scope: list[str], log: ReviewLog
+    coverage: dict[str, Any],
+    in_scope: list[str],
+    log: ReviewLog,
+    allow_empty_inventory: bool = False,
 ) -> Reconciliation:
-    """coverage 딕셔너리를 제자리에서 정산한다(파일 쓰기는 호출자 책임)."""
+    """coverage 딕셔너리를 제자리에서 정산한다(파일 쓰기는 호출자 책임).
+
+    `allow_empty_inventory` 는 diff·deep 스캔 전용이다 — 그 경로에서는 변경분에
+    리뷰 대상 파일이 없는 것이 정직한 상태이므로 빈 인벤토리를 경고로 통과시킨다.
+    저장소 전체 스캔은 기본값(False)으로 호출해 하드 실패를 유지한다.
+    """
     result = Reconciliation(in_scope_count=len(in_scope))
     in_scope_set = set(in_scope)
     reviewed_in_scope = log.reviewed & in_scope_set
@@ -314,14 +323,36 @@ def reconcile_coverage(
     before = coverage.get("completeness")
     result.completeness_before = before if isinstance(before, str) else None
 
-    if not in_scope:
-        # 빈 인벤토리로 complete 를 주장하면 대개 2단계 인벤토리(rg/git ls-files)
-        # 실패의 신호다. 정산은 인벤토리를 다시 만들지 않으므로 하드 실패시키지
-        # 않되, 근거 없는 완결성 주장을 놓치지 않도록 경고한다.
-        result.warnings.append(
-            "in_scope_files.txt 가 비어 있습니다 — 인벤토리 단계가 파일을 하나도 찾지 못한 "
-            "것일 수 있습니다. 스코프·rg/git ls-files 결과를 확인하세요(정산은 인벤토리를 "
-            "재생성하지 않습니다)."
+    if not in_scope and allow_empty_inventory:
+        # diff·deep 스캔의 정당한 0건: 변경분에 source-like 파일이 없으면(문서만
+        # 바뀐 커밋 등) 상류 인벤토리는 정직하게 비어 있다. 전체 스캔과 달리
+        # 이건 결함이 아니므로 경고로 남기고 통과시킨다.
+        # 원인을 diff 범위로 단정하지 않는다. 이 플래그에는 기계적 가드가 없어
+        # (정산은 스캔 모드를 모른다) 전체 스캔에 실수로 붙을 수 있고, 그때 원인을
+        # 단정하면 인벤토리 생성 완전 실패를 정상 상태로 설명해 버린다.
+        result_warning = (
+            "in_scope_files.txt 가 비어 있습니다 — --allow-empty-inventory 로 통과시켰습니다. "
+            "diff·deep 범위에 리뷰 대상 파일이 없는 정직한 0건이면 정상입니다. "
+            "전체 스캔이거나 인벤토리 생성 실패가 의심되면 스코프 인자, 상류 "
+            "generate_in_scope_files.py 의 종료 상태, 부트스트랩이 보고한 searchCommand 를 "
+            "확인하세요(정산은 인벤토리를 재생성하지 않습니다)."
+        )
+        result.warnings.append(result_warning)
+    elif not in_scope:
+        # 전체 스캔에서 빈 인벤토리는 하드 실패다(P5-KTD3). 인벤토리는 커버리지
+        # 분모이고 정산은 그것을 재생성하지 않으므로, 비어 있으면 어떤 완결성
+        # 주장도 근거가 없다. 인벤토리 생성을 상류 generate_in_scope_files.py 에
+        # 위임한 뒤로는 분모의 정확성이 우리 통제 밖에 있어, 이 지점이 전면
+        # 실패를 잡는 유일한 관문이다.
+        # (0.1.18 기준에서는 경고였다 — 상류 위임과 함께 승격했다.)
+        raise ReconcileError(
+            "in_scope_files.txt 가 비어 있습니다 — 인벤토리 단계가 파일을 하나도 찾지 "
+            "못했습니다. 커버리지 분모가 비어 있으면 완결성을 주장할 수 없으므로 정산을 "
+            "중단합니다.\n"
+            "확인할 것: 스코프 인자, 상류 generate_in_scope_files.py 의 종료 상태, "
+            "부트스트랩이 보고한 searchCommand(해석된 ripgrep 경로).\n"
+            "정산은 인벤토리를 재생성하지 않습니다.",
+            EXIT_INPUT_ERROR,
         )
 
     extra = len(log.reviewed - in_scope_set)
@@ -556,6 +587,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--scan-dir", required=True, help="스캔 산출물 디렉터리")
     parser.add_argument("--source-root", required=True, help="스캔 대상 저장소 루트")
+    parser.add_argument(
+        "--allow-empty-inventory",
+        action="store_true",
+        help=(
+            "빈 in_scope_files.txt 를 하드 실패가 아니라 경고로 처리한다. diff·deep 스캔에서 "
+            "변경분에 리뷰 대상 파일이 없는 경우(문서만 변경된 커밋 등)에만 쓴다. 저장소 "
+            "전체 스캔에는 쓰지 않는다 — 그 경우 빈 인벤토리는 항상 결함이다"
+        ),
+    )
     parser.add_argument(
         "--in-scope-file",
         help=(
@@ -832,7 +872,9 @@ def run(args: argparse.Namespace, out) -> tuple[int, dict[str, Any]]:
     review_log = _load_review_log(review_log_path, root_real)
 
     # --- R9 --------------------------------------------------------------- #
-    recon = reconcile_coverage(coverage, in_scope, review_log)
+    recon = reconcile_coverage(
+        coverage, in_scope, review_log, allow_empty_inventory=args.allow_empty_inventory
+    )
     if in_scope_outside:
         recon.warnings.insert(
             0,
@@ -888,7 +930,35 @@ def run(args: argparse.Namespace, out) -> tuple[int, dict[str, Any]]:
     else:
         print("  위반 없음 — 모든 경로가 소스 루트 하위 실존 파일입니다.", file=out)
 
+    # --- 부분 커버리지 정직성 신호 (P5-KTD8 · P5-R13·P5-R14) ------------------ #
+    # 상류 0.1.25 부터 SARIF 의 executionSuccessful 은 종결 상태만 반영한다.
+    # completeness 가 partial 이어도 스캔이 completed 면 '성공'으로 표시되고,
+    # deferred 가 비어 있으면 toolExecutionNotifications 가 0건이라 SARIF 만
+    # 봐서는 불완전 스캔임을 알 수 없다(실측 확인). 그 사실을 여기서 잡아
+    # 최종 보고가 자체 산출물을 근거로 완결성을 말할 수 있게 한다.
+    #
+    # 이 계산은 아래 경고 출력보다 **먼저** 와야 한다 — 뒤에 두면 append 한
+    # 문구가 사람용 출력에는 절대 찍히지 않고 --json 요약에만 남는다.
+    deferred_entries = coverage.get("deferred")
+    deferred_count = len(deferred_entries) if isinstance(deferred_entries, list) else 0
+    partial_without_deferred = recon.completeness_after != "complete" and deferred_count == 0
+
     all_warnings = recon.warnings + path_warnings
+    if partial_without_deferred:
+        all_warnings.append(
+            f"completeness 가 {recon.completeness_after!r} 인데 coverage.deferred 가 비어 "
+            "있습니다 — 상류 SARIF 는 이 조합에서 경고를 하나도 남기지 않고 스캔을 '성공'으로 "
+            "표시합니다. 최종 보고에 완결성과 미리뷰 파일 수를 반드시 명시하세요."
+        )
+
+    print("", file=out)
+    print("=== 부분 커버리지 정직성 (P5-R13) ===", file=out)
+    print(
+        f"  completeness={recon.completeness_after!r} · deferred={deferred_count}건"
+        f"{' · SARIF 경고 없음(보고 필수)' if partial_without_deferred else ''}",
+        file=out,
+    )
+
     if all_warnings:
         print("", file=out)
         print("=== 경고 (게이트 실패 아님) ===", file=out)
@@ -898,9 +968,26 @@ def run(args: argparse.Namespace, out) -> tuple[int, dict[str, Any]]:
     exit_code = EXIT_VIOLATION if violations else EXIT_OK
     print("", file=out)
     if exit_code == EXIT_OK:
+        # 마지막 한 줄만 읽는 소비자가 있다. partial_without_deferred 는 SARIF 가
+        # 드러내지 않는 불완전이므로 이 줄에도 실어야 한다 — 위쪽 경고 블록에만
+        # 있으면 "통과, 진행하세요"로 요약돼 완전 커버리지처럼 전달된다.
         print(
             "판정: 통과 — 커버리지가 리뷰 로그와 일치하고 모든 finding 경로가 유효합니다. "
-            "finalize_scan_contract.py 를 진행하세요.",
+            "finalize_scan_contract.py 를 진행하세요."
+            + (
+                " 단, completeness 가 complete 가 아니며 deferred 가 비어 SARIF 는 이를 "
+                "드러내지 않습니다 — 최종 보고에 완결성을 명시하세요."
+                if partial_without_deferred
+                else ""
+            )
+            # 분모가 0 인데 "커버리지가 리뷰 로그와 일치"로 끝나면, 마지막 한 줄만
+            # 읽는 소비자에게는 완전 커버리지로 전달된다. 위 조건절과 같은 이유다.
+            + (
+                " 단, in_scope 인벤토리가 비어 통과했습니다(분모 0) — "
+                "완결성을 주장하지 마세요."
+                if recon.in_scope_count == 0
+                else ""
+            ),
             file=out,
         )
     else:
@@ -924,6 +1011,8 @@ def run(args: argparse.Namespace, out) -> tuple[int, dict[str, Any]]:
             "unreviewedCount": len(recon.unreviewed),
             "completenessBefore": recon.completeness_before,
             "completenessAfter": recon.completeness_after,
+            "deferredCount": deferred_count,
+            "partialWithoutDeferred": partial_without_deferred,
             "changes": recon.changes,
             "written": coverage_written,
         },

@@ -285,11 +285,18 @@ draft — R6 금지 필드 없음), `findings.json`, `coverage.json`을 쓰고, 
    (리포지터리 전체 스캔이면 생략. manifest에 `scan.scope` 객체가 미리 있어야 함.)
 2. **자체 정산 게이트(R9·R10)** — bind 다음, finalize 직전:
    ```bash
-   <python_command> <이 스킬 dir>/scripts/coverage_reconcile.py --scan-dir <scan_dir> --source-root <repo_root>
+   <python_command> <이 스킬 dir>/scripts/coverage_reconcile.py --scan-dir <scan_dir> --source-root <repo_root> --json
    ```
    리뷰 완료 파일이 목록에 미달하면 `coverage.json`의 `completeness`를 `partial`로 강제하고,
    finding의 `locations` 경로가 저장소 루트 하위 실존 파일인지 검사한다. exit≠0이면 원인을 고친 뒤
    재실행한다.
+   - **`--json`은 필수다.** 6단계 최종 보고가 `coverage.completenessAfter`·`unreviewedCount`·
+     `deferredCount`·`partialWithoutDeferred` 키를 인용한다. `--json`이면 JSON은 stdout,
+     사람용 요약은 stderr로 나간다 — 사람용 요약을 파싱해 값을 재구성하지 않는다.
+   - **exit 3(입력 오류)과 exit 1(위반)은 다르다.** `in_scope_files.txt`가 비어 있으면 exit 3이다
+     — 커버리지 분모가 비면 어떤 완결성 주장도 근거가 없으므로 정산이 중단한다. 저장소 전체
+     스캔에서 이건 항상 결함이므로 `--allow-empty-inventory`로 넘기지 않는다. 2단계 인벤토리
+     위임의 종료 상태와 `searchCommand`를 먼저 확인한다.
 3. **봉인(유일한 완료 수단)**:
    ```bash
    CODEX_SECURITY_STARTED_AT=<시작시각> <python_command> <plugin_dir>/scripts/finalize_scan_contract.py --scan-dir <scan_dir> --source-root <repo_root>
@@ -368,23 +375,45 @@ draft — R6 금지 필드 없음), `findings.json`, `coverage.json`을 쓰고, 
      changed while the scan was running; results were saved for the original snapshot."). 이 경우
      **경고 문구를 최종 보고에 그대로 싣고**, 결과가 등록 시점 스냅샷 기준임을 명시한다. 조용히
      "완료"로만 보고하지 않는다.
-   - `{"ok": false, "reason": "...", "changedFiles": [...]}` → **워킹트리 불변 게이트 실패**. 스캔 행은
+   - `{"ok": false, "failureKind": "infra", ...}` → **게이트 실패가 아니다.** 상류를 실행조차
+     못했거나 상류가 깨진 것이다(플러그인 사본 파손, 인터프리터 경로, 상태 DB 잠금·타임아웃).
+     아래 3선택지를 제시하지 말 것 — 되돌릴 변경이 없고 재시도해도 같은 파손이 반복된다.
+     `reason`/`detail`을 그대로 보고하고 플러그인 사본과 Python 실행 경로를 점검하게 한다.
+     이 경우 `changedFiles`는 신뢰하지 않는다(트레이스백의 경로 줄이 섞일 수 있다).
+   - `{"ok": false, "failureKind": "gate", "reason": "...", "changedFiles": [...]}` → **워킹트리 불변 게이트 실패**.
+     단, **npm 배포본에는 `require_unchanged_target` 이 없다**(실측) — 그 사본에서는 이 분류가 실제
+     워킹트리 게이트가 아니라 상류가 스스로 거부한 다른 전제 불충족일 수 있다. `changedFiles`가 비어
+     있으면 워킹트리 원인이 아니므로, `reason`이 지목하는 전제를 먼저 확인한 뒤 아래 분기를 적용한다.
+     (글루가 실어 주는 `hint`가 분류별로 이 안내를 담는다.) 스캔 행은
      `running`으로 남는다(자동 실패 처리 금지 — 종결하면 비교·FP 이력에서 영구 제외됨, KTD4). 사용자에게
      변경 파일과 report.md 경로를 제시하고 세 선택지를 묻는다: **(a)** 변경을 되돌린 뒤 `complete` 재시도,
      **(b)** `fail --scan-id <id> --message <사유>`로 실패 기록 종결, **(c)** 보류(기본값). 좀비 `running` 행은
      `list-stale`로 나열하고 `close-stale --scan-id <id>`로 명시적으로만 정리한다.
-   - **플러그인 0.1.18(매니페스트 0.1.22)부터**: `complete-scan`이 계약 오류로 실패할 때, 봉인 문서를
+   - **npm 0.1.18(매니페스트 0.1.22)부터**: `complete-scan`이 계약 오류로 실패할 때, 봉인 문서를
      이미 쓴 뒤이거나 `--mode deep` 스캔이면 플러그인이 **자동으로 `fail-scan`을 수행**한다. 이때
      스캔 행은 `running`이 아니라 `failed`로 남으므로 (a) 재시도가 불가능하다 — 상태를 `contract`
-     조회로 먼저 확인하고, 재스캔이 필요하면 새 스캔으로 등록한다. 워킹트리 게이트 실패는 이
-     자동 전이 대상이 아니므로 3선택지 분기를 그대로 쓴다.
+     조회로 먼저 확인한다. 워킹트리 게이트 실패는 이 자동 전이 대상이 아니므로 3선택지 분기를
+     그대로 쓴다.
+   - **네 번째 선택지 — 복구(P5-R24, npm 0.1.24 신설).** 위 자동 전이로 행이 `failed`가 된 경우에만
+     보존된 체크포인트를 재발행할 수 있다:
+     ```bash
+     <python_command> <이 스킬 dir>/scripts/workbench_glue.py --bootstrap <boot.json> recover --scan-id <id>
+     ```
+     `{"ok": false, "reason": ...}`면 다른 선택지로 넘어간다(비가역 작업이 아니므로 구조화 반환이다).
+     **적용 대상 제약**: 상태가 `failed`이고 취소되지 않은 스캔만이다. 워킹트리 게이트 실패로 행이
+     `running`으로 남은 경우는 **대상이 아니다** — 그때는 위 3선택지를 쓴다. 복구는 사용자가 고르는
+     선택지이지 자동 동작이 아니다(계약 6 — 자동 종결 금지 원칙 유지).
 
 ## 최종 보고 (R13, 한국어)
 
 스캔 완료 시 사용자에게 한국어로 다음을 보고한다:
 - 파인딩 수와 심각도 분포(critical/high/medium/low).
 - `report.md`의 **절대 경로**(주 가독 산출물)와 SARIF 경로.
-- 커버리지 상태(`complete`/`partial`)와 미리뷰 파일 수(있으면).
+- 커버리지 상태(`complete`/`partial`)와 미리뷰 파일 수. **근거는 `coverage_reconcile.py`의 요약
+  (`completenessAfter`·`unreviewedCount`·`deferredCount`)이며 SARIF가 아니다**(P5-KTD8 · P5-R14).
+  상류 npm 0.1.25 SARIF는 종결 상태만 반영해 부분 커버리지 스캔도 '성공'으로 표시하고, `deferred`가
+  비면 경고조차 남기지 않는다. **SARIF의 성공 표시를 근거로 완전 커버리지를 주장하지 않는다.**
+  정산 요약의 `partialWithoutDeferred`가 참이면 그 사실을 보고에 명시한다.
 - 0단계 경량 확인에서 **degraded path로 격하됐다면** 그 사실.
 - 완전 커버리지를 주장하지 않는다 — 남은 파일·후보가 있으면 정직하게 명시한다.
 - 후속 옵션(내보내기 sarif/csv/json, 패치, 트래킹)을 **제안**만 하고 요청 없이는 실행하지 않는다.
