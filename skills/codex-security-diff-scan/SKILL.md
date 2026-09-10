@@ -55,10 +55,29 @@ codex-security 플러그인의 `security-diff-scan` 스킬을 Claude가 직접 �
    전체 목록을 쓰면 안 된다(범위가 저장소 전체가 된다):
    ```bash
    # refs
-   <python> <plugin_dir>/scripts/generate_in_scope_files.py --repo <repo_root> --scope . --diff-base <base> --diff-head <head> --diff-mode revisions --out <scan_dir>/artifacts/02_discovery/in_scope_files.txt
+   env -i <trusted_child_env> <python> <plugin_dir>/scripts/generate_in_scope_files.py --repo <repo_root> --scope . --diff-base <base> --diff-head <head> --diff-mode revisions --out <scan_dir>/artifacts/02_discovery/in_scope_files.txt
    # working-tree
-   <python> <plugin_dir>/scripts/generate_in_scope_files.py --repo <repo_root> --scope . --diff-base <base> --diff-mode local-patch --out <scan_dir>/artifacts/02_discovery/in_scope_files.txt
+   env -i <trusted_child_env> <python> <plugin_dir>/scripts/generate_in_scope_files.py --repo <repo_root> --scope . --diff-base <base> --diff-mode local-patch --out <scan_dir>/artifacts/02_discovery/in_scope_files.txt
    ```
+
+   > **셸에 보간하는 모든 값은 인용본을 쓴다** — `<trusted_child_env>` =
+   > `trustedChildEnvShell`, 나머지 경로는 `shellQuoted.*`(`repoRoot`·`scanDir`·
+   > `pluginRoot`·`pythonPath`·`trustedPathEnv`). 이중인용은 `$()`를 막지 못하고 이
+   > 값들의 출처는 미신뢰 환경이다(실측으로 `mkdir -p "<scan_dir>/…"`와
+   > `PATH="<pathEnv>"` 둘 다 명령 치환이 실행됐다). 그리고 **인용본을 다시 `"…"`로
+   > 감싸지 말 것** — 그러면 단일인용이 리터럴이 되고 `$()`는 그대로 확장돼 인용이
+   > 무효가 된다(실측). 위 명령형처럼 자리표시자는 맨몸으로 쓴다. 정본 근거는
+   > Phase 1 SKILL.md 2단계.
+   `RIPGREP_CONFIG_PATH=`는 **diff 경로에서는 실효가 없다** — diff 모드는 `git`만 쓰고 `rg`를
+   타지 않는다(실측: 오염된 설정에서도, PATH에 `rg`가 아예 없어도 결과가 같다). 전체 스캔
+   인벤토리 호출과 형태를 맞춰 두는 방어 조치이며, 근거는 Phase 1 SKILL.md 2단계가 정본이다.
+
+   `<trusted_path_env>` = bootstrap이 반환한 **`trustedPathEnv`**(대상 저장소 내부 항목을 제거한
+   PATH). **PATH를 이 값으로 교체한다 — `$PATH`를 이어 붙이지 않는다.** diff 모드는 ripgrep을
+   쓰지 않으므로 `--require-search`는 붙이지 않지만, `committed_changed_paths`가 **`git`을 PATH에서
+   해석해 `cwd=대상 저장소`로 실행**하므로 정화된 PATH가 필요하다. 원시 `$PATH`를 물려주면 대상
+   저장소가 커밋한 `./node_modules/.bin/git`이 실행된다(실측). 전체 스캔과 같은 이유이며 정본
+   서술은 Phase 1 SKILL.md 2단계에 있다(P5-KTD2).
    변경된 source-like 파일만 리뷰한다. 후보는 `normalize_candidates.py`로 단일 원장에 병합하되
    (Phase 1과 동일), **diff 스캔은 `--allow-missing-in-scope`를 반드시 붙인다**:
    ```bash

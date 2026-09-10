@@ -33,6 +33,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import pathlib
 import stat
 import sys
 from dataclasses import dataclass, field
@@ -630,7 +631,7 @@ def _fp_recheck(scan_dir: str, source_root: str, out) -> tuple[int, dict[str, An
                 )
     # targetId 경로 해시 부작용: 같은 경로에 다른 저장소가 체크아웃된 경우를 사용자가
     # 알아볼 수 있도록 현재 저장소 origin/HEAD 를 기록한다.
-    origin = _git_origin(source_root)
+    origin, origin_error = _git_origin(source_root)
     if origin:
         origin_note = origin
     if warnings:
@@ -645,33 +646,132 @@ def _fp_recheck(scan_dir: str, source_root: str, out) -> tuple[int, dict[str, An
         print("FP 재등장 검사: 과거 false-positive 와 동일 fingerprint 의 finding 없음.", file=out)
     if origin_note:
         print(f"소스 저장소 origin: {origin_note} (targetId 경로 해시 오연결 확인용)", file=out)
+    elif origin_error:
+        # 조용히 사라지면 안 된다 — origin 대조는 targetId 경로 해시 오연결을
+        # 잡는 안전장치이고, 포기했다는 사실 자체가 사용자에게 필요한 정보다.
+        print(
+            f"소스 저장소 origin 대조를 건너뜀: {origin_error} "
+            "(targetId 경로 해시 오연결을 이 실행에서는 확인하지 못했습니다)",
+            file=out,
+        )
     result = {
         "status": "pass",  # 경고는 게이트 실패가 아님(가시화만)
         "checked": True,
         "reemergedCount": len(warnings),
         "warnings": warnings,
         "sourceOrigin": origin_note,
+        "sourceOriginError": origin_error,
     }
     return EXIT_OK, result
 
 
-def _git_origin(source_root: str) -> str | None:
+def _bootstrap_module():
+    """형제 `bootstrap.py` 를 모듈로 불러온다(보안 규칙의 단일 정의 지점).
+
+    한때 PATH 정화와 git config 무력화 목록을 이 파일에서 재구현했는데, 둘 다
+    **더 약한 사본**이었다. 실측: 저장소가 `escape -> /tmp` 를 커밋하고 별칭
+    표기를 PATH 에 얹으면 정화 PATH 의 첫 항목이 `/tmp` 가 되어 `/tmp/git` 이
+    실행됐다(`within_target` 은 같은 항목을 거부한다). 같은 보안 규칙의 두 사본은
+    반드시 어긋난다 — 그래서 사본을 두지 않는다.
+
+    `exec_module` 이 설치 트리에 `__pycache__` 를 만들지 않게 임포트 구간에서만
+    바이트코드 쓰기를 끈다(읽기 전용 설치본에서는 조용히 무시되지만, 보안 경로가
+    설치 디렉터리에 부작용을 남기지 않는 편이 옳다).
+    """
+    import importlib.util
+    import pathlib
+    import sys as _sys
+
+    here = pathlib.Path(os.path.abspath(__file__)).parent
+    spec = importlib.util.spec_from_file_location(
+        "_codex_bootstrap_rules", str(here / "bootstrap.py")
+    )
+    if spec is None or spec.loader is None:
+        raise ImportError(f"bootstrap.py 를 찾을 수 없습니다: {here / 'bootstrap.py'}")
+    previous = _sys.dont_write_bytecode
+    _sys.dont_write_bytecode = True
+    try:
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+    finally:
+        _sys.dont_write_bytecode = previous
+    return module
+
+
+def _git_child_env(source_root: str) -> tuple[dict[str, str] | None, str | None]:
+    """`git` 을 돌릴 정화된 환경. 실패하면 `(None, 사유)` 를 돌려준다.
+
+    `source_root` 는 **스캔 대상 저장소**이고 신뢰할 수 없다. 원시 환경을 물려주면
+    부트스트랩이 상류 스크립트에 대해 막은 것과 똑같은 구멍이 이 스크립트에 남는다:
+      - `PATH` — 저장소가 커밋한 `./node_modules/.bin/git` 이 해석된다.
+      - `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_*` — `core.fsmonitor` 로 임의 명령 실행.
+      - `GIT_DIR`/`GIT_WORK_TREE` — 다른 저장소의 정보를 보고한다.
+
+    **PATH 정화 규칙과 git config 무력화 목록 둘 다 `bootstrap.py` 에서 가져온다.**
+    실패 센티넬로 빈 문자열 PATH 를 쓰면 안 된다 — `subprocess` 는
+    `os.get_exec_path(env)` 를 쓰고 `"".split(":") == [""]` 이므로 `PATH=""` 는
+    "git 을 못 찾는다"가 아니라 **"cwd 상대 `git` 을 실행한다"** 가 된다
+    (실측: cwd 안의 `git` 스텁이 실행됐다). 그래서 `None` 을 돌려주고 호출자가
+    참조하면 즉시 깨지게 한다.
+    """
+    root_real = os.path.realpath(source_root)
+    try:
+        bootstrap = _bootstrap_module()
+        sanitized_path = bootstrap.sanitize_pathlist(
+            os.environ.get("PATH") or "", pathlib.Path(root_real)
+        )
+        overrides = bootstrap.git_config_overrides(pathlib.Path(root_real))
+    except Exception as error:  # noqa: BLE001 — 규칙을 못 가져오면 git 을 돌리지 않는다.
+        return None, f"bootstrap 보안 규칙 로드 실패: {type(error).__name__}: {error}"
+    if not sanitized_path:
+        return None, "정화된 PATH 가 비어 있습니다 — 신뢰할 수 있는 git 을 확보할 수 없습니다."
+    env: dict[str, str] = {
+        "PATH": sanitized_path,
+        "HOME": os.devnull,
+        "LC_ALL": "C",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": os.devnull,
+    }
+
+    def _apply(pairs: list[tuple[str, str]]) -> None:
+        env["GIT_CONFIG_COUNT"] = str(len(pairs))
+        for index, (key, value) in enumerate(pairs):
+            env[f"GIT_CONFIG_KEY_{index}"] = key
+            env[f"GIT_CONFIG_VALUE_{index}"] = value
+
+    _apply(overrides)
+    # `.gitattributes` 가 이름을 고르는 filter/diff 드라이버는 고정 키 열거로 닫을
+    # 수 없다 — 정의된 키를 열거해 함께 못 박는다(근거는 bootstrap 쪽 독스트링).
+    try:
+        drivers, _ = bootstrap.git_driver_overrides(pathlib.Path(root_real), dict(env))
+    except Exception as error:  # noqa: BLE001
+        return None, f"git 드라이버 키 열거 실패: {type(error).__name__}: {error}"
+    if drivers:
+        _apply(overrides + drivers)
+    return env, None
+
+
+def _git_origin(source_root: str) -> tuple[str | None, str | None]:
+    """(origin 메모, 포기 사유). 포기 사유는 결과에 실어 사용자에게 보인다."""
     import subprocess
 
+    env, failure = _git_child_env(source_root)
+    if env is None:
+        return None, failure
     try:
         head = subprocess.run(
             ["git", "-C", source_root, "rev-parse", "HEAD"],
-            capture_output=True, text=True, timeout=10, check=False,
+            capture_output=True, text=True, timeout=10, check=False, env=env,
         ).stdout.strip()
         remote = subprocess.run(
             ["git", "-C", source_root, "config", "--get", "remote.origin.url"],
-            capture_output=True, text=True, timeout=10, check=False,
+            capture_output=True, text=True, timeout=10, check=False, env=env,
         ).stdout.strip()
-    except (OSError, subprocess.SubprocessError):
-        return None
+    except (OSError, subprocess.SubprocessError) as error:
+        return None, f"git 실행 실패: {type(error).__name__}: {error}"
     if not head and not remote:
-        return None
-    return f"origin={remote or '<none>'} HEAD={head[:12] or '<none>'}"
+        return None, None
+    return f"origin={remote or '<none>'} HEAD={head[:12] or '<none>'}", None
 
 
 def run(args: argparse.Namespace, out) -> tuple[int, dict[str, Any]]:

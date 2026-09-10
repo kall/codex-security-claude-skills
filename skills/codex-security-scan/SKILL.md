@@ -29,7 +29,7 @@ description: >-
 1. **bootstrap 실행** — 경로 진실 원천을 얻는다.
 
    ```bash
-   python3 <이 스킬 dir>/scripts/bootstrap.py --target-repo <스캔 대상 저장소 루트>
+   python3 <이 스킬 dir>/scripts/bootstrap.py --target-repo <스캔 대상 저장소 루트> --require-search
    ```
 
    - `python3`가 PATH에 없거나 3.10 미만이면 `PYTHON=<인터프리터 경로>`를 앞에 붙여 재시도한다.
@@ -37,15 +37,55 @@ description: >-
      이 부트스트랩 호출에만 해당하며, 이후 플러그인 스크립트는 아래 `<python_command>`를 쓴다.
    - `--target-repo`를 **명시**하라(스캔 대상 저장소의 루트). 생략하면 cwd의 git 최상위로
      추정하지만, 모노레포 하위 패키지에서 호출하면 신뢰 경계가 좁아지므로 명시가 안전하다.
+   - `--require-search`는 **저장소 전체 스캔과 deep-lite 만** 붙인다. 2단계 인벤토리를
+     상류 스크립트에 위임하므로 신뢰할 수 있는 ripgrep 확보가 선행 조건이다(P5-KTD2).
+     **diff 스캔은 붙이지 않는다** — diff 모드는 `git` 만 쓴다(실측). 대신 `trustedPathEnv` 는 쓴다.
    - 성공 시 단일 JSON을 출력한다:
-     `{"ok": true, "pluginRoot", "pluginVersion", "pluginSource", "python": {"path","version"}, "scanDir", "scansRoot", "stateDir", "repoRoot"}`.
+     `{"ok": true, "pluginRoot", "pluginVersion", "pluginSource", "python": {"path","version"}, "searchCommand": {"path","source","pathPrefix","version"}, "scanDir", "scansRoot", "stateDir", "repoRoot"}`.
      **이 JSON이 이후 모든 단계의 경로·인터프리터 진실 원천이다.** 아래에서
      `<plugin_dir>` = `pluginRoot`, `<python_command>` = bootstrap이 반환한 **`python.path`**
      (3.10+·tomli 조건을 통과한 절대 경로 — 이걸 그대로 쓴다), `<scan_dir>` = `scanDir`,
-     `<repo_root>` = `repoRoot`.
+     **셸 명령에 값을 보간할 때는 반드시 인용된 형태를 쓴다.** bootstrap은
+     `shellQuoted` 객체와 `trustedChildEnvShell` 문자열로 인용본을 함께 낸다:
+
+     | 자리표시자 | 쓸 값 |
+     |---|---|
+     | `<trusted_child_env>` | `trustedChildEnvShell` |
+     | `<repo_root>` | `shellQuoted.repoRoot` |
+     | `<plugin_dir>` | `shellQuoted.pluginRoot` |
+     | `<scan_dir>` | `shellQuoted.scanDir` |
+     | `<python_command>` | `shellQuoted.pythonPath` |
+     | `<search_path_env>` | `shellQuoted.searchPathEnv` |
+     | `<trusted_path_env>` | `shellQuoted.trustedPathEnv` |
+
+     > **이중인용(`"…"`)으로는 부족하다** — `$()`·백틱·`${}`를 막지 못한다. 그리고
+     > 이 값들의 출처는 미신뢰 환경이다: `scanDir`·`stateDir`는
+     > `CODEX_SECURITY_STATE_DIR`에서, `pathEnv`는 PATH 항목의 **디렉터리 이름**에서
+     > 온다. 실측으로 두 경로 모두 명령 치환이 실행됐다 — `mkdir -p "<scan_dir>/…"`와
+     > `PATH="<search_path_env>"`. 한 축만 인용하면 계약이 반쪽이다.
+     >
+     > **인용본을 다시 `"…"` 안에 넣지 말 것.** `shellQuoted.*`는 이미 완결된 셸
+     > 토큰이다. `PATH="<search_path_env>"`처럼 이중인용으로 감싸면 인용본의
+     > 단일인용은 **리터럴 문자**가 되고 `$()`는 그대로 확장된다 — 인용본을 써도
+     > 명령 치환이 실행되고(실측), 공백이 든 정상 경로에는 리터럴 `'`가 섞여
+     > 새로 깨진다. 아래 명령형은 그래서 자리표시자를 **맨몸으로** 쓴다. 이어붙이기
+     > (`<scan_dir>/artifacts/…`)도 맨몸이면 정상 동작한다 — `'…'/artifacts/…`는
+     > 셸이 하나의 단어로 잇는다.
+     >
+     > 인용되지 않은 원본(`repoRoot`, `scanDir`, `trustedChildEnv` 배열 …)은
+     > **프로그램적으로 환경·인자를 구성할 때만** 쓴다(`subprocess(env=…, args=[…])`).
+   - **`trustedPathEnv`는 대상 저장소 내부 항목을 제거한 PATH다.** 플러그인 스크립트를
+     자식 프로세스로 돌릴 때 원시 `$PATH`를 물려주지 말고 이 값을 쓴다 — 상류 스크립트들이
+     `git`·`rg`를 PATH에서 해석해 `cwd=대상 저장소`로 실행하기 때문이다(P5-KTD2).
    - **시작 고지**: 선택된 플러그인의 절대 경로와 `pluginVersion`을 사용자에게 알린다.
-     `pluginVersion`이 이 번역 지침 작성 기준(0.1.22)과 다르면 "플러그인 버전이 매핑 기준과
-     다름 — 워크플로 지시가 바뀌었을 수 있음"을 경고한다.
+     `pluginVersion`이 이 번역 지침 작성 기준(**0.1.94**, npm 0.1.25)과 다르면 "플러그인 버전이
+     매핑 기준과 다름 — 워크플로 지시가 바뀌었을 수 있음"을 경고한다. 이 값은 매니페스트
+     버전이며 npm 패키지 버전과 다른 축이다(npm 0.1.25 = 매니페스트 0.1.94).
+   - **표기 규약**: 이 저장소의 문서는 두 축을 **항상 이름으로 구분해** 쓴다 — `npm 0.1.25`,
+     `매니페스트 0.1.94`. 축 없이 "플러그인 0.1.x"로 쓰지 않는다. 두 축의 숫자 범위가 겹쳐서
+     (npm 0.1.20과 매니페스트 0.1.20이 둘 다 존재) 축을 생략하면 어느 쪽인지 알 수 없다.
+   - 검색 명령 해석 결과(`searchCommand.source`)도 함께 고지한다 — `trusted-executable`이면
+     PATH의 ripgrep, `claude-shim`이면 Claude Code 바이너리를 `rg`로 노출한 심링크다.
    - `ok: false`이면 `stage`·`error`의 한국어 안내를 그대로 사용자에게 전하고 **중단**한다
      (플러그인 미설치 → `npm install -g @openai/codex-security`, 신뢰 게이트 위반 → 대상 저장소
      내부 사본 거부, Python 미달, scan-dir 문제).
@@ -54,8 +94,11 @@ description: >-
    Code 조건에서 영구 `incomplete`(exit 2)임이 실증되어 폐기했다. 대신:
    - (a) 서브에이전트(Task/Agent) 위임이 가능한가? — 표준 스캔은 단일 에이전트 전제라 없어도
      되지만, 위임했다고 주장하려면 **실제 spawn 성공 결과가 있어야 한다**(없으면 부모 단독 수행).
-   - (b) `rg`·`git`·`python3`가 있는가? `rg`가 없으면 `git ls-files`로 폴백한다.
-   - (c) 하나라도 없으면 **부모 단독 수행으로 격하**하고 그 사실을 최종 보고에 적는다(R5 degraded path).
+   - (b) `git`이 있는가? 검색 명령(ripgrep)은 0단계 부트스트랩이 이미 해석했다 — `searchCommand`가
+     `null`이면 `--require-search`가 이미 중단시켰으므로 여기까지 오지 않는다. **`rg` 부재는 더 이상
+     격하 사유가 아니라 중단 사유다**(P5-KTD2·P5-KTD3).
+   - (c) 위임이 불가능하면 **부모 단독 수행으로 격하**하고 그 사실을 최종 보고에 적는다(R5 degraded path).
+     검색 명령 확보 실패는 격하가 아니라 중단이므로 이 경로와 구분한다.
 
 3. **정책 해결** — 대상 저장소에 `SECURITY.md`가 있으면:
    ```bash
@@ -122,12 +165,60 @@ description: >-
 넣는다.
 
 ### 2. 인벤토리 + 전 파일 리뷰
-1. 파일 목록 생성(repo-relative, 결정론 정렬):
+1. 파일 목록 생성 — **상류 스크립트에 위임한다**(P5-KTD2):
    ```bash
-   mkdir -p "<scan_dir>/artifacts/02_discovery"
-   (cd "<repo_root>" && rg --files --hidden --glob '!.git/**' -- "<스코프>" | LC_ALL=C sort) > "<scan_dir>/artifacts/02_discovery/in_scope_files.txt"
+   mkdir -p <scan_dir>/artifacts/02_discovery
+   env -i <trusted_child_env> PATH=<search_path_env> <python_command> <plugin_dir>/scripts/generate_in_scope_files.py --repo <repo_root> --scope <스코프> --out <scan_dir>/artifacts/02_discovery/in_scope_files.txt
    ```
-   `rg`가 없으면 `git -C "<repo_root>" ls-files -- "<스코프>" | LC_ALL=C sort`로 폴백한다.
+   **PATH 정화만으로는 반쪽이다.** 상류 스크립트는 `env=`를 넘기지 않아 부모 환경을 전부
+   상속하고, 거기에는 PATH보다 강한 채널이 있다(전부 재현 확인):
+
+   | 변수 | 무엇이 되나 |
+   |---|---|
+   | `GIT_CONFIG_COUNT`·`GIT_CONFIG_KEY_*` | `core.fsmonitor`로 **임의 명령 실행** — 대상은 상류가 `cwd=저장소`로 돌리는 바로 그 `git ls-files`다 |
+   | `GIT_DIR`·`GIT_WORK_TREE` | `git rev-parse --show-toplevel`을 하이재킹해 **신뢰 경계 자체를 옮긴다** |
+   | `NODE_OPTIONS` | `--require <저장소 JS>`로 자식에서 실행 |
+   | `LD_PRELOAD`·`LD_AUDIT` | 저장소 안 `.so`가 자식 전부에서 실행 |
+   | `RIPGREP_CONFIG_PATH` | `--glob=!src/**`로 커버리지 분모 축소, `--glob=!*`면 붕괴. 상류는 `rg`의 종료코드 1(매치 0건)을 정상으로 받아 **경고 없이 진행된다** |
+
+   그래서 **`env -i <trusted_child_env>`로 환경을 교체한다.** `<trusted_child_env>` =
+   bootstrap이 반환한 **`trustedChildEnvShell`** 문자열을 그대로 붙인다.
+
+   > **`trustedChildEnv` 배열을 직접 이어 붙이지 말 것.** 그 값들은 미신뢰 환경에서 온
+   > 것이고(`TERM`·`TZ`·`PATH` 등), 공백으로 이어 셸에 보간하면 단어 분리·명령 치환이
+   > 일어난다 — 그 셸은 `env -i` **밖**이라 정화가 적용되지 않는다(저장소가 얹은 `TERM`
+   > 값이 실행되는 것을 재현 확인). 공백이 든 `PATH` 항목 하나로 선의의 사용자에게도
+   > exit 127이 난다. `trustedChildEnvShell`은 각 항목을 셸 인용한 형태이고, 배열은
+   > 프로그램적으로 환경을 구성할 때(`subprocess(env=…)`)만 쓴다.
+
+   허용 목록으로 구성돼 있어 위 채널이 모두 빠져 있고, `GIT_CONFIG_GLOBAL`·
+   `npm_config_userconfig`를 직접 무력화해 전역 설정 채널까지 닫는다.
+
+   **알아야 할 동작 변경**: 사용자 전역 gitignore(`~/.config/git/ignore`,
+   `core.excludesFile`)가 적용되지 않으므로 커버리지 분모가 로컬 `git status`와 다를 수
+   있다(실측: 1→2 파일). 스캔 결과가 개발자 개인 설정에 좌우되지 않는 편이 재현성에는
+   낫지만, 최종 보고에서 분모를 설명할 때 이 사실을 감안한다.
+
+   `<search_path_env>` = bootstrap이 반환한 **`shellQuoted.searchPathEnv`**(인용본).
+   원시 `searchCommand.pathEnv`는 `subprocess(env=…)`처럼 프로그램적으로 환경을
+   구성할 때만 쓴다. **PATH를 이 값으로 교체한다 — 앞에 덧붙이지 않는다.**
+   `$PATH`를 뒤에 이어 붙이면 안 된다.
+
+   **이유(실측):** 이 스크립트는 `rg`뿐 아니라 **`git`도 PATH에서 해석해 `cwd=대상 저장소`로
+   실행**한다. 원시 `$PATH`를 물려주면 대상 저장소가 커밋한 `./node_modules/.bin/git`이
+   사용자 권한으로 실행된다(합성 저장소로 재현 확인). `pathEnv`는 부트스트랩이 대상 저장소
+   내부 항목을 제거하고 shim을 앞에 붙여 만든 값이다. PATH 주입은 이 호출에만 한정하고
+   세션 전역 PATH는 바꾸지 않는다.
+
+   직접 `rg`를 부르지 않는 이유: 상류는 `.gitignore`를 존중하되 **추적 중인 무시 파일을 되살린다**
+   (`git ls-files --cached --ignored`). 우리가 `rg`만 부르면 커밋된 `dist/` 같은 파일이 커버리지
+   분모에서 빠지고, `git ls-files`로 폴백하면 반대로 미추적 파일이 빠진다. 두 경우 다 상류와
+   다른 분모를 만든다.
+
+   **상류 규칙과의 편차(P5-KTD2):** 상류 `references/core-scan.md`는 검색 명령을 못 찾으면
+   `git grep`·`find`·`grep`으로 폴백하라고 지시한다. **전체 스캔 인벤토리 경로에서는 그 폴백을
+   채택하지 않는다** — 폴백 산출물은 상류 인벤토리 집합과 달라 커버리지 분모가 어긋난다.
+   대신 0단계에서 중단한다. 이 편차는 의도적이다.
 2. **목록의 모든 파일을 처음부터 끝까지 리뷰**한다. 예제·데모·픽스처·테스트라고 건너뛰지 않는다.
    한 파일에서 버그 하나 찾고 멈추지 않는다. 리뷰 불가(바이너리·생성물)는 그렇게 명시 열거한다.
 3. **리뷰 로그(R8)**: 파일 하나를 리뷰할 때마다 `<scan_dir>/artifacts/02_discovery/review_log.jsonl`에

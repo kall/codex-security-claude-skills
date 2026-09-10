@@ -19,14 +19,33 @@ description: >-
 2. **preflight(R11)**: `deep_security_scan` 프로필은 실행하지 않는다(block 3종 중 `native_multi_agent_v2`가
    구조적으로 만족 불가). 대신 `security_scan` 프로필(Phase 1 방식)을 실행하고, deep 프로필 미충족 사실과
    함의를 고지한다.
-3. `bootstrap.py --target-repo <root>`로 pluginRoot·python·scanDir을 얻는다.
-4. **워크벤치 등록(Phase 2)**: `workbench_glue.py register --mode deep` → `contract` → `feedback`. recipe
+3. `bootstrap.py --target-repo <root> --require-search`로 pluginRoot·python·scanDir·
+   `searchCommand`·`trustedPathEnv`를 얻는다. **`--require-search`가 필요한 이유**: 후속 단계의
+   커버리지 분모(`in_scope_files.txt`)를 Phase 1 2단계와 같은 상류 `generate_in_scope_files.py`로
+   만들고, 그 스크립트가 `rg`를 **PATH에서만** 해석하기 때문이다. 랭킹 파이프라인 자체는
+   `rg`를 타지 않는다(아래 「랭킹 파이프라인」 — `make-repo-rank-input`은 `rglob`을 쓴다).
+   `rg`를 쓰는 `make-repo-scope-input`은 deep-lite 파이프라인에 없다.
+   확보 실패 시 `bootstrap.py`가 exit 1 + `stage=searchCommand`로 멈추므로 스캔을 시작하지 않는다.
+4. **플러그인 스크립트 호출 시 PATH를 교체한다.** 랭킹 파이프라인을 포함해 대상 저장소를 `cwd`로
+   실행하는 모든 상류 스크립트는 `PATH=<search_path_env>`로 호출한다 —
+   `<search_path_env>` = `shellQuoted.searchPathEnv`(인용본이므로 `"…"`로 다시 감싸지
+   않는다). **앞에 덧붙이지 말고 교체한다.** 원시 `$PATH`를
+   물려주면 대상 저장소가 커밋한 `./node_modules/.bin/git`·`rg`가 사용자 권한으로 실행된다
+   (Phase 1 SKILL.md 0단계에 근거와 실측 재현이 있다).
+5. **워크벤치 등록(Phase 2)**: `workbench_glue.py register --mode deep` → `contract` → `feedback`. recipe
    `mode`는 `"deep"`. coverage.mode 기대값은 **contract 조회 결과가 권위**(R10). deep 전용 DB
    서브커맨드는 쓰지 않는다(KTD4 — 일반 스캔 수명주기에 태움).
 
 ## 랭킹 파이프라인 (R6 — 실측 계약: docs/verification/phase4-deep-lite-pipeline.md)
 
-`<python> <plugin_dir>/scripts/generate_rank_input.py` 사용. **샤드 디렉터리는 반드시 `rank_shards`로
+`env -i <trusted_child_env> PATH=<search_path_env> <python> <plugin_dir>/scripts/generate_rank_input.py` 사용
+`<trusted_child_env>` = `trustedChildEnvShell`, 그 외 경로 자리표시자는 모두
+`shellQuoted.*`의 인용본을 쓰고 **`"…"`로 다시 감싸지 않는다**(이중인용은 `$()`를
+막지 못하고, 인용본을 이중인용 안에 넣으면 단일인용이 리터럴이 되어 인용 자체가
+무효가 된다 — 근거와 실측은 Phase 1 SKILL.md 2단계).
+(`<search_path_env>` = `shellQuoted.searchPathEnv` — 0단계 4항). `RIPGREP_CONFIG_PATH=`는 이 서브커맨드
+(`make-repo-rank-input`)에서는 실효가 없다 — 그 경로는 `rglob`을 쓰고 `rg`를 타지 않는다(실측).
+전체 스캔 인벤토리 호출과 형태를 맞춘 방어 조치다. **샤드 디렉터리는 반드시 `rank_shards`로
 명명하고 pool-plan 파일의 형제**로 둔다.
 
 1. `make-repo-rank-input --repo <root> --out <disc>/rank_input.jsonl`

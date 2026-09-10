@@ -33,7 +33,8 @@ usage() {
   --link    (기본) 심볼릭 링크로 설치한다. 저장소 수정이 즉시 반영된다 (개발용).
   --copy    실제 복사본으로 설치한다 (배포용).
   --force   대상 경로가 이미 있을 때 덮어쓴다.
-  --check   설치 후 실행 환경을 프로브한다(번들 플러그인·Python·게이트 사본).
+  --check   설치 후 실행 환경을 프로브한다(번들 플러그인·Python·검색 명령·게이트 사본).
+            종료코드 0=정상 / 2=부분 정상(ripgrep 미확보, 전체 스캔 불가) / 1=실패.
             플러그인이 없으면 설치 명령을 안내한다. 자동 설치는 하지 않는다.
   --check-only  설치하지 않고 프로브만 수행한다.
   -h, --help  이 도움말을 출력한다.
@@ -135,7 +136,8 @@ install_one() {
 # 무엇을 확인하는가:
 #   1. Python 3.10+ (bootstrap.py 가 스스로 판정한다)
 #   2. 신뢰 가능한 codex-security 번들 플러그인 (없으면 설치 명령 안내 — 자동 설치는 하지 않음)
-#   3. 플러그인 사본의 워킹트리 게이트 처리(하드 실패 / 경고) — 같은 버전에서도 다르다
+#   3. 검색 명령(ripgrep) — 저장소 전체 스캔·deep-lite 의 전제. 미확보는 exit 2(부분 정상)
+#   4. 플러그인 사본의 워킹트리 게이트 처리(하드 실패 / 경고) — 같은 버전에서도 다르다
 # 자동 설치를 하지 않는 이유: 전역 npm 환경 변경은 사용자 결정이다.
 # ---------------------------------------------------------------------------
 run_check() {
@@ -151,14 +153,28 @@ run_check() {
   # 대상 저장소는 신뢰 경계 계산에만 쓰이므로 빈 임시 디렉터리로 프로브한다.
   probe_target="$(mktemp -d)" || return 1
   boot_json="$(mktemp)" || { rm -rf -- "$probe_target"; return 1; }
-  # shellcheck disable=SC2064
-  trap "rm -rf -- '$probe_target' '$boot_json'" RETURN
+  # 홑따옴표 트랩이어야 한다. 큰따옴표로 두면 설정 시점에 경로가 트랩 문자열로
+  # 확장돼, TMPDIR 에 `'` 가 들어가면 정리 명령이 깨지고 임의 명령이 주입된다
+  # (합성 TMPDIR 로 재현 확인). bash RETURN 트랩은 함수 local 을 그대로 본다.
+  # shellcheck disable=SC2016
+  # `|| true` 가 필요하다. rm 이 실패하면 set -e 가 트랩 안에서 발동해 셸이 1 로
+  # 끝나고 함수의 반환값(0/2)이 사라진다 — 정리 실패가 판정을 삼키면 안 된다.
+  # 다만 stderr 는 지우지 않는다. 반환값 보호에 필요한 것은 `|| true` 뿐이고,
+  # 2>/dev/null 까지 붙이면 임시 디렉터리가 조용히 누출된다.
+  trap 'rm -rf -- "$probe_target" "$boot_json" || true' RETURN
 
+  # `|| rc=$?` 로 감싸야 한다. set -e 아래에서 맨몸 호출이 실패하면 rc 대입 다음
+  # 진단 블록에 도달하지 못하고, RETURN 트랩도 실행되지 않아 프로브용 임시
+  # 디렉터리가 매 실패마다 누출된다(--check-only 경로에서 재현 확인).
+  rc=0
   PYTHONDONTWRITEBYTECODE=1 "$python_bin" "$bootstrap" \
-    --target-repo "$probe_target" --no-scan-dir > "$boot_json" 2>/dev/null
-  rc=$?
+    --target-repo "$probe_target" --no-scan-dir --probe-search > "$boot_json" 2>/dev/null \
+    || rc=$?
 
-  PYTHONDONTWRITEBYTECODE=1 "$python_bin" - "$boot_json" "$rc" <<'PYEOF'
+  # 이 호출도 `|| return` 으로 감싼다. set -e 아래 맨몸 호출이 실패하면 RETURN
+  # 트랩이 실행되지 않아 프로브용 임시 파일이 누출된다(실측: 실패마다 2건).
+  local report_rc=0
+  PYTHONDONTWRITEBYTECODE=1 "$python_bin" - "$boot_json" "$rc" <<'PYEOF' || report_rc=$?
 import json, pathlib, sys
 
 boot_path, rc = pathlib.Path(sys.argv[1]), int(sys.argv[2])
@@ -182,10 +198,28 @@ if rc != 0 or not data.get("ok"):
 
 python_info = data.get("python") or {}
 plugin_root = pathlib.Path(data["pluginRoot"])
-print("\n[프로브] 실행 환경 정상")
+search = data.get("searchCommand")
+# 저장소 전체 스캔과 deep-lite 는 검색 명령 없이는 시작조차 못 한다. 그 상태를
+# "실행 환경 정상"으로 표시하면 주력 스킬 불가와 전부 정상이 같은 신호가 된다.
+print("\n[프로브] 실행 환경 정상" if search else "\n[프로브] 부분 정상 — 저장소 전체 스캔 불가")
 print(f"  플러그인 : {plugin_root}")
 print(f"  버전     : {data.get('pluginVersion')} (출처: {data.get('pluginSource')})")
 print(f"  Python   : {python_info.get('path')} ({python_info.get('version')})")
+
+# 검색 명령(ripgrep). 저장소 전체 스캔·deep-lite 는 인벤토리를 상류 스크립트에 위임하므로
+# 필수다. diff 스캔과 나머지 스킬(validate/patch/verify-fix/scan-match)은 없어도 동작한다.
+if search:
+    origin = {
+        "trusted-executable": "PATH의 ripgrep",
+        "claude-shim": "Claude Code 내장 ripgrep(심링크)",
+    }.get(search.get("source"), search.get("source"))
+    print(f"  검색     : {search.get('version')} — {origin}")
+else:
+    detail = (data.get("diagnostics") or {}).get("searchError") or ""
+    print("  검색     : 확보 실패 — 저장소 전체 스캔을 시작할 수 없습니다")
+    print("             ripgrep 을 설치하세요(apt/brew/cargo install ripgrep).")
+    if detail:
+        print(f"             {detail.splitlines()[0]}")
 
 # 같은 pluginVersion 에서도 워킹트리 게이트 처리가 다르다 — 심볼 존재로 판별한다.
 db = plugin_root / "scripts" / "workbench_db.py"
@@ -200,7 +234,13 @@ else:
         print("  게이트    : 경고 사본 — 변경돼도 종결은 성공하고 경고만 남습니다"
               "(결과는 등록 시점 스냅샷 기준)")
 print("\n  스캔 정확도를 위해 스캔 전 commit/stash 를 권장합니다.")
+
+# 부분 정상은 0 이 아니라 2 로 알린다(회귀 스크립트의 3값 규약과 같은 뜻) —
+# CI 나 릴리즈 검증이 종료코드만 보고 rg 부재를 놓치지 않게 한다.
+if not search:
+    raise SystemExit(2)
 PYEOF
+  return "$report_rc"
 }
 
 BOOTSTRAP_PATH="${SCRIPT_DIR}/codex-security-scan/scripts/bootstrap.py"
@@ -230,7 +270,18 @@ if [ "$CHECK" = "true" ]; then
   probe_bootstrap="${SKILLS_ROOT}/codex-security-scan/scripts/bootstrap.py"
   [ -f "$probe_bootstrap" ] || probe_bootstrap="$BOOTSTRAP_PATH"
   if [ -f "$probe_bootstrap" ]; then
-    run_check "$probe_bootstrap" || failed=1
+    # 프로브의 3값(0 정상 / 2 부분 정상 / 1 실패)을 그대로 노출한다. `|| failed=1`
+    # 로만 두면 2가 1로 눌려, 문서가 릴리즈 검증에 지정한 `--copy --check` 경로
+    # (docs/releasing.md)에서 "rg 부재"와 "설치 실패"가 같은 신호가 된다.
+    probe_rc=0
+    run_check "$probe_bootstrap" || probe_rc=$?
+    if [ "$probe_rc" -ne 0 ]; then
+      if [ "$failed" -eq 0 ]; then
+        failed="$probe_rc"
+      else
+        failed=1   # 설치 자체가 실패했으면 그쪽이 더 강한 신호다.
+      fi
+    fi
   else
     echo "경고: 프로브를 건너뜁니다(bootstrap.py 없음): ${probe_bootstrap}" >&2
   fi
