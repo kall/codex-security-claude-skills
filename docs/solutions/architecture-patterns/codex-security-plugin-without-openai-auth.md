@@ -1,6 +1,7 @@
 ---
 title: "codex-security 번들 플러그인을 OpenAI 인증 없이 Claude Code 스킬로 실행하기"
 date: 2026-07-30
+last_updated: 2026-09-10
 category: architecture-patterns
 module: codex-security-claude-skills
 problem_type: architecture_pattern
@@ -10,7 +11,8 @@ applies_when:
   - "codex-security(또는 유사한 Codex 플러그인)의 스캔 기능을 OpenAI/Codex 인증 없이 쓰고 싶을 때"
   - "번들 플러그인의 결정론 스크립트(finalizer, 워크벤치, 랭킹)를 재사용하되 LLM 두뇌만 다른 에이전트로 바꾸고 싶을 때"
   - "임의 저장소에서 실행되는 전역 스킬이 신뢰할 수 있는 플러그인 사본을 선택해야 할 때"
-tags: [codex-security, claude-code-skill, no-auth, security-scan, plugin-architecture]
+  - "스킬 문서(SKILL.md)의 명령형이 부트스트랩 출력을 셸 명령에 보간할 때 — 계약 9의 문서 절반"
+tags: [codex-security, claude-code-skill, no-auth, security-scan, plugin-architecture, shell-quoting, documentation-contract, regression-test]
 ---
 
 # codex-security 번들 플러그인을 OpenAI 인증 없이 Claude Code 스킬로 실행하기
@@ -30,8 +32,9 @@ codex-security의 스캔 기능은 공식적으로 Codex 바이너리(OpenAI 인
 
 따라서 "SKILL.md를 읽고 따르는 에이전트" 역할을 Claude Code가 대신하면, 나머지 파이프라인(등록 →
 스캔 → 산출물 → 검증 → 봉인 → 이력)을 그대로 재사용할 수 있다. 이 러닝은 그 대체를 실제로 구현하며
-(Phase 0~4를 브랜치 `feature/claude-local-skill`에 커밋; 작성 시점 로컬 커밋 `066cebe`·`fc17f3c`·`76430e8`·
-`16388dd`·`26a9717`, 아직 미푸시라 병합 시 SHA는 바뀔 수 있음) 확인한 재사용 가치가 있는 계약들을 고정한다.
+(Phase 0~4를 구현했고 작성 시점에는 아직 푸시되지 않은 로컬 브랜치에 있다 — 이후 커밋이 재구성돼
+초판에 적었던 SHA는 더 이상 해소되지 않으므로 SHA 대신 아래 파일·계약 번호로 되짚는다)
+확인한 재사용 가치가 있는 계약들을 고정한다.
 
 ## Guidance
 
@@ -124,8 +127,34 @@ codex-security의 스캔 기능은 공식적으로 Codex 바이너리(OpenAI 인
    `trustedChildEnvShell`)을 함께 낸다. **그리고 소비자 명령형은 그 인용본을 맨몸으로 써야
    한다** — 인용본을 다시 `"…"`로 감싸면 단일인용이 리터럴 문자가 되고 `$()`는 그대로 확장돼
    인용이 무효가 된다(실측: `PATH="<pathEnv>"`·`mkdir -p "<scanDir>/…"` 두 축 모두 실행됐다).
-   인용본을 내보내는 것만으로는 계약이 지켜지지 않는다. 문서 쪽 회귀는
-   `repro-u1-search-command.sh` H13e가 세 SKILL.md의 명령형을 직접 읽어 고정한다.
+   인용본을 내보내는 것만으로는 계약이 지켜지지 않는다. 이 결함은 **적대적 리뷰 다섯 라운드를
+   통과했다**(작업 세션 집계 — 저장소에는 이 횟수의 근거가 남아 있지 않다). 매 라운드가 코드를
+   읽었고 어느 라운드도 산문을 읽지 않았다.
+
+   문서 쪽 회귀는 `repro-u1-search-command.sh`의 `H13e`가 SKILL.md를 직접 읽어 고정한다.
+   `shellQuoted.*`로 매핑되는 자리표시자가 **이중인용 구간 안에** 놓인 채 명령줄에 나타나면
+   실패시키고(자리표시자 앞의 큰따옴표 개수가 홀수인지로 판정한다 — 여는 따옴표 바로 뒤만 보면
+   `"… <scan_dir>/x"`처럼 문자열 중간에 오는 형태를 놓친다),
+   `>`·`#`로 시작하는 줄은 건너뛴다 — 설명 블록쿼트가 반례로 그 형태를 **일부러** 인용하기
+   때문이다. 위험이 실재함은 대조군 `H13c-2`가 따로 단언한다(인용본을 이중인용 안에 넣으면
+   명령 치환이 **실제로** 일어나는지를 본다). 그리고 축별 인용 대조(`H13d`)는 원본이 인용을
+   필요로 하지 않으면 `shlex.quote(raw) == raw`라 정의상 만족되므로, `H13f`가 공백 담긴 저장소
+   경로로 부트스트랩을 다시 돌려 `repoRoot` 축을 실제로 행사한다.
+
+   **남는 검출 공백**: `H13e`가 읽는 것은 이 축을 보간하는 세 파일
+   (`codex-security-scan`·`-diff-scan`·`-deep-scan`)뿐이고 저장소의 SKILL.md는 7개다.
+   `skills/codex-security-scan-match/SKILL.md`는 같은 축(`<python>`·`<plugin_dir>`)을 명령형에
+   보간하는데 회귀망 밖이다(현재는 맨몸이라 무해). 또 `H13e`는 **보간 형태**만 고정할 뿐
+   "어느 필드를 가리키는가"라는 산문 지시는 잡지 못한다 —
+   `skills/codex-security-diff-scan/SKILL.md`의 `<trusted_path_env>` 설명이 아직 원시
+   `trustedPathEnv`를 가리키는데, 그 파일의 명령 블록에 그 자리표시자가 등장하지 않아 지금은
+   무해하다. 두 공백 모두 사람 눈에 의존한다.
+
+   **이 실패는 codex-security 고유가 아니다.** 완화가 프로그램과 "그 출력을 쓰는 법을 알려주는
+   문서"로 쪼개져 있으면 그 문서는 완화의 일부이고 곧 공격 표면이다. 안전한 값을 내보내는 것은
+   완화가 아니다 — 완화는 소비자의 **보간 형태**가 맞을 때 완성되고, 그 형태는 보안 코드와
+   똑같이 회귀 테스트 아래에 있어야 한다. 스킬·시스템 프롬프트·툴 설명은 전부 산문으로 쓴
+   실행 계약이므로 이 계층은 계속 커진다.
 
    **`safe.directory` 강제는 저장소의 `.git/config`를 여는 대가를 치른다.** 소유자가 다른
    저장소(컨테이너 바인드 마운트·CI)에서 add-back 집합이 경고 없이 사라지므로 강제가 필요한데,
@@ -175,6 +204,12 @@ report.md + SARIF)을 만들고 공식 CLI(`scans list/show`, `findings false-po
 - **계약 1(신뢰 게이트)** — realpath만 검사하면 리터럴 경로로 경계를 넘을 수 있다. 합성 저장소로
   재현해 확인했다. 이후 인벤토리를 상류에 위임하면서 **정화되지 않은 `$PATH`로 저장소가 커밋한
   `git`이 실행되는** 경로도 실측 재현으로 발견했다(계약 9).
+- **계약 9(셸 인용의 문서 절반)** — 인용본(`shellQuoted.*`)을 정직하게 내보내고 코드에 단언까지
+  붙였는데, 소비자 명령형이 그것을 이중인용으로 감싸고 있어 **두 축 모두 그대로 실행됐다**(실측).
+  완화가 명목상 존재하는 상태였고, 코드만 읽은 리뷰 라운드가 이것을 거듭 놓쳤다. 사전 독해로
+  막을 수 있는 종류가 아니었다 — 코드와 문서를 **함께** 읽어야 보인다.
+- **계약 1-b(사본별 능력 프로브)** — 같은 매니페스트 버전을 보고하는 두 사본이 워킹트리 게이트를
+  다르게 처리한다는 것은 실측으로만 드러났다(버전 문자열로는 알 수 없다).
 - **계약 2(finalize-first)** — `complete-scan`이 binding을 주입하지 않고 검증만 한다는 사실은
   complete가 반복 실패한 뒤에 드러났다.
 - **계약 5(집합 기반 정산)** — 건수 비교로는 "다른 파일을 같은 수만큼 리뷰한" 경우를 못 잡는다.
@@ -191,8 +226,30 @@ report.md + SARIF)을 만들고 공식 CLI(`scans list/show`, `findings false-po
 - deep 스캔 대체물을 만들 때(계약 8).
 - 스캔 간 매칭이나 finding 판정처럼 대상 저장소 파생 텍스트를 LLM에 넣을 때(계약 7).
 - 커버리지 분모가 되는 파일 목록을 만들 때, 또는 대상 저장소에서 외부 실행 파일을 해석할 때(계약 9).
+- **스킬 문서의 명령형이 부트스트랩 출력을 셸에 보간할 때(계약 9의 문서 절반).** 더 넓게는,
+  프로그램이 정화한 값을 내보내고 **사람이나 에이전트가 문서를 읽어** 그것을 셸·SQL·URL·템플릿에
+  보간하는 모든 구조. 이스케이프 함수의 출력은 소비자 쪽 문맥에 따라 유효성이 달라진다
+  (`shlex.quote`와 이중인용, `html.escape`와 속성/스크립트 문맥, 파라미터 바인딩과 문자열 접합).
+  반대로 값이 오직 `subprocess(env=…)`처럼 프로그램적으로만 소비된다면 원시 값을 쓰는 것이 맞다.
 
 ## Examples
+
+**인용본을 이중인용으로 감싸면 인용이 무효가 된다(계약 9의 문서 절반)** — 가장 반직관적인 실패다.
+소비자 명령형은 산문이므로 코드 리뷰에 잡히지 않는다:
+
+```bash
+# 위험 — 인용본을 넣어도 명령 치환이 실행된다(실측)
+mkdir -p "<scan_dir>/artifacts/02_discovery"
+env -i <trusted_child_env> PATH="<search_path_env>" <python_command> …
+
+# 계약 — 맨몸 보간. 인용본은 이미 완결된 셸 토큰이다
+mkdir -p <scan_dir>/artifacts/02_discovery
+env -i <trusted_child_env> PATH=<search_path_env> <python_command> …
+```
+
+이어붙이기도 맨몸이 옳다 — `'…'/artifacts/02_discovery`를 셸이 하나의 단어로 잇는다(실측).
+보안만의 문제도 아니다: 이중인용으로 감싸면 공백이 든 정상 경로에 리터럴 `'`가 섞여
+**선의의 사용자가 깨진다**(실측).
 
 **신뢰 게이트 — realpath만으로는 부족(계약 1)**:
 ```python

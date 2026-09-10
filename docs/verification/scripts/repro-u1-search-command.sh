@@ -974,10 +974,6 @@ raise SystemExit(1 if problems else 0)
 EOF
 expect_exit 0 "$?" "H13d 모든 보간 축에 인용본 존재·값이 인용됨"
 
-# H13e. **문서 계약**: 인용본을 내보내는 것만으로는 계약을 못 지킨다. 소비자
-# 명령형이 자리표시자를 이중인용으로 감싸고 있으면(`PATH="<search_path_env>"`)
-# 인용본의 단일인용은 리터럴이 되고 $() 는 그대로 확장된다 — 실측으로 두 축
-# 모두 실행됐다. 세 SKILL.md 의 명령형에 그 형태가 남아 있지 않은지 고정한다.
 # H13f. 인용이 **코드에** 남아 있는지. H13d 의 축별 대조는 원본이 인용을 필요로
 # 하지 않으면(공백·$ 가 없는 평범한 경로) `shlex.quote(raw) == raw` 라서 정의상
 # 만족된다 — 즉 그 축에서 `shlex.quote()` 를 벗겨도 드러나지 않는다(실측).
@@ -1023,6 +1019,10 @@ else
   bad "H13f-2: 인용본 맨몸 보간이 공백 경로를 복원하지 못했습니다 ($H13F_Q)"
 fi
 
+# H13e. **문서 계약**: 인용본을 내보내는 것만으로는 계약을 못 지킨다. 소비자
+# 명령형이 자리표시자를 이중인용 안에 두면(`PATH="<search_path_env>"`) 인용본의
+# 단일인용은 리터럴이 되고 $() 는 그대로 확장된다 — 실측으로 두 축 모두 실행됐다.
+# 세 SKILL.md 의 명령형에 그 형태가 남아 있지 않은지 고정한다.
 if [ ! -f "$REPO_ROOT/skills/codex-security-scan/SKILL.md" ]; then
   skip "H13e: 스킬 트리를 찾지 못했습니다($REPO_ROOT) — 문서 계약은 검증되지 않았습니다"
 else
@@ -1034,7 +1034,18 @@ quoted_axes = (
     "repo_root", "plugin_dir", "scan_dir", "python_command", "python",
     "search_path_env", "trusted_path_env", "trusted_child_env", "pathEnv", "root",
 )
-pattern = re.compile(r'"<(' + "|".join(map(re.escape, quoted_axes)) + r')>')
+# 여는 큰따옴표 **바로 뒤**만 보면 자리표시자가 더 긴 이중인용 문자열 중간에
+# 오는 형태(`"… <scan_dir>/x"`)를 놓친다. 자리표시자 앞의 큰따옴표 개수가
+# 홀수면 그 자리표시자는 이중인용 구간 **안**에 있다.
+placeholder = re.compile(r'<(' + "|".join(map(re.escape, quoted_axes)) + r')>')
+
+
+def double_quoted_axes(line: str) -> list[str]:
+    return [
+        m.group(1)
+        for m in placeholder.finditer(line)
+        if line.count('"', 0, m.start()) % 2 == 1
+    ]
 problems = []
 for name in ("codex-security-scan", "codex-security-diff-scan", "codex-security-deep-scan"):
     path = root / "skills" / name / "SKILL.md"
@@ -1045,7 +1056,7 @@ for name in ("codex-security-scan", "codex-security-diff-scan", "codex-security-
         # 인용문(> 로 시작하는 설명·근거 서술)은 잘못된 형태를 **일부러** 인용한다.
         if line.lstrip().startswith((">", "#")):
             continue
-        found = pattern.findall(line)
+        found = double_quoted_axes(line)
         if found:
             problems.append(
                 f"{name}/SKILL.md:{lineno} 명령형이 인용본 자리표시자를 이중인용으로 "
