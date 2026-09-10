@@ -9,7 +9,7 @@ LLM 두뇌 역할은 Claude Code 세션 자신이 맡고, 검증·ID 파생·봉
 
 > **지원 범위**: 이 실행 경로는 비(非) Codex 경로이며 **업스트림 OpenAI 지원 대상이 아니다.**
 
-- 설계 배경과 필수 계약 8개: [solutions/architecture-patterns/codex-security-plugin-without-openai-auth.md](solutions/architecture-patterns/codex-security-plugin-without-openai-auth.md)
+- 설계 배경과 필수 계약 10개: [solutions/architecture-patterns/codex-security-plugin-without-openai-auth.md](solutions/architecture-patterns/codex-security-plugin-without-openai-auth.md)
 - 단계별 실측 검증: [verification/phase0-results.md](verification/phase0-results.md) ~ [phase4-results.md](verification/phase4-results.md)
 
 ---
@@ -28,7 +28,9 @@ tar xzf "$PKG.tar.gz"
 bash "$PKG/skills/install.sh" --copy --check
 ```
 
-`--check`가 실행 환경을 프로브해 번들 플러그인 경로·버전·게이트 사본과 Python을 보고한다.
+`--check`가 실행 환경을 프로브해 번들 플러그인 경로·버전·검색 명령(ripgrep)·게이트 사본과
+Python을 보고한다. 종료코드는 **0=정상 / 2=부분 정상(ripgrep 미확보 — 저장소 전체 스캔 불가) /
+1=실패** 세 값이다 — exit 2를 통과로 보지 않는다.
 플러그인이 없으면 설치할 명령을 안내한다(**자동 설치는 하지 않는다** — 전역 npm 환경 변경은
 사용자 결정이다):
 
@@ -82,7 +84,7 @@ node --version       # 22 이상 — 3.1절 플러그인 npm 설치에 필요
 | Python | 3.10+ (3.10은 `tomli`) | 설치 후 `PYTHON=<경로>`로 지정 가능 |
 | git | 필수 | 대상 해석·diff·인벤토리 폴백에 사용 |
 | Node.js | 22+ | 플러그인을 npm 대신 3.1절 (c)·(d) 방법으로 확보하면 불필요 |
-| ripgrep (`rg`) | 선택 | 없으면 `git ls-files`로 자동 폴백(그 사실이 보고에 남는다) |
+| ripgrep (`rg`) | 저장소 전체 스캔·deep-lite 는 **필수** | 인벤토리를 상류 스크립트에 위임하므로 확보하지 못하면 스캔이 시작되지 않는다. Claude Code 세션이면 내장 ripgrep을 `rg` 심링크로 노출해 자동 충족된다(3.3절 프로브가 확인). validate·patch·verify-fix·scan-match는 불필요 |
 
 **OS**: Linux / macOS 기준(bash). Windows는 WSL 사용을 권한다.
 
@@ -109,7 +111,7 @@ npx -y @openai/codex-security --version
 
 # (c) 저장소 체크아웃 사용 (Node 불필요)
 git clone https://github.com/openai/codex-security
-#   → <clone>/sdk/typescript/_bundled_plugin
+#   → <clone>/plugins/codex-security (구 레이아웃: <clone>/sdk/typescript/_bundled_plugin)
 
 # (d) 이미 어딘가에 사본이 있으면 경로를 직접 지정 (셸 프로필에 넣어두면 편하다)
 export CODEX_SECURITY_PLUGIN_ROOT=/path/to/_bundled_plugin
@@ -141,9 +143,20 @@ bash skills/install.sh --check-only     # 설치 없이 프로브만
 
 | 옵션 | 동작 |
 | --- | --- |
-| `--check` | 설치 후 플러그인·Python·게이트 사본을 프로브해 보고. 플러그인이 없으면 exit 1 + 설치 명령 안내(자동 설치 없음) |
+| `--check` | 설치 후 플러그인·Python·검색 명령·게이트 사본을 프로브해 보고(자동 설치 없음) |
 | `--check-only` | 설치를 건너뛰고 프로브만 수행 |
 | `--force` | 대상 경로가 이미 있을 때 덮어쓰기 |
+
+`--check`·`--check-only`의 **종료코드는 세 값**이며, 회귀 스크립트와 같은 규약이다:
+
+| 종료코드 | 의미 | 어떻게 다룰까 |
+| --- | --- | --- |
+| 0 | 실행 환경 정상 | 정상 |
+| **2** | **부분 정상** — 플러그인·Python은 정상인데 **ripgrep을 확보하지 못했다** | 저장소 전체 스캔과 deep-lite는 **시작할 수 없다**. diff·validate·patch·verify-fix·scan-match는 동작한다. ripgrep을 설치하고 다시 확인한다 |
+| 1 | 실패 | 플러그인 부재 등. 출력의 `stage=`와 설치 안내를 따른다 |
+
+**exit 2를 통과로 보지 않는다.** CI나 릴리즈 검증이 종료코드만 확인하면 "주력 스킬이 시작조차
+불가한 환경"과 "전부 정상"이 같은 신호가 된다.
 
 스킬 이름을 인자로 주면 일부만 설치할 수 있지만, `bootstrap.py`는 `codex-security-scan`에만
 있고 모든 스킬이 이를 참조하므로 **7종 전체 설치를 기본으로 두라**.
@@ -171,20 +184,20 @@ python3 "${CLAUDE_SKILLS_DIR:-$HOME/.claude/skills}"/codex-security-scan/scripts
   --target-repo /path/to/target-repo --no-scan-dir
 ```
 
-npm 전역 설치 환경에서의 성공 출력(플러그인 0.1.22 기준. 경로·Python 값은 환경마다 다르다):
+npm 전역 설치 환경에서의 성공 출력(플러그인 0.1.94 기준. 경로·Python 값은 환경마다 다르다):
 
 ```json
 {
   "ok": true,
   "pluginRoot": "<npm root -g>/@openai/codex-security/_bundled_plugin",
-  "pluginVersion": "0.1.22",
+  "pluginVersion": "0.1.94",
   "pluginSource": "npm-global",
   "python": { "path": "/usr/bin/python3.14", "version": "3.14.4", "source": "python3" },
   "scanDir": null,
   "scansRoot": null,
   "stateDir": "/home/<user>/.codex/state/plugins/codex-security",
   "repoRoot": "/path/to/target-repo",
-  "diagnostics": { "pluginAttempts": [ { "source": "npm-global", "result": "accepted", "pluginVersion": "0.1.22" } ] }
+  "diagnostics": { "pluginAttempts": [ { "source": "npm-global", "result": "accepted", "pluginVersion": "0.1.94" } ] }
 }
 ```
 
@@ -194,7 +207,7 @@ npm 전역 설치 환경에서의 성공 출력(플러그인 0.1.22 기준. 경�
 
 ### 3.4 플러그인 사본별 동작 차이 확인 (권장)
 
-**플러그인 0.1.22(npm 0.1.18) 기준으로는 두 사본이 같게 동작한다** — npm 배포본과 GitHub 저장소
+**플러그인 0.1.94(npm 0.1.25) 기준으로는 두 사본이 같게 동작한다** — npm 배포본과 GitHub 저장소
 체크아웃 모두 워킹트리가 변경돼도 **종결은 성공하고 경고만** 남긴다(2026-08-25 실측). 하드 실패
 사본을 만드는 심볼(`require_unchanged_target`)은 현재 배포본에 존재하지 않는다.
 
@@ -212,8 +225,8 @@ grep -q "def require_unchanged_target" "$PLUGIN/scripts/workbench_db.py" \
 
 | 사본 / 시점 | 스캔 중 워킹트리 변경 후 종결 시 | 실측 메시지 |
 | --- | --- | --- |
-| npm 배포본 0.1.18 (매니페스트 0.1.22) | **성공 종결 + 경고** | `Working-tree contents changed while the scan was running; results were saved for the original snapshot.` |
-| GitHub 저장소 체크아웃 0.1.18 (매니페스트 0.1.22) | **성공 종결 + 경고**(과거의 하드 실패 동작 없음) | 위와 동일 |
+| npm 배포본 0.1.25 (매니페스트 0.1.94) | **성공 종결 + 경고** | `Working-tree contents changed while the scan was running; results were saved for the original snapshot.` |
+| GitHub 저장소 체크아웃 0.1.25 (매니페스트 0.1.94) | **성공 종결 + 경고**(과거의 하드 실패 동작 없음) | 위와 동일 |
 | npm 배포본 0.1.3 (매니페스트 0.1.14, 과거 실측) | **성공 종결 + 경고** | 위와 동일 |
 | GitHub 저장소 체크아웃 0.1.14 (과거 실측) | `complete-scan` **실패**(스캔 행은 `running` 유지) → 스킬이 3선택지를 묻는다 | `Working-tree contents changed while the scan was running. Start a new scan.` |
 
@@ -227,7 +240,7 @@ commit/stash를 권한다.
 ### 3.5 제거
 
 ```bash
-rm -rf "${CLAUDE_SKILLS_DIR:-$HOME/.claude/skills}"/security-{scan,validate,patch,diff-scan,scan-match,deep-scan}-local
+rm -rf "${CLAUDE_SKILLS_DIR:-$HOME/.claude/skills}"/codex-security-{scan,diff-scan,validate,patch,verify-fix,scan-match,deep-scan}
 npm uninstall -g @openai/codex-security   # 플러그인까지 지울 때
 ```
 
@@ -242,7 +255,7 @@ npm uninstall -g @openai/codex-security   # 플러그인까지 지울 때
 | 변수 | 역할 |
 | --- | --- |
 | `CODEX_SECURITY_PLUGIN_ROOT` | 플러그인 루트 직접 지정(탐색 생략) |
-| `CODEX_SECURITY_SDK_REPO` | 저장소 체크아웃 경로 지정(`<경로>/sdk/typescript/_bundled_plugin` 사용) |
+| `CODEX_SECURITY_SDK_REPO` | 상류 저장소 체크아웃 경로 지정. `<경로>/plugins/codex-security` 를 먼저 보고, 없으면 구 레이아웃 `<경로>/sdk/typescript/_bundled_plugin` 을 본다 |
 | `CODEX_SECURITY_STATE_DIR` | 워크벤치 상태 DB·스캔 산출물 루트. 기본 `$CODEX_HOME/state/plugins/codex-security` → `~/.codex/state/plugins/codex-security` |
 | `CODEX_HOME` | 위 폴백 기준(기본 `~/.codex`) |
 | `PYTHON` | 부트스트랩이 쓸 Python 인터프리터 지정 |
@@ -358,13 +371,22 @@ disposition은 `reportable` / `suppressed` / `not_applicable` / `deferred` 4값�
 
 1. **1단 승인 — 수정 diff**: 최소 수정안을 diff로 제시하고, 승인 후에만 적용한다. 거부하면
    저장소는 무변경으로 남는다.
-2. **2단 승인 — 게이트 실행**: 저장소가 정의한 테스트/체크 명령(`package.json`의 `scripts.test`,
-   `Makefile` 타깃, `.pre-commit-config.yaml` 등)은 **대상 저장소가 완전히 제어하는 임의 코드**다.
-   명령 원문과 정의 파일 경로를 보여주고 **별도 승인**을 받으며, 기본값은 미실행이다.
+2. **2단 승인 — 게이트 실행**: 명령 원문과 정의 파일 경로를 보여주고 **별도 승인**을 받으며,
+   기본값은 미실행이다.
 
-outcome은 `fixed`(수정 적용 **및 게이트 통과**) / `no_change`(이미 안전함이 증거로 확인) /
-`blocked`(재현 불가·동작 변경 유발·정책 결정 필요) 3값이다. 게이트를 실행하지 않았으면 `fixed`로
-보고하지 않고 "게이트 미실행"을 명시한다.
+**무엇이 2단 승인 대상인가** — 판정 기준은 "명령 문자열의 출처"가 아니라 **"저장소가 코드 실행을
+통제하는가"**다(정본: `codex-security-patch/SKILL.md`의 「2단 승인 대상 판정 규칙 (P5-KTD7)」).
+`package.json`의 `scripts.test`나 `Makefile` 타깃처럼 저장소가 정의한 명령은 물론이고, 툴체인
+바이너리를 **직접 호출**하더라도 그것이 저장소 설정 파일을 읽어 코드를 실행하면 대상이다 —
+`pytest`→`conftest.py`, `eslint`→`.eslintrc` 플러그인, `mypy`→플러그인. **불확실하면 기본값은 2단
+승인**이고, 1단 범위는 설정 파일을 읽지 않음이 확인된 명령(`python -m py_compile <file>`, 설정
+로드 없는 `tsc --noEmit`)으로만 한정한다. 이 규칙은 패치 적용 **전**의 재현 명령에도 적용된다.
+
+outcome은 `fixed` / `no_change` / `blocked` 3값이다. **`fixed`는 수정이 적용되고 게이트가 통과한
+경우에만** 쓴다 — 게이트를 실행하지 않았거나 거부됐으면 `blocked`이고, 그때는 **적용 여부 / 게이트
+실행 여부 / 되돌리는 방법**을 세 줄로 명시한다(되돌리기는 제안만 하고 실행은 별도 승인).
+**1단 승인 거부**도 `no_change`가 아니라 `blocked`다 — 저장소는 무변경이지만 "이미 안전함이 증거로
+확인된" 경우가 아니기 때문이다.
 
 > 세션 퍼미션이 `acceptEdits`/`bypassPermissions`면 편집·실행이 프롬프트 없이 진행되므로, 그때는
 > **SKILL.md의 2단 승인 지침이 유일한 게이트**다. 스킬은 이 사실을 먼저 고지한다. 보안 수정을
@@ -387,9 +409,10 @@ finding별로 1건씩 판정한다.
 **파일이 사라졌거나 함수명이 바뀐 것은 수정의 증거가 아니다** — 스킬은 이동·리팩터링된 코드를
 따라가 재추적한다. 티켓 종료·무관한 테스트 통과·"새 스캔에 안 나옴"도 증거로 인정하지 않는다.
 
-> 재현기·테스트 등 **저장소가 정의한 명령**을 돌리려면 `codex-security-patch`와 같은 방식으로
-> 명령 원문과 정의 파일을 제시하고 **별도 승인**을 받는다(기본 미실행). 미승인이면 정적 근거로만
-> 판정하고 못 돌린 검사를 증명 공백으로 남긴다 — 대개 `inconclusive`가 된다.
+> 재현기·테스트 등 **저장소가 코드 실행을 통제하는 명령**을 돌리려면 명령 원문과 정의 파일을
+> 제시하고 **별도 승인**을 받는다(기본 미실행). 승인 대상 판정은 5.5절과 같은 규칙(P5-KTD7)을
+> 쓴다 — 정본은 `codex-security-patch/SKILL.md`다. 미승인이면 정적 근거로만 판정하고 못 돌린
+> 검사를 증명 공백으로 남긴다 — 대개 `inconclusive`가 된다.
 
 ### 5.7 스캔 간 매칭 — `/codex-security-scan-match`
 
@@ -403,13 +426,40 @@ finding별로 1건씩 판정한다.
 
 매칭 입력에는 대상 저장소 코드에서 파생된 텍스트가 그대로 들어가므로, 판정은 **도구를 제한한
 격리 서브에이전트**(파일 쓰기·Bash·네트워크 없음, JSON만 반환)가 수행한다. 저장 전
-`validate_matches.py` 검증을 반드시 통과시키고, 거부되면 사유를 전달해 재판정한다. 저장 후:
+`validate_matches.py` 검증을 반드시 통과시키고, 거부되면 사유를 전달해 재판정한다.
+
+판정 결과는 세 갈래다 — **`matches`**(동일 근본 원인, 확정), **`uncertain`**(그럴듯하나 확신 없음),
+**`related`**(근본 원인이 다르지만 인접). `related` 쌍은 같은 확정 매칭 그룹 안에 있어야 하고
+`uncertain`과 겹치거나 중복될 수 없다. 세 갈래 모두 각 항목에 **비어 있지 않은 `reason`**이 필요하다.
+
+매칭 입력에 **`knownFindingGroups`**가 실려 오면(이전 비교들에서 이미 같은 finding으로 확정된
+`findingId` 묶음) 그 그룹은 union-find로 이행적으로 병합되어 **판정 제약**이 된다 — 한 그룹의
+occurrence가 여러 매칭 그룹으로 흩어지거나 `uncertain`으로 격하되면 검증기가 거부한다. 같은
+`findingId`가 before·after 양쪽에 있으면 그 자체로 싱글턴 확정 그룹이 되어 매칭이 강제된다.
+**이 제약은 과거 판정을 사실로 취급하므로, 이전 비교가 틀렸다고 판단되면 새 판정을 억지로 맞추지
+말고 그 비교를 먼저 정정한다**(5.7 하단 「기확정 그룹이 틀렸을 때」).
+
+입력이 커서 프롬프트 한도를 넘으면 쌍을 더 작게 나누는 것이 아니라 **occurrence 목록을 나눠
+여러 번 판정하고 결과를 병합**한다 — 쌍 단위(before-scan × after-scan)는 그대로 유지한다.
+
+저장 후:
 
 ```bash
 codex-security scans compare <before-scan-id> <after-scan-id>
 ```
 
 두 스캔 모두 5.9절 워크벤치 등록을 거쳐야 하며, 일괄 매칭(`--all`)은 지원하지 않는다(쌍 단위만).
+
+**기확정 그룹이 틀렸을 때** — `knownFindingGroups`는 이전 비교의 판정을 되돌릴 수 없는 제약으로
+바꾼다. 이전 판정이 잘못이었다면 다음 순서로 푼다:
+
+1. 어느 비교에서 그 그룹이 생겼는지 확인한다(`codex-security scans compare` 이력).
+2. 그 비교를 다시 판정해 저장한다 — 잘못된 그룹의 근원을 고치는 것이 유일한 정상 경로다.
+3. 근원을 고칠 수 없다면(예: 상류 저장 데이터를 수정할 수 없음) **이번 판정을 억지로 통과시키지
+   않는다.** 검증기 거부를 그대로 보고하고, 어떤 그룹이 왜 틀렸다고 보는지 근거와 함께 남긴다.
+
+검증기를 우회하려고 `related`로 격하하거나 그룹을 무시하는 것은 금지다 — 그러면 잘못된 판정이
+"검증을 통과한 사실"로 세탁된다.
 
 ### 5.8 deep-lite 스캔 — `/codex-security-deep-scan`
 
@@ -502,10 +552,10 @@ codex-security findings false-positive <occurrence-id> --reason "…"
 | `complete`는 성공했는데 `warnings`가 있다 | 경고 사본(3.4절). 결과는 등록 시점 스냅샷 기준이다. 정확한 결과가 필요하면 정리된 워킹트리에서 재스캔 |
 | `finalize_scan_contract.py` exit 2 | stderr 마지막 오류 줄(`<필드 경로>: <기대 형식>`)을 읽고 해당 draft만 수정해 최대 3회 재시도. 초과 시 draft와 오류 원문을 보존하고 중단한다 |
 | shallow clone에서 base 해석 실패 | `git fetch --unshallow` 또는 필요한 base만 fetch |
-| `rg: command not found` | `git ls-files` 폴백으로 자동 진행(그 사실이 보고에 남는다) |
+| `rg: command not found` (저장소 전체 스캔·deep-lite) | 0단계에서 중단된다. `ripgrep`을 설치하거나 Claude Code 세션에서 실행한다(내장 ripgrep을 심링크로 노출). `git ls-files` 폴백은 상류와 다른 인벤토리를 만들어 채택하지 않는다 |
 | `running` 상태 좀비 행 | `list-stale --hours N`으로 나열 후 `close-stale --scan-id <id>`로 **명시적으로만** 정리 |
 | `codex-security: command not found` | 공식 CLI 조회 명령에만 필요하다. `npm install -g @openai/codex-security`(Node 22+) 또는 `npx @openai/codex-security …` |
-| 플러그인 버전 경고 | `pluginVersion`이 매핑 기준(0.1.22)과 다름 → 워크플로 지시가 바뀌었을 수 있으니 8절 재검증을 수행. 버전이 같아도 동작이 다를 수 있으므로 3.4절 프로브를 함께 본다 |
+| 플러그인 버전 경고 | `pluginVersion`이 매핑 기준(0.1.94)과 다름 → 워크플로 지시가 바뀌었을 수 있으니 8절 재검증을 수행. 버전이 같아도 동작이 다를 수 있으므로 3.4절 프로브를 함께 본다 |
 
 ---
 
@@ -515,22 +565,46 @@ codex-security findings false-positive <occurrence-id> --reason "…"
 스크립트는 계약 변화를 종료코드로 드러낸다(저장소 clone 필요, 산출물은 임시 디렉터리에만 쓴다).
 
 ```bash
-# 최소 draft 픽스처가 finalize + validate 를 통과하는지
+# 봉인 계약: 최소 draft 픽스처가 finalize + validate 를 통과하는지,
+# SARIF 성공 판정 형상(블록 F), 인벤토리 정확성(블록 G)
 bash docs/verification/scripts/repro-u4.sh
 
 # 워크벤치 계약 (register → seal → 게이트 → complete)
 bash docs/verification/scripts/repro-u3.sh
+
+# 매칭 검증기 계약 (related·기확정 그룹·이행적 병합·reason 비공백 등)
+bash docs/verification/scripts/repro-u5-match-validator.sh
+
+# 검색 명령 확보와 신뢰 게이트 (저장소 내부 rg 거부, 부작용 게이팅, 반복 호출 멱등성)
+bash docs/verification/scripts/repro-u1-search-command.sh
+
+# 커버리지 정직성 보정과 중단 스캔 복구 (빈 인벤토리 하드 실패, 부분 커버리지 신호, recover 실패 구분)
+bash docs/verification/scripts/repro-u7-coverage-recovery.sh
 
 # 플러그인 경로/인터프리터를 직접 지정할 때
 CODEX_SECURITY_PLUGIN_DIR=/path/to/_bundled_plugin PYTHON=/usr/bin/python3 \
   bash docs/verification/scripts/repro-u3.sh
 ```
 
-두 스크립트는 플러그인을 **환경변수 → 저장소 체크아웃 → npm 전역 설치본** 순으로 찾고, Python은
+다섯 스크립트는 플러그인을 **환경변수 → 저장소 체크아웃 → npm 전역 설치본** 순으로 찾고, Python은
 `PYTHON` → `python3` → `python` 순으로 찾는다.
 
-`repro-u3.sh`의 요약에서 `S5 complete-scan (repo 수정됨)`이 `exit=0`으로 나오면 3.4절의 **경고
-사본**이라는 뜻이다(계약 위반이 아니라 사본 차이).
+`repro-u3.sh`를 뺀 넷은 자기 채점형이고, **종료코드가 세 값**이다:
+
+| 종료코드 | 의미 | 어떻게 다룰까 |
+|---|---|---|
+| 0 (`ALL ASSERTIONS PASSED`) | 모든 단언 통과 | 정상 |
+| 2 (`INCOMPLETE`) | 실패는 없으나 **검증하지 못한 것이 있다** | 통과로 보지 말 것. `repro-u4`·`repro-u1`·`repro-u7`은 `SKIP` 줄이 요구하는 전제(ripgrep, `git`, 플러그인 사본, 픽스처)를 갖춘 뒤 다시 돌린다. `repro-u5`는 skip 기구가 없고 이 코드가 **픽스처 생성 실패** 전용이다 |
+| 1 (`FAILED ASSERTIONS`) | 단언 실패 | 원인을 고친다 |
+
+`repro-u3.sh`는 관측형이므로 말미 요약표의 관측값을 기대값과 사람이 대조한다. 그 요약에서
+`S5 complete-scan (repo 수정됨)`이 `exit=0`으로 나오면 3.4절의 **경고 사본**이라는 뜻이다
+(계약 위반이 아니라 사본 차이).
+
+**ripgrep이 필요한 블록**: `repro-u4.sh`의 인벤토리 정확성(블록 G)과
+`repro-u1-search-command.sh`의 성공 경로다. 둘 다 스킬이 실제로 쓰는 경로(`bootstrap.py`가 해석한
+`searchCommand.pathEnv`)로 확보를 시도하고, 실패하면 `SKIP`으로 세어 **exit 2**로 끝낸다 — 그
+경우 인벤토리 정확성은 검증되지 않았다.
 
 랭킹 파이프라인의 실측 계약(샤드 디렉터리 명명, `score` 1~10, 병합의 부분 실패 거부)은
 [verification/phase4-deep-lite-pipeline.md](verification/phase4-deep-lite-pipeline.md)에 고정되어 있다.

@@ -122,7 +122,7 @@ description: >-
   `findingId`, `occurrenceId`, `fingerprints`, `sealedAt`, `artifacts`, `documentType`,
   `schemaVersion`, `scan.status`, `coverageRef`, `findingsRef`. `scan-manifest.json`은
   `scan.sealedAt`·`scan.artifacts`가 **없는 unsealed draft**로 쓴다.
-  (플러그인 0.1.22의 `scan.status`는 `completed`/`failed`/`canceled`/`interrupted` 열거형이며
+  (매니페스트 0.1.94의 `scan.status`는 `completed`/`failed`/`canceled`/`interrupted` 열거형이며
   finalizer가 결정한다. 이 경로는 항상 `completed`로 봉인되고, 값은 `report.md` 요약표의
   `Scan outcome` 행에 표시된다.)
 - **모델 소유 식별자**: `ruleId`, `identity.anchor`, 선택 `identity.instance`는 **소문자 slug**
@@ -147,8 +147,8 @@ description: >-
 `skills/security-scan/SKILL.md`, `references/core-scan.md`,
 `references/scan-artifacts.md`, `references/final-report.md`, `references/finding-detail-fields.md`.
 
-**상류 문서 이동 주의(플러그인 0.1.16~0.1.22):** `skills/security-scan/references/repository-wide-scan.md`는
-0.1.20에서 삭제되고 내용이 `references/core-scan.md`로 옮겨졌다. 또 상류 표준 스캔은 후보 원장
+**상류 문서 이동 주의(매니페스트 0.1.16~0.1.94 구간):** `skills/security-scan/references/repository-wide-scan.md`는
+**매니페스트 0.1.20**(npm 0.1.12에 처음 실림)에서 삭제되고 내용이 `references/core-scan.md`로 옮겨졌다. 또 상류 표준 스캔은 후보 원장
 (candidate ledger) 방식을 버리고 investigation packet + MCP 도구(`record_codex_security_scan_draft`)
 모델로 갔다. **원장 기반 절차의 권위 서술은 이 스킬 문서**이고, 원장 행 스키마와 중첩 레코드 필드는
 `references/scan-artifacts.md`와 `scripts/normalize_candidates.py`가 소유한다(diff 스캔 터미널 경로에
@@ -240,7 +240,7 @@ description: >-
 
 ### 3. Validation (compact)
 `<plugin_dir>/skills/validation/SKILL.md`와 `skills/validation/references/validation-guidance.md`·
-`references/static-finding-assessment.md`를 읽고 **1회** 수행한다. 플러그인 0.1.16에서 validation 스킬의
+`references/static-finding-assessment.md`를 읽고 **1회** 수행한다. 매니페스트 0.1.16에서 validation 스킬의
 `### Compact Standard-Scan Mode` 절이 `### Compact Workbench-Backed Diff Mode`로 대체됐다 — 그 절의
 MCP 도구 호출(`record_codex_security_candidate_validations`)은 무시하고, **판정 규칙(rubric·evidence·
 confidence)** 만 따른다. 중첩 레코드 필드 정의는 `references/scan-artifacts.md`의 compact validation 항목과

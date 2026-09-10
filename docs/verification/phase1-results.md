@@ -68,3 +68,28 @@ Phase 1 스크립트를 correctness·security·adversarial 관점으로 검토�
 - reconcile은 인벤토리(`in_scope_files.txt`)를 분모로 신뢰하며 재생성하지 않는다. 빈 인벤토리는
   경고만 하고 하드 실패시키지 않는다(빈 스코프가 합법적일 수 있어서). 상류 2단계의 rg/git ls-files
   정확성이 커버리지 정직성의 전제다.
+
+## 부록 — npm 0.1.25(매니페스트 0.1.94) 정합 이후의 변경 (2026-09-09)
+
+위 본문은 **npm 0.1.18 시점의 실측 기록**이며 그대로 보존한다. 그 뒤 인벤토리 생성을 상류
+`generate_in_scope_files.py`에 위임하면서 위 「잔여 리스크」의 판단이 뒤집혔다.
+
+- **빈 인벤토리는 이제 하드 실패다**(`coverage_reconcile.py` exit 3). 당시에는 "빈 스코프가
+  합법적일 수 있어서" 경고로 두었는데, 인벤토리 생성을 상류에 위임한 뒤로는 분모의 정확성이
+  우리 통제 밖에 있어 이 지점이 전면 실패를 잡는 유일한 관문이 됐다. 빈 분모로는 어떤 완결성
+  주장도 근거가 없다.
+- 정당하게 비는 경로(diff 스캔에서 문서만 바뀐 커밋, deep-lite의 랭킹 축소)는
+  `--allow-empty-inventory`로만 통과하고, 통과시켜도 경고가 남는다. 저장소 전체 스캔에는
+  이 플래그를 쓰지 않는다.
+- 회귀 고정: `docs/verification/scripts/repro-u7-coverage-recovery.sh` 블록 I1·I2.
+
+- **"상류 2단계의 rg/git 정확성이 전제"라는 진술은 유지되고, 실측으로 범위가 확정됐다 — 처음
+  적었던 것보다 넓다.** `repro-u4.sh` 블록 G가 손으로 열거한 기대 집합과 대조하고(추적된 무시
+  파일 포함 / 미추적 포함 / 무시된 미추적 제외), 블록 G3·G4가 `.rgignore`와
+  `RIPGREP_CONFIG_PATH`의 영향 범위를 고정한다.
+
+  최초 기록에서는 "미추적 파일에만 해당한다(추적된 파일은 add-back 된다)"고 적었으나 **이는
+  틀렸다.** 상류 add-back은 `git ls-files --cached --ignored --exclude-standard`이므로 **추적
+  AND gitignore된** 파일만 되살린다. 저장소 대부분인 추적+비무시 파일은 커밋된 `.rgignore`로
+  분모에서 빠진다(실측: `.rgignore`에 `src/tracked.py`를 넣으면 인벤토리에서 사라진다). 또한
+  상류는 rg의 종료코드 1(매치 0건)을 정상으로 받으므로 분모가 1개로 붕괴해도 exit 0으로 끝난다.

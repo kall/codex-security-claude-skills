@@ -16,7 +16,7 @@ LLM 두뇌 역할은 Claude Code 세션 자신이 맡고, 검증·ID 파생·봉
 릴리즈 tarball을 받아 설치한다. 아니면 Claude Code 세션에 이 문구를 그대로 복사/붙여넣기해도 된다:
 
 ```
-https://github.com/kall/codex-security-claude-skills/releases/tag/v0.1.18 이거 설치해줘
+https://github.com/kall/codex-security-claude-skills/releases/tag/v0.1.25 이거 설치해줘
 ```
 
 ```bash
@@ -29,7 +29,8 @@ tar xzf "$PKG.tar.gz"
 bash "$PKG/skills/install.sh" --copy --check
 ```
 
-`--check`가 번들 플러그인·Python·게이트 사본을 프로브해 보고한다. 플러그인이 없으면 설치할
+`--check`가 번들 플러그인·Python·검색 명령(ripgrep)·게이트 사본을 프로브해 보고한다.
+종료코드는 **0=정상 / 2=부분 정상(ripgrep 미확보 — 저장소 전체 스캔 불가) / 1=실패** 세 값이다. 플러그인이 없으면 설치할
 명령을 안내한다(자동 설치는 하지 않는다):
 
 ```bash
@@ -61,7 +62,7 @@ Claude Code를 재시작한 뒤 호출한다:
 Claude Code(구독 로그인) · Python 3.10+ · git · codex-security 번들 플러그인.
 Node 22+는 플러그인 npm 설치와 공식 CLI 이력 조회에만 필요하다. Linux·macOS(Windows는 WSL).
 
-검증된 조합: `@openai/codex-security@0.1.18` (플러그인 매니페스트 `0.1.22`).
+검증된 조합: `@openai/codex-security@0.1.25` (플러그인 매니페스트 `0.1.94`).
 
 ## 개발
 
@@ -73,19 +74,27 @@ bash skills/install.sh --link --check     # 링크 설치: 수정이 즉시 반�
 
 이 저장소에는 업스트림 소스(`sdk/`)가 없으므로 개발자도 플러그인을 별도로 확보한다 —
 `npm install -g @openai/codex-security`, 또는 업스트림을 clone해 두고
-`CODEX_SECURITY_SDK_REPO=<clone 경로>`를 지정한다. 플러그인 매니페스트 `0.1.22`에서는 두 사본의
+`CODEX_SECURITY_SDK_REPO=<clone 경로>`를 지정한다. 플러그인 매니페스트 `0.1.94`에서는 두 사본의
 워킹트리 게이트 처리가 **같다**(종결 성공 + 경고). 과거 `0.1.14`에서는 사본에 따라 하드 실패와
 경고로 갈렸으므로 `--check`는 여전히 이를 프로브한다. 자세한 내용은 매뉴얼 3.4절.
 
 플러그인 업데이트 후 계약 회귀 확인:
 
 ```bash
-bash docs/verification/scripts/repro-u4.sh    # 봉인 계약
-bash docs/verification/scripts/repro-u3.sh    # 워크벤치 계약
+bash docs/verification/scripts/repro-u4.sh                 # 봉인 계약 + 인벤토리 정확성
+bash docs/verification/scripts/repro-u1-search-command.sh  # 검색 명령 확보와 신뢰 게이트
+bash docs/verification/scripts/repro-u7-coverage-recovery.sh  # 커버리지 정직성 + 복구 경로
+bash docs/verification/scripts/repro-u5-match-validator.sh # 매칭 검증기
+bash docs/verification/scripts/repro-u3.sh                 # 워크벤치 계약(관측형)
 ```
 
+앞의 넷은 자기 채점형이다 — **exit 0** = 전부 통과, **exit 2**(`INCOMPLETE`) = 전제 부족으로
+검증하지 못한 블록이 있음(통과 아님), **exit 1** = 단언 실패. 저장소 전체 스캔은 ripgrep을
+요구하므로(상류 인벤토리 스크립트가 `rg`를 PATH에서만 해석한다) PATH에 `rg`가 없으면 Claude Code
+내장 ripgrep을 심링크로 노출해 쓴다 — 둘 다 없으면 스캔이 시작되지 않고 위 두 스크립트는 exit 2다.
+
 - 배포본 빌드·릴리즈 절차: [docs/releasing.md](docs/releasing.md)
-- 설계 배경과 필수 계약 8개: [docs/solutions/architecture-patterns/codex-security-plugin-without-openai-auth.md](docs/solutions/architecture-patterns/codex-security-plugin-without-openai-auth.md)
+- 설계 배경과 필수 계약 10개: [docs/solutions/architecture-patterns/codex-security-plugin-without-openai-auth.md](docs/solutions/architecture-patterns/codex-security-plugin-without-openai-auth.md)
 - 단계별 실측 검증: [docs/verification/](docs/verification/)
 
 ## 라이선스

@@ -79,6 +79,9 @@ mkdir -p "$PKG/docs/verification/scripts" "$PKG/docs/verification/fixtures"
 cp -- "$REPO_ROOT/docs/install-and-usage.md" "$PKG/docs/install-and-usage.md"
 cp -- "$REPO_ROOT/docs/verification/scripts/repro-u3.sh" "$PKG/docs/verification/scripts/"
 cp -- "$REPO_ROOT/docs/verification/scripts/repro-u4.sh" "$PKG/docs/verification/scripts/"
+cp -- "$REPO_ROOT/docs/verification/scripts/repro-u5-match-validator.sh" "$PKG/docs/verification/scripts/"
+cp -- "$REPO_ROOT/docs/verification/scripts/repro-u1-search-command.sh" "$PKG/docs/verification/scripts/"
+cp -- "$REPO_ROOT/docs/verification/scripts/repro-u7-coverage-recovery.sh" "$PKG/docs/verification/scripts/"
 cp -- "$REPO_ROOT"/docs/verification/fixtures/*.json "$PKG/docs/verification/fixtures/"
 
 # --------------------------------------------------------------------------
@@ -116,7 +119,8 @@ bash skills/install.sh --copy --check
 \`\`\`
 
 \`--copy\` 로 \`~/.claude/skills/\` 에 설치하고, \`--check\` 로 실행 환경(번들 플러그인·Python·
-게이트 사본)을 프로브한다. 플러그인이 없으면 설치할 명령을 안내한다(자동 설치는 하지 않는다).
+검색 명령(ripgrep)·게이트 사본)을 프로브한다. 플러그인이 없으면 설치할 명령을 안내한다
+(자동 설치는 하지 않는다). 종료코드 0=정상 / 2=부분 정상(ripgrep 미확보) / 1=실패.
 
 플러그인이 없다는 안내가 나오면:
 
@@ -133,18 +137,20 @@ bash skills/install.sh --copy --force --check
 
 ## 검증된 조합
 
-- 번들 플러그인: \`@openai/codex-security@0.1.18\` (플러그인 매니페스트 \`0.1.22\`)
+- 번들 플러그인: \`@openai/codex-security@0.1.25\` (플러그인 매니페스트 \`0.1.94\`)
 - Python 3.10+ / git / Node 22+(플러그인 npm 설치 시)
 - Linux · macOS (Windows 는 WSL)
 
-> 매니페스트 \`0.1.22\` 기준 두 사본 모두 워킹트리 변경 시 "종결 성공 + 경고" 다.
+> 매니페스트 \`0.1.94\` 기준 두 사본 모두 워킹트리 변경 시 "종결 성공 + 경고" 다.
 > 과거 사본은 하드 실패였으므로 \`--check\` 가 어느 쪽인지 알려준다. 자세한 내용은 매뉴얼 3.4절.
 
 ## 문서
 
 - **설치·사용 매뉴얼**: [docs/install-and-usage.md](docs/install-and-usage.md)
 - 스킬 목록·수정 방법: [skills/README.md](skills/README.md)
-- 재검증(플러그인 업데이트 후): \`bash docs/verification/scripts/repro-u4.sh\`, \`repro-u3.sh\`
+- 재검증(플러그인 업데이트 후): \`bash docs/verification/scripts/repro-u4.sh\`, \`repro-u1-search-command.sh\`,
+  \`repro-u7-coverage-recovery.sh\`, \`repro-u5-match-validator.sh\`, \`repro-u3.sh\`
+  (앞의 넷은 자기 채점형: exit 0 = 전부 통과, **exit 2 = 전제 부족으로 미검증**, exit 1 = 실패)
 
 ## 라이선스
 

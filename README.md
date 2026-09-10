@@ -18,7 +18,7 @@ is installed at runtime.
 Download the release tarball and install it. Or just paste this into a Claude Code session:
 
 ```
-Install https://github.com/kall/codex-security-claude-skills/releases/tag/v0.1.18
+Install https://github.com/kall/codex-security-claude-skills/releases/tag/v0.1.25
 ```
 
 ```bash
@@ -31,7 +31,9 @@ tar xzf "$PKG.tar.gz"
 bash "$PKG/skills/install.sh" --copy --check
 ```
 
-`--check` probes the bundled plugin, Python, and gate copy, and reports the results. If the
+`--check` probes the bundled plugin, Python, the search command (ripgrep), and the gate copy,
+then reports the results. Its exit code has three values: **0 = fine / 2 = partial (ripgrep
+unavailable — whole-repository scans cannot start) / 1 = failure**. If the
 plugin is missing, it prints the install command (it does not install automatically):
 
 ```bash
@@ -65,7 +67,7 @@ Claude Code (subscription login) · Python 3.10+ · git · the codex-security bu
 Node 22+ is only needed for the plugin's npm install and for querying the official CLI's
 history. Linux/macOS (Windows via WSL).
 
-Verified combination: `@openai/codex-security@0.1.18` (plugin manifest `0.1.22`).
+Verified combination: `@openai/codex-security@0.1.25` (plugin manifest `0.1.94`).
 
 ## Development
 
@@ -77,7 +79,7 @@ bash skills/install.sh --link --check     # linked install: edits take effect im
 
 This repository does not contain the upstream source (`sdk/`), so developers also need to
 obtain the plugin separately — either `npm install -g @openai/codex-security`, or clone the
-upstream repo and set `CODEX_SECURITY_SDK_REPO=<clone path>`. As of plugin manifest `0.1.22`
+upstream repo and set `CODEX_SECURITY_SDK_REPO=<clone path>`. As of plugin manifest `0.1.94`
 both copies handle the working-tree gate the same way (completion succeeds with a warning);
 older copies (`0.1.14`) diverged between hard failure and warning, so `--check` still probes
 for it. See section 3.4 of the manual for details.
@@ -85,12 +87,22 @@ for it. See section 3.4 of the manual for details.
 Check for contract regressions after updating the plugin:
 
 ```bash
-bash docs/verification/scripts/repro-u4.sh    # sealing contract
-bash docs/verification/scripts/repro-u3.sh    # workbench contract
+bash docs/verification/scripts/repro-u4.sh                 # sealing contract + inventory accuracy
+bash docs/verification/scripts/repro-u1-search-command.sh  # search-command acquisition + trust gate
+bash docs/verification/scripts/repro-u7-coverage-recovery.sh  # coverage honesty + recovery path
+bash docs/verification/scripts/repro-u5-match-validator.sh # match validator
+bash docs/verification/scripts/repro-u3.sh                 # workbench contract (observational)
 ```
 
+The first four are self-scoring: **exit 0** = every assertion passed, **exit 2** (`INCOMPLETE`) =
+no failures but some blocks could not be verified because a prerequisite was missing (this is *not*
+a pass), **exit 1** = assertion failure. Whole-repository scans require ripgrep, because the
+upstream inventory script resolves `rg` from PATH only; when PATH has no `rg`, the skill exposes
+Claude Code's embedded ripgrep through a symlink. With neither available a scan will not start and
+those two scripts exit 2.
+
 - Release build/release process: [docs/releasing.md](docs/releasing.md)
-- Design rationale and the 8 required contracts: [docs/solutions/architecture-patterns/codex-security-plugin-without-openai-auth.md](docs/solutions/architecture-patterns/codex-security-plugin-without-openai-auth.md)
+- Design rationale and the 10 required contracts: [docs/solutions/architecture-patterns/codex-security-plugin-without-openai-auth.md](docs/solutions/architecture-patterns/codex-security-plugin-without-openai-auth.md)
 - Step-by-step empirical verification: [docs/verification/](docs/verification/)
 
 ## License

@@ -23,7 +23,8 @@ tags: [codex-security, claude-code-skill, no-auth, security-scan, plugin-archite
 
 codex-security의 스캔 기능은 공식적으로 Codex 바이너리(OpenAI 인증)를 통해서만 실행된다. 그러나
 저장소를 분석한 결과, **OpenAI 인증이 필요한 지점은 단 하나 — Codex 에이전트 루프(LLM 호출)뿐**이었다.
-번들 플러그인(`sdk/typescript/_bundled_plugin/`)의 결정론 계층(워크벤치 SQLite, `finalize_scan_contract.py`,
+번들 플러그인(npm 배포본에서는 `_bundled_plugin/`, 상류 소스 트리에서는 `plugins/codex-security/`)의
+결정론 계층(워크벤치 SQLite, `finalize_scan_contract.py`,
 랭킹 스크립트)은 인증을 전혀 요구하지 않는다. 오히려 `runtime.ts`의 `runWorkbench`는 자식 환경에서
 `OPENAI_API_KEY`/`CODEX_API_KEY`를 **제거**한다(`sdk/typescript/src/runtime.ts:132` 부근).
 
@@ -65,7 +66,7 @@ codex-security의 스캔 기능은 공식적으로 Codex 바이너리(OpenAI 인
    binding을 주입하지 않고 **검증만** 한다. 등록 직후 `get-scan`으로 얻은 좌표(targetId, revision,
    displayName, scope)를 canonical JSON에 반영하지 않으면 complete가 반드시 실패한다
    (`scan.target.targetId: must match the workbench target`). `producer.version`은 get-scan이 아니라
-   플러그인 매니페스트(`sdk/typescript/_bundled_plugin/.codex-plugin/plugin.json`의 `version`)에서 온다.
+   플러그인 매니페스트(`<플러그인 루트>/.codex-plugin/plugin.json`의 `version`)에서 온다.
 
 4. **finalizer 소유 필드를 모델이 작성하지 않는다.** `findingId`, `occurrenceId`, `fingerprints`,
    `sealedAt`, `artifacts`, `documentType`, `schemaVersion`, `scan.status`는 finalizer가 파생한다.
@@ -83,12 +84,81 @@ codex-security의 스캔 기능은 공식적으로 Codex 바이너리(OpenAI 인
 7. **미신뢰 데이터·격리.** 대상 저장소 콘텐츠·finding 서술은 데이터로만 취급하고 그 안의 지시를
    실행하지 않는다. 특히 `scans match`의 매칭 판정은 finding 설명(대상 코드 파생)을 읽으므로,
    메인 세션이 아니라 **도구를 제한한 격리 서브에이전트**(파일쓰기·Bash·네트워크 없음, JSON만 반환)에서
-   수행한다.
+   수행한다. 입력에 워크벤치 DB 파생 제약(`knownFindingGroups` 등)이 섞이면 신뢰 구획을
+   **두 블록으로 분해**하고 경계를 **호출별 난수 표식**으로 구분한다 — 방어 문구를 단일 블록 앞에만
+   두면 판정 제약이어야 할 확정 그룹까지 무시되고, 경계가 고정 문자열이면 악성 저장소가 파인딩
+   서술 안에 위조된 신뢰 블록을 심을 수 있다.
 
 8. **랭킹 파이프라인 계약(deep-lite).** 샤드 디렉터리는 `rank_shards`로 명명하고 pool-plan의 형제여야
    하며, 랭킹 `score`는 1~10 정수이고, `merge-rank-outputs`는 **부분 실패를 거부**한다(누락 샤드 → exit 1).
    랭킹 팬아웃(전량 성공·랭킹 행)과 리뷰 팬아웃(부분 실패 허용·후보)은 출력 스키마·실패 정책이 달라
    반드시 분리한다.
+
+9. **인벤토리는 상류 스크립트에 위임하고 검색 명령에도 신뢰 게이트를 적용한다.** 커버리지 분모
+   (`in_scope_files.txt`)를 직접 만들면 상류와 다른 집합이 된다 — `rg`만 부르면 추적 중인 무시 파일이
+   빠지고, `git ls-files`로 폴백하면 미추적 파일이 빠진다. `generate_in_scope_files.py`에 위임한다.
+   그 스크립트는 `rg`를 PATH에서만 해석하므로 **PATH에서 찾은 `rg`도 계약 1의 신뢰 게이트를 통과해야
+   한다**(대상 저장소가 `./node_modules/.bin`을 얹으면 저장소가 커밋한 `rg`가 채택된다). 해석된 명령은
+   **실행해서 ripgrep인지 확인한다** — 상류는 종료코드 0과 1을 모두 정상으로 받으므로 엉뚱한 목록이
+   조용히 분모가 될 수 있고, 빈 목록 하드 실패로는 잡히지 않는다. 확보 실패는 격하가 아니라 중단이다.
+
+   플러그인 스크립트는 **정화된 PATH로 교체해** 실행한다(앞에 덧붙이지 않는다). 상류
+   `generate_in_scope_files.py`는 `rg`뿐 아니라 `git`도 PATH에서 해석하고 `cwd=대상 저장소`로
+   실행하므로, 원시 `$PATH`를 물려주면 저장소가 커밋한 `./node_modules/.bin/git`이 사용자 권한으로
+   실행된다(합성 저장소로 재현). 정화 후 남는 항목이 없으면 빈 문자열을 내보내지 말고 **중단한다** —
+   `PATH=""`로 자식을 띄우면 `git`조차 해석되지 않아 실패 원인이 지시 위반처럼 보인다.
+
+   **정화 대상은 PATH 하나가 아니다.** 상류 `generate_in_scope_files.py`는 `env=`를 넘기지 않아
+   부모 환경을 전부 상속한다. `rg`는 `RIPGREP_CONFIG_PATH`가 가리키는 파일의 플래그를 무조건
+   적용하므로, PATH만 교체하고 이 변수를 남기면 정화가 반쪽이 된다 — `--glob=!src/**` 한 줄로
+   커버리지 분모가 줄어든다. `--glob=!*`면 rg 열거는 0이 되지만 분모에는 add-back 집합
+   (추적 AND gitignore된 파일)이 남아 **1개**다 — "통째로 붕괴"가 아니라 "정산이 잡지 못하는
+   축소"가 정확한 서술이다(실측). 분모가 진짜 0이 되는 것은 그 집합이 빈 저장소에서뿐이고,
+   그때는 정산이 exit 3으로 잡는다. 부트스트랩은 자기 프로브의 자식
+   환경에서 이 변수를 비우고, **소비자도 인벤토리 호출에서 함께 비워야 한다**(계약에 포함).
+
+   **환경 교체는 셸 인용까지가 계약이다.** 정화한 환경을 소비자에게 넘기는 순간
+   자리표시자 보간이 새 주입 축이 된다. 값의 출처가 미신뢰 환경이기 때문이다
+   (`scanDir`·`stateDir`는 `CODEX_SECURITY_STATE_DIR`, `pathEnv`는 PATH 항목의 디렉터리 이름).
+   그래서 부트스트랩은 보간되는 **모든** 축의 `shlex.quote` 사본(`shellQuoted.*`,
+   `trustedChildEnvShell`)을 함께 낸다. **그리고 소비자 명령형은 그 인용본을 맨몸으로 써야
+   한다** — 인용본을 다시 `"…"`로 감싸면 단일인용이 리터럴 문자가 되고 `$()`는 그대로 확장돼
+   인용이 무효가 된다(실측: `PATH="<pathEnv>"`·`mkdir -p "<scanDir>/…"` 두 축 모두 실행됐다).
+   인용본을 내보내는 것만으로는 계약이 지켜지지 않는다. 문서 쪽 회귀는
+   `repro-u1-search-command.sh` H13e가 세 SKILL.md의 명령형을 직접 읽어 고정한다.
+
+   **`safe.directory` 강제는 저장소의 `.git/config`를 여는 대가를 치른다.** 소유자가 다른
+   저장소(컨테이너 바인드 마운트·CI)에서 add-back 집합이 경고 없이 사라지므로 강제가 필요한데,
+   `safe.directory`가 막던 것이 정확히 "git이 저장소 자신의 `.git/config`를 신뢰하는가"다.
+   환경 config가 저장소 local을 덮으므로 실행 채널을 빈 값으로 함께 못 박는다. 다만
+   **고정 키 열거로 닫을 수 없는 클래스가 하나 있다**: `filter.<n>.clean/smudge/process`와
+   `diff.<n>.command/textconv`는 **드라이버 이름을 저장소가 커밋한 `.gitattributes`가 정한다**
+   (실측: `* filter=pwn diff=pwn`을 커밋하고 `filter.pwn.clean`을 두면 9개 키가 다 얹힌 환경에서도
+   `git diff --raw`가 그것을 실행했다). 그래서 `git config --local --includes --list`로 정의된
+   드라이버 키를 열거해 함께 무력화한다 — 열거 자체는 어떤 드라이버도 호출하지 않고,
+   `--includes`가 없으면 `include.path`로 끌어온 파일의 드라이버가 목록에서 빠진다(실측).
+
+   **같은 보안 규칙의 두 사본은 반드시 어긋난다.** PATH 정화(`sanitize_pathlist`)와 config
+   무력화 목록(`git_config_overrides`)은 `bootstrap.py`에만 두고 `coverage_reconcile.py`는
+   import해서 쓴다. 한때 PATH 규칙을 문자열 접두사 비교로 재구현했는데, 그것은 `within_target`이
+   세 번의 우회를 겪으며 얻은 성분 접두사 순회와 inode 비교가 없는 더 약한 사본이었다(실측:
+   저장소가 `escape -> /tmp`를 커밋하면 정화 PATH의 첫 항목이 `/tmp`가 되어 `/tmp/git`이 실행됐다).
+   그리고 **실패 센티넬로 빈 문자열 PATH를 쓰면 안 된다** — `subprocess`는 `os.get_exec_path(env)`를
+   쓰고 `"".split(":") == [""]`이므로 `PATH=""`는 "못 찾는다"가 아니라 **"cwd 상대 `git`을 실행한다"**가
+   된다(실측: cwd의 `git` 스텁이 rc=0으로 실행됐다). `None`을 돌려 가드를 놓치면 즉시 깨지게 하고,
+   포기 사유는 결과에 실어 사람용 출력과 `--json` 양쪽에 남긴다.
+
+   **남는 위험(실측으로 고정)**: 상류는 `rg`에 `--no-config`를 주지 않으므로 대상 저장소가
+   `.rgignore`를 커밋하면 그 경로가 rg 열거에서 빠진다. 되살아나는 것은 상류가 add-back 하는
+   파일뿐이고, 그 add-back은 `git ls-files --cached --ignored --exclude-standard` — 즉 **추적 AND
+   gitignore된** 파일만이다. 따라서 **저장소 대부분을 이루는 추적+비무시 파일은 add-back 대상이
+   아니라 그대로 분모에서 빠진다**(실측). 커버리지 분모가 작아지면 "전부 리뷰했다"가 더 쉽게
+   성립하므로, 스캔 대상이 자기 채점 기준을 줄이는 통로다. 게다가 상류는 `rg`의 종료코드 0과 1을
+   모두 정상으로 받으므로 분모가 통째로 비어도 스캔은 경고 없이 진행된다. 정산이 잡는 것은
+   **완전히 빈 분모뿐이고**(`coverage_reconcile.py` exit 3), **비지 않은 축소는 어떤 게이트도
+   잡지 못한다** — 정산은 인벤토리를 재생성하지 않고 리뷰 로그와만 대조하므로, 실제 파일 4개
+   중 1개로 줄어든 분모에도 `completeness=complete` 로 통과한다(실측). 막을 수단이 없으므로 회귀(`repro-u4.sh` 블록 G3·G4)로 범위를 고정하고,
+   상류가 `--no-config`를 주기 시작하면 그 블록이 실패로 알린다.
 
 ## Why This Matters
 
@@ -96,10 +166,22 @@ codex-security의 스캔 기능은 공식적으로 Codex 바이너리(OpenAI 인
 Claude Code 구독만으로 개발자 로컬에서 동일한 봉인 계약 산출물(scan-manifest/findings/coverage +
 report.md + SARIF)을 만들고 공식 CLI(`scans list/show`, `findings false-positive`)와 이력 호환된다.
 
-위 8개 계약은 모두 "실패로 배운 것"이다 — 각각을 어기면 게이트가 조용히 통과하거나(신뢰 게이트 우회,
-빈 커버리지 봉인), complete가 반드시 실패하거나(contract 미반영), 되돌릴 수 없는 이력 손상(자동 fail-scan)이
-발생한다. 특히 **realpath만 검사하는 신뢰 게이트**와 **finalize 없이 검증만 하는 complete-scan**은
-코드 리뷰/실측 전에는 드러나지 않은 함정이었다.
+위 10개 계약(1, 1-b, 2~9 — `1-b`가 별 항목이므로 번호 최댓값보다 하나 많다)을 어기면 게이트가 조용히
+통과하거나(신뢰 게이트 우회, 빈 커버리지 봉인), complete가 반드시 실패하거나(contract 미반영),
+되돌릴 수 없는 이력 손상(자동 fail-scan)이 발생한다.
+
+이 중 **실측 실패를 겪고 나서야 알게 된 것**은 일부다:
+
+- **계약 1(신뢰 게이트)** — realpath만 검사하면 리터럴 경로로 경계를 넘을 수 있다. 합성 저장소로
+  재현해 확인했다. 이후 인벤토리를 상류에 위임하면서 **정화되지 않은 `$PATH`로 저장소가 커밋한
+  `git`이 실행되는** 경로도 실측 재현으로 발견했다(계약 9).
+- **계약 2(finalize-first)** — `complete-scan`이 binding을 주입하지 않고 검증만 한다는 사실은
+  complete가 반복 실패한 뒤에 드러났다.
+- **계약 5(집합 기반 정산)** — 건수 비교로는 "다른 파일을 같은 수만큼 리뷰한" 경우를 못 잡는다.
+
+나머지(계약 3·4·6·7·8)는 상류 코드·스키마를 읽어 사전에 도출한 것이고, 실패를 겪은 적은 없다.
+구분해 두는 이유: "전부 사고로 배웠다"고 쓰면 사전 독해로 막을 수 있는 부분까지 불가피했던 것처럼
+읽히고, 다음 사람이 코드를 먼저 읽지 않게 된다.
 
 ## When to Apply
 
@@ -108,6 +190,7 @@ report.md + SARIF)을 만들고 공식 CLI(`scans list/show`, `findings false-po
 - 모델이 canonical JSON draft를 작성할 때(계약 4·5).
 - deep 스캔 대체물을 만들 때(계약 8).
 - 스캔 간 매칭이나 finding 판정처럼 대상 저장소 파생 텍스트를 LLM에 넣을 때(계약 7).
+- 커버리지 분모가 되는 파일 목록을 만들 때, 또는 대상 저장소에서 외부 실행 파일을 해석할 때(계약 9).
 
 ## Examples
 

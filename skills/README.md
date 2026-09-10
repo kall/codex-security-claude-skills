@@ -1,9 +1,16 @@
-# Claude Code 스킬 (codex-security-scan)
+# Claude Code 스킬 (codex-security-*)
 
 이 디렉터리는 **Claude Code 스킬의 정본(canonical source)** 이다. `~/.claude/skills/` 아래의 것은
 여기서 설치된 사본 또는 링크일 뿐이므로, 수정은 항상 이 저장소에서 한다.
 
-- `codex-security-scan/` — 메인 스캔 스킬 (`SKILL.md`, `scripts/`)
+- `codex-security-scan/` — 저장소 전체 표준 스캔. **공통 규칙의 정본**이며 다른 스킬이 참조한다
+  (`SKILL.md`, `scripts/bootstrap.py`, `scripts/coverage_reconcile.py`, `scripts/workbench_glue.py`)
+- `codex-security-diff-scan/` — 변경분(diff) 스캔
+- `codex-security-validate/` — 후보 finding의 진위 판정
+- `codex-security-patch/` — 보안 이슈 수정 (2단 승인)
+- `codex-security-verify-fix/` — 적용된 수정의 검증 (읽기 전용)
+- `codex-security-scan-match/` — 스캔 간 파인딩 매칭 (`scripts/validate_matches.py`)
+- `codex-security-deep-scan/` — 다중 패스 심층 스캔의 축소판(deep-lite)
 - `install.sh` — 전역 스킬 디렉터리로 설치하는 스크립트
 
 > 스킬 7종의 전체 설치·사용 가이드(사전 요구사항, 환경변수, 스킬별 사용 예시, 워크벤치 이력 통합,
@@ -42,8 +49,10 @@ bash skills/install.sh --link --force   # 기존 설치본 덮어쓰기
 
 ## 이력 호환 범위
 
-- **Phase 1 (현재)**: 워크벤치 없이 단독 스캔을 수행하고 산출물(`report.md`, SARIF)을 생성한다.
-  이 단계의 스캔은 기존 CLI 이력(`codex-security scans list`)에 나타나지 않는다.
-- **Phase 2**: 워크벤치 연동을 추가한다. `register-cli-scan` 으로 스캔을 등록하고
-  `get-scan-feedback` 으로 과거 false-positive 피드백을 반영하므로, 기존 CLI 의
-  `scans list` / `scans show <id>` 에서 Claude 스캔도 함께 보이게 된다.
+워크벤치 연동은 **구현돼 있다**(선택 사용). `register-cli-scan` 으로 스캔을 등록하고
+`get-scan-feedback` 으로 과거 false-positive 피드백을 반영하므로, 기존 CLI 의
+`scans list` / `scans show <id>` 에서 Claude 스캔도 함께 보인다. 호출 규약은
+`codex-security-scan/scripts/workbench_glue.py` 가 소유한다(순서 강제·claim token 미전달).
+
+워크벤치를 쓰지 않는 순수 로컬 스캔도 가능하다 — 그 경우 산출물(`report.md`, SARIF)만
+만들고 CLI 이력에는 나타나지 않는다.

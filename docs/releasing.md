@@ -18,8 +18,9 @@ bash tools/make-release.sh --version v0.1.0 --repo kall/codex-security-claude-sk
 
 1. `SKILL.md`를 가진 스킬 디렉터리 **전부** + `install.sh` + `skills/README.md` 수집
    (`__pycache__` 제외). `bootstrap.py`가 빠지면 **빌드를 중단**한다.
-2. 매뉴얼(`docs/install-and-usage.md`)과 재검증 도구(`repro-u3.sh`, `repro-u4.sh`,
-   `fixtures/*.json`) 수집.
+2. 매뉴얼(`docs/install-and-usage.md`)과 재검증 도구 수집 — `repro-u3.sh`, `repro-u4.sh`,
+   `repro-u1-search-command.sh`, `repro-u5-match-validator.sh`, `repro-u7-coverage-recovery.sh`,
+   `fixtures/*.json`.
 3. `LICENSE` 복사 + `NOTICE` 생성(업스트림 Apache-2.0 파생 관계·비지원 경로 명시).
 4. 배포본 진입점 `README.md` 생성(설치 3줄 + 검증된 플러그인 조합).
 5. **배포본에 없는 문서로의 상대 링크를 절대 GitHub URL로 치환**한다(개발 기록 문서는 담지
@@ -35,11 +36,20 @@ T=$(mktemp -d) && cp dist/*.tar.gz dist/SHA256SUMS "$T"/ && cd "$T"
 sha256sum -c SHA256SUMS
 tar xzf codex-security-claude-skills-*.tar.gz
 CLAUDE_SKILLS_DIR="$T/skills" bash codex-security-claude-skills-*/skills/install.sh --copy --check
-bash codex-security-claude-skills-*/docs/verification/scripts/repro-u4.sh
+D=codex-security-claude-skills-*/docs/verification/scripts
+bash $D/repro-u4.sh                  # 봉인 계약 + 인벤토리 정확성
+bash $D/repro-u1-search-command.sh   # 검색 명령 확보와 신뢰 게이트
+bash $D/repro-u7-coverage-recovery.sh  # 커버리지 정직성 + 복구 경로
+bash $D/repro-u5-match-validator.sh  # 매칭 검증기
 ```
 
-기대: 체크섬 OK → 스킬 7종 설치 → 프로브가 플러그인 경로·버전·게이트 사본 보고 →
-`ALL ASSERTIONS PASSED`.
+기대: 체크섬 OK → 스킬 7종 설치 → 프로브가 플러그인 경로·버전·검색 명령·게이트 사본 보고
+(`--check`도 **exit 0/2/1** 세 값을 낸다 — 2는 ripgrep 미확보이며 통과가 아니다) →
+자기 채점 스크립트 네 개가 모두 `ALL ASSERTIONS PASSED`(exit 0).
+
+**exit 2(`INCOMPLETE`)는 통과가 아니다.** 전제(ripgrep, 플러그인 사본)를 확보하지 못해 검증하지
+못한 블록이 있다는 뜻이다. 릴리즈 검증에서는 exit 2를 실패로 취급하고, 전제를 갖춘 뒤 다시 돌린다
+— 그러지 않으면 "핵심 주장이 미검증인 상태"와 "전부 통과"가 같은 신호가 된다.
 
 플러그인이 없는 PC도 함께 확인하려면 npm 전역 경로를 빈 디렉터리로 가려 프로브가 exit 1 +
 설치 안내를 내는지 본다.
@@ -110,6 +120,8 @@ tarball을 교체하지 말고 새 버전을 올린다 — 사용자가 체크�
 
 업스트림이 번들 플러그인을 갱신하면 스킬 동작이 바뀔 수 있다. 순서:
 
-1. 새 플러그인으로 `repro-u4.sh`·`repro-u3.sh` 실행 → 계약 변화 확인.
+1. 새 플러그인으로 자기 채점 스크립트 넷(`repro-u4.sh`, `repro-u1-search-command.sh`,
+   `repro-u7-coverage-recovery.sh`, `repro-u5-match-validator.sh`)과 관측형 `repro-u3.sh` 실행 →
+   계약 변화 확인. exit 2는 미검증이므로 전제를 갖춰 다시 돌린다.
 2. 변화가 있으면 해당 SKILL.md와 매뉴얼(특히 3.4절 표)을 갱신.
 3. 새 버전으로 재배포하고 릴리즈 노트에 검증된 조합을 갱신.
