@@ -8,8 +8,11 @@
 #
 # 사용법: bash repro-u3.sh
 #   플러그인 경로 재지정: CODEX_SECURITY_PLUGIN_DIR=/path/to/_bundled_plugin bash repro-u3.sh
+#   산출물 보존:         KEEP_OUT=1 bash repro-u3.sh
+#     (이 스크립트는 관측형이라 사람이 요약표와 원문을 대조해야 한다. 기본값은
+#      정리이므로, 대조할 계획이면 KEEP_OUT=1 로 라벨별 출력과 evidence.log 를 남긴다.)
 #
-# 모든 생성물은 저장소 밖 임시 디렉터리(OUT)에 쓰고 종료 시 정리한다.
+# 모든 생성물은 저장소 밖 임시 디렉터리(OUT)에 쓰고 종료 시 정리한다(KEEP_OUT=1 이면 보존).
 # 상태 DB는 CODEX_SECURITY_STATE_DIR로 격리한다 (~/.codex 는 건드리지 않음).
 # 플러그인 업데이트 후 그대로 재실행하면 계약 변화가 종료코드/stderr로 드러난다.
 
@@ -23,11 +26,32 @@ WORK="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 # 임시 디렉터리에 둔다. 스크립트 위치(WORK)는 오염시키지 않는다.
 OUT="$(mktemp -d)"
 : "${OUT:?OUT 임시 디렉터리 생성 실패 — 중단}"
-trap 'rm -rf "$OUT"' EXIT
+# 이 스크립트는 관측형이라 사람이 요약표와 원문을 대조해야 한다. 기본값은
+# 레포·홈 오염 방지를 위한 정리이지만, 그러면 라벨별 누적 출력과 evidence.log 가
+# 함께 사라져 누적의 목적이 달성되지 않는다. KEEP_OUT=1 이면 보존한다.
+if [ "${KEEP_OUT:-0}" = "1" ]; then
+  trap 'printf "\n산출물 보존(KEEP_OUT=1): %s\n" "$OUT"' EXIT
+else
+  # 기본 분기는 곧 $OUT 를 지운다. 최종 메시지가 안내하는 evidence.log 경로가
+  # 실행 직후 사라지므로, 보존 방법을 같은 자리에서 알려야 한다.
+  # 안내는 산출물이 실제로 생겼을 때만 한다. OUT 은 전제 검사보다 먼저
+  # mktemp 로 만들어지므로 디렉터리 존재로는 갈리지 않는다 — 라벨별 출력이
+  # 하나라도 있는지를 본다. 전제 오류(플러그인 미발견)로 조기 종료한 경우에
+  # "정리됨"이라고 하면 만든 것이 없는데 지운 것처럼 읽힌다.
+  trap 'if [ -n "$(find "$OUT/runs" -type f -print -quit 2>/dev/null)" ]; then
+          rm -rf "$OUT"
+          printf "\n산출물 정리됨. 원문을 남기려면 KEEP_OUT=1 로 다시 실행하세요.\n"
+        else
+          rm -rf "$OUT"
+        fi' EXIT
+fi
 # 플러그인 경로: 환경변수 → 이 저장소 체크아웃(스크립트 위치 기준) → npm 전역 설치본.
 PLUGIN="${CODEX_SECURITY_PLUGIN_DIR:-}"
 if [ -z "$PLUGIN" ]; then
-  if [ -f "$WORK/../../../sdk/typescript/_bundled_plugin/.codex-plugin/plugin.json" ]; then
+  # 상류 체크아웃 레이아웃: 현재는 plugins/codex-security, 과거는 sdk/typescript/_bundled_plugin.
+  if [ -f "$WORK/../../../plugins/codex-security/.codex-plugin/plugin.json" ]; then
+    PLUGIN="$(cd "$WORK/../../../plugins/codex-security" && pwd -P)"
+  elif [ -f "$WORK/../../../sdk/typescript/_bundled_plugin/.codex-plugin/plugin.json" ]; then
     PLUGIN="$(cd "$WORK/../../../sdk/typescript/_bundled_plugin" && pwd -P)"
   elif NPM_ROOT="$(npm root -g 2>/dev/null)" && \
        [ -f "$NPM_ROOT/@openai/codex-security/_bundled_plugin/.codex-plugin/plugin.json" ]; then
@@ -58,16 +82,36 @@ DRAFT_PY="$OUT/make-draft.py"
 say() { printf '\n===== %s =====\n' "$*" | tee -a "$LOG"; }
 
 # 명령 실행 + 종료코드/stderr 기록. $1 = 시나리오 라벨, 나머지 = 명령
+#
+# 원문 출력은 라벨별 파일에 **누적**한다. 이 스크립트는 관측형이라 사람이 나중에
+# 요약표와 원문을 대조하는데, 고정 파일 하나에 덮어쓰면 마지막 시나리오의 출력만
+# 남고 앞 단계의 원문은 로그에 실린 2000바이트 절단본밖에 없게 된다.
+RUNS="$OUT/runs"
+mkdir -p "$RUNS"
 run() {
   local label="$1"; shift
+  # 라벨을 파일명으로 쓸 수 있게 정규화한다(공백·슬래시·괄호 등 제거).
+  local slug
+  slug="$(printf '%s' "$label" | tr -c '[:alnum:]._-' '-' | sed 's/--*/-/g; s/^-//; s/-$//')"
+  local stdout_file="$RUNS/${slug}.stdout" stderr_file="$RUNS/${slug}.stderr"
+  # 같은 라벨을 여러 번 돌리면 회차를 붙여 앞 회차를 덮지 않는다.
+  local n=2
+  while [ -e "$stdout_file" ]; do
+    stdout_file="$RUNS/${slug}.${n}.stdout"
+    stderr_file="$RUNS/${slug}.${n}.stderr"
+    n=$((n + 1))
+  done
   printf '\n--- [%s]\n$ %s\n' "$label" "$*" >> "$LOG"
-  "$@" > "$OUT/.stdout" 2> "$OUT/.stderr"
+  "$@" > "$stdout_file" 2> "$stderr_file"
   LAST_CODE=$?
   printf 'exit=%d\n' "$LAST_CODE" >> "$LOG"
-  printf 'stdout: %s\n' "$(head -c 2000 "$OUT/.stdout")" >> "$LOG"
-  printf 'stderr: %s\n' "$(head -c 2000 "$OUT/.stderr")" >> "$LOG"
+  printf 'stdout(%s): %s\n' "$stdout_file" "$(head -c 2000 "$stdout_file")" >> "$LOG"
+  printf 'stderr(%s): %s\n' "$stderr_file" "$(head -c 2000 "$stderr_file")" >> "$LOG"
+  # 뒤따르는 검사들이 참조하는 최신 출력 경로.
+  LAST_STDOUT="$stdout_file"
+  LAST_STDERR="$stderr_file"
   printf '[%s] exit=%d\n' "$label" "$LAST_CODE"
-  if [ -s "$OUT/.stderr" ]; then printf '  stderr: '; head -c 400 "$OUT/.stderr"; echo; fi
+  if [ -s "$stderr_file" ]; then printf '  stderr: '; head -c 400 "$stderr_file"; echo; fi
   return 0
 }
 
@@ -262,7 +306,7 @@ echo "repo HEAD = $(git -C "$REPO" rev-parse HEAD)" | tee -a "$LOG"
 say "S1. register-cli-scan (claim token 없이) — 정상 등록"
 run "S1 register-cli-scan" wb register-cli-scan \
   --scan-dir "$SCAN" --repository "$REPO" --recipe-json "$(recipe "$REPO")"
-cp "$OUT/.stdout" "$OUT/register.json"
+cp "$LAST_STDOUT" "$OUT/register.json"
 SCAN_ID="$("${PY[@]}" -c "import json;print(json.load(open('$OUT/register.json'))['scanId'])")"
 echo "register-cli-scan stdout = $(cat "$OUT/register.json")" | tee -a "$LOG"
 
@@ -273,7 +317,7 @@ run "S2 register-cli-scan --claim-token" wb register-cli-scan \
 
 say "S3. get-scan — 계약 필드 채집"
 run "S3 get-scan" wb get-scan --scan-id "$SCAN_ID"
-cp "$OUT/.stdout" "$OUT/get-scan.json"
+cp "$LAST_STDOUT" "$OUT/get-scan.json"
 "${PY[@]}" - "$OUT/get-scan.json" <<'PYEOF' | tee -a "$LOG"
 import json, sys
 doc = json.load(open(sys.argv[1]))
@@ -328,7 +372,7 @@ run "S6 complete-scan (unmodified repo)" wb complete-scan --scan-id "$SCAN_ID"
 S6_CODE=$LAST_CODE
 "${PY[@]}" -c "
 import json
-s=json.load(open('$OUT/.stdout'))['scan']
+s=json.load(open('$LAST_STDOUT'))['scan']
 print(json.dumps({'scanId':s['scanId'],'status':s['progress']['status'],'phase':s['progress']['phase'],
                   'findingCount':s['findingCount'],'reportAvailable':s['reportAvailable'],
                   'artifacts':sorted(s['artifacts'])},indent=2))
@@ -400,9 +444,9 @@ say "S9. complete-scan --claim-token — do-not-pass 규약 (exit 1 기대)"
 rm -rf "$OUT/scan3"; mkdir -p "$OUT/scan3"; chmod 700 "$OUT/scan3"
 run "S9 register-cli-scan (3rd)" wb register-cli-scan \
   --scan-dir "$OUT/scan3" --repository "$REPO" --recipe-json "$(recipe "$REPO")"
-SCAN_ID3="$("${PY[@]}" -c "import json;print(json.load(open('$OUT/.stdout'))['scanId'])")"
+SCAN_ID3="$("${PY[@]}" -c "import json;print(json.load(open('$LAST_STDOUT'))['scanId'])")"
 run "S9 get-scan (3rd)" wb get-scan --scan-id "$SCAN_ID3"
-cp "$OUT/.stdout" "$OUT/get-scan3.json"
+cp "$LAST_STDOUT" "$OUT/get-scan3.json"
 make_draft "$OUT/scan3" "$OUT/get-scan3.json" "$PLUGIN" | tee -a "$LOG"
 run "S9 finalize (seal, 3rd)" "${PY[@]}" "$SCRIPTS/finalize_scan_contract.py" --scan-dir "$OUT/scan3"
 run "S9 complete-scan --claim-token" wb complete-scan --scan-id "$SCAN_ID3" \
@@ -413,7 +457,7 @@ S9B_CODE=$LAST_CODE
 
 # ---------------------------------------------------------------------------
 say "요약 (관측 종료코드 / 기대값)"
-printf 'S5  complete-scan (repo 수정됨)     exit=%s  기대 1=하드 실패 사본 / 0=경고 사본 (0.1.22 실측: 0)\n' "$S5_CODE" | tee -a "$LOG"
+printf 'S5  complete-scan (repo 수정됨)     exit=%s  기대 1=하드 실패 사본 / 0=경고 사본 (0.1.94 실측: 0)\n' "$S5_CODE" | tee -a "$LOG"
 printf 'S6  complete-scan (repo 무수정)     exit=%s  기대 0\n' "$S6_CODE" | tee -a "$LOG"
 printf 'S9  complete-scan --claim-token     exit=%s  기대 1\n' "$S9_CODE" | tee -a "$LOG"
 printf 'S9b complete-scan (토큰 없이)       exit=%s  기대 0\n' "$S9B_CODE" | tee -a "$LOG"

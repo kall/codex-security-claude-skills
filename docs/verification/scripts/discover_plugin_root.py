@@ -52,7 +52,7 @@ INSTALL_GUIDANCE = (
     f"  1) 전역 설치:  npm install -g {NPM_PACKAGE}\n"
     f"  2) npx 실행:   npx -y {NPM_PACKAGE} --version   (npx 캐시에 내려받음)\n"
     f"  3) 저장소 체크아웃: git clone https://github.com/openai/codex-security "
-    "후 sdk/typescript/_bundled_plugin 사용\n"
+    "후 plugins/codex-security(구 레이아웃은 sdk/typescript/_bundled_plugin) 사용\n"
     f"  4) 이미 설치본이 있다면 {PLUGIN_ROOT_ENV}=<플러그인 루트> 로 지정\n"
     "주의: 스캔 대상 저장소 내부(node_modules 포함)의 플러그인 사본은 신뢰하지 않으므로 사용되지 않습니다."
 )
@@ -249,17 +249,21 @@ def skill_repo_candidates(script_path: Path) -> list[Path]:
     """스킬 개발용 저장소 체크아웃 후보.
 
     - CODEX_SECURITY_SDK_REPO 환경변수(있으면)
-    - 스크립트 위치에서 상위로 올라가며 sdk/typescript/_bundled_plugin 탐색
+    - 스크립트 위치에서 상위로 올라가며 plugins/codex-security 및
+      sdk/typescript/_bundled_plugin(구 레이아웃) 탐색
     """
     candidates: list[Path] = []
     configured = os.environ.get("CODEX_SECURITY_SDK_REPO")
     if configured:
-        candidates.append(Path(configured).expanduser() / "sdk" / "typescript" / "_bundled_plugin")
+        base = Path(configured).expanduser()
+        candidates.append(base / "plugins" / "codex-security")
+        candidates.append(base / "sdk" / "typescript" / "_bundled_plugin")
     here = real(script_path).parent
     # 무제한으로 `/`까지 올라가면 `/tmp/_bundled_plugin`, `/_bundled_plugin` 같은
     # 공유·전역 쓰기 가능 경로가 후보가 되어 다른 로컬 사용자가 플러그인을 심을 수
     # 있다. 저장소 마커(.git)에서 멈추고 깊이도 제한한다.
     for parent in [here, *here.parents][:MAX_ANCESTOR_DEPTH]:
+        candidates.append(parent / "plugins" / "codex-security")
         candidates.append(parent / "sdk" / "typescript" / "_bundled_plugin")
         candidates.append(parent / "_bundled_plugin")
         if (parent / ".git").exists():
