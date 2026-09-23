@@ -1,0 +1,534 @@
+{
+  "description": "느슨한 단계 거부 회귀. 상류 \"rejects $label\" 표 15종을 옮기고, 입력 occurrenceId 규칙(비어 있지 않고 전역 유일)을 더한다. 기존 P5 규칙(키 집합, reason 공백, related 중복)은 이 표에 모두 포함된다.",
+  "fixtures": [
+    {
+      "name": "rejects-table",
+      "source": "sdk/typescript/tests-ts/scan-comparison.test.ts — \"rejects $label\"",
+      "input": {
+        "before": [
+          {
+            "occurrenceId": "before-1"
+          }
+        ],
+        "after": [
+          {
+            "occurrenceId": "after-1"
+          }
+        ]
+      },
+      "catalogue": {
+        "complete": false,
+        "beforeCardIds": [
+          "before-1"
+        ]
+      },
+      "cases": [
+        {
+          "label": "missing arrays",
+          "response": {},
+          "expect": {
+            "exit": 1,
+            "reason": "matches / uncertain 이 배열이 아닙니다"
+          },
+          "upstream": {
+            "error": "Scan comparison returned an invalid match result."
+          }
+        },
+        {
+          "label": "unexpected result fields",
+          "response": {
+            "matches": [],
+            "uncertain": [],
+            "unexpected": true
+          },
+          "expect": {
+            "exit": 1,
+            "reason": "허용되지 않은 최상위 키"
+          },
+          "upstream": {
+            "error": "Scan comparison returned an invalid match result."
+          }
+        },
+        {
+          "label": "blank match reasons",
+          "response": {
+            "matches": [
+              {
+                "beforeOccurrenceIds": [
+                  "before-1"
+                ],
+                "afterOccurrenceIds": [
+                  "after-1"
+                ],
+                "confidence": "high",
+                "reason": " "
+              }
+            ],
+            "uncertain": []
+          },
+          "expect": {
+            "exit": 1,
+            "reason": "reason 은 공백이 아닌 문자열"
+          },
+          "upstream": {
+            "error": "Scan comparison returned an invalid match result."
+          }
+        },
+        {
+          "label": "malformed related pairs",
+          "response": {
+            "matches": [],
+            "uncertain": [],
+            "related": [
+              {
+                "beforeOccurrenceId": 1,
+                "afterOccurrenceId": "after-1",
+                "reason": "Possible root cause."
+              }
+            ]
+          },
+          "expect": {
+            "exit": 1,
+            "reason": "세 값은 모두 공백이 아닌 문자열"
+          },
+          "upstream": {
+            "error": "Scan comparison returned an invalid match result."
+          }
+        },
+        {
+          "label": "low confidence",
+          "response": {
+            "matches": [
+              {
+                "beforeOccurrenceIds": [
+                  "before-1"
+                ],
+                "afterOccurrenceIds": [
+                  "after-1"
+                ],
+                "confidence": "low",
+                "reason": "Same root cause."
+              }
+            ],
+            "uncertain": []
+          },
+          "expect": {
+            "exit": 1,
+            "reason": "confidence 는 리터럴 'high'"
+          },
+          "upstream": {
+            "error": "Scan comparison returned an invalid match result."
+          }
+        },
+        {
+          "label": "empty groups",
+          "response": {
+            "matches": [
+              {
+                "beforeOccurrenceIds": [],
+                "afterOccurrenceIds": [
+                  "after-1"
+                ],
+                "confidence": "high",
+                "reason": "Same root cause."
+              }
+            ],
+            "uncertain": []
+          },
+          "expect": {
+            "exit": 1,
+            "reason": "beforeOccurrenceIds 는 비어 있지 않은"
+          },
+          "upstream": {
+            "error": "Scan comparison returned an invalid match result."
+          }
+        },
+        {
+          "label": "invented occurrences",
+          "response": {
+            "matches": [
+              {
+                "beforeOccurrenceIds": [
+                  "invented"
+                ],
+                "afterOccurrenceIds": [
+                  "after-1"
+                ],
+                "confidence": "high",
+                "reason": "Same root cause."
+              }
+            ],
+            "uncertain": []
+          },
+          "expect": {
+            "exit": 1,
+            "reason": "[느슨한 단계] 미지의 before occurrence"
+          },
+          "upstream": {
+            "error": "Scan comparison referenced an unknown before occurrence."
+          }
+        },
+        {
+          "label": "repeated occurrences",
+          "response": {
+            "matches": [
+              {
+                "beforeOccurrenceIds": [
+                  "before-1"
+                ],
+                "afterOccurrenceIds": [
+                  "after-1"
+                ],
+                "confidence": "high",
+                "reason": "Same root cause."
+              },
+              {
+                "beforeOccurrenceIds": [
+                  "before-1"
+                ],
+                "afterOccurrenceIds": [
+                  "after-1"
+                ],
+                "confidence": "high",
+                "reason": "Same root cause."
+              }
+            ],
+            "uncertain": []
+          },
+          "expect": {
+            "exit": 1,
+            "reason": "[느슨한 단계] before occurrence 가 두 번 이상"
+          },
+          "upstream": {
+            "error": "Scan comparison matched a before occurrence more than once."
+          }
+        },
+        {
+          "label": "invented uncertain occurrences",
+          "response": {
+            "matches": [],
+            "uncertain": [
+              {
+                "beforeOccurrenceId": "before-1",
+                "afterOccurrenceId": "invented",
+                "reason": "Possible root cause."
+              }
+            ]
+          },
+          "expect": {
+            "exit": 1,
+            "reason": "[느슨한 단계] 유효하지 않은 uncertain 쌍입니다"
+          },
+          "upstream": {
+            "error": "Scan comparison returned an invalid uncertain pair."
+          }
+        },
+        {
+          "label": "uncertainty already matched with confidence",
+          "response": {
+            "matches": [
+              {
+                "beforeOccurrenceIds": [
+                  "before-1"
+                ],
+                "afterOccurrenceIds": [
+                  "after-1"
+                ],
+                "confidence": "high",
+                "reason": "Same root cause."
+              }
+            ],
+            "uncertain": [
+              {
+                "beforeOccurrenceId": "before-1",
+                "afterOccurrenceId": "after-1",
+                "reason": "Possible root cause."
+              }
+            ]
+          },
+          "expect": {
+            "exit": 1,
+            "reason": "[느슨한 단계] 유효하지 않은 uncertain 쌍입니다"
+          },
+          "upstream": {
+            "error": "Scan comparison returned an invalid uncertain pair."
+          }
+        },
+        {
+          "label": "duplicate uncertain pairs",
+          "response": {
+            "matches": [],
+            "uncertain": [
+              {
+                "beforeOccurrenceId": "before-1",
+                "afterOccurrenceId": "after-1",
+                "reason": "Possible root cause."
+              },
+              {
+                "beforeOccurrenceId": "before-1",
+                "afterOccurrenceId": "after-1",
+                "reason": "Possible root cause."
+              }
+            ]
+          },
+          "expect": {
+            "exit": 1,
+            "reason": "[느슨한 단계] 중복된 uncertain 쌍입니다"
+          },
+          "upstream": {
+            "error": "Scan comparison returned a duplicate uncertain pair."
+          }
+        },
+        {
+          "label": "invented related occurrences",
+          "response": {
+            "matches": [],
+            "uncertain": [],
+            "related": [
+              {
+                "beforeOccurrenceId": "before-1",
+                "afterOccurrenceId": "invented",
+                "reason": "Possible root cause."
+              }
+            ]
+          },
+          "expect": {
+            "exit": 1,
+            "reason": "[느슨한 단계] 유효하지 않은 related 쌍입니다"
+          },
+          "upstream": {
+            "error": "Scan comparison returned an invalid related pair."
+          }
+        },
+        {
+          "label": "duplicate related pairs",
+          "response": {
+            "matches": [],
+            "uncertain": [],
+            "related": [
+              {
+                "beforeOccurrenceId": "before-1",
+                "afterOccurrenceId": "after-1",
+                "reason": "Possible root cause."
+              },
+              {
+                "beforeOccurrenceId": "before-1",
+                "afterOccurrenceId": "after-1",
+                "reason": "Possible root cause."
+              }
+            ]
+          },
+          "expect": {
+            "exit": 1,
+            "reason": "[느슨한 단계] 유효하지 않은 related 쌍입니다"
+          },
+          "upstream": {
+            "error": "Scan comparison returned an invalid related pair."
+          }
+        },
+        {
+          "label": "related pairs that contradict confirmed matches",
+          "response": {
+            "matches": [
+              {
+                "beforeOccurrenceIds": [
+                  "before-1"
+                ],
+                "afterOccurrenceIds": [
+                  "after-1"
+                ],
+                "confidence": "high",
+                "reason": "Same root cause."
+              }
+            ],
+            "uncertain": [],
+            "related": [
+              {
+                "beforeOccurrenceId": "before-1",
+                "afterOccurrenceId": "after-1",
+                "reason": "Possible root cause."
+              }
+            ]
+          },
+          "expect": {
+            "exit": 1,
+            "reason": "[느슨한 단계] 유효하지 않은 related 쌍입니다"
+          },
+          "upstream": {
+            "error": "Scan comparison returned an invalid related pair."
+          }
+        },
+        {
+          "label": "related pairs that duplicate uncertainty",
+          "response": {
+            "matches": [],
+            "uncertain": [
+              {
+                "beforeOccurrenceId": "before-1",
+                "afterOccurrenceId": "after-1",
+                "reason": "Possible root cause."
+              }
+            ],
+            "related": [
+              {
+                "beforeOccurrenceId": "before-1",
+                "afterOccurrenceId": "after-1",
+                "reason": "Possible root cause."
+              }
+            ]
+          },
+          "expect": {
+            "exit": 1,
+            "reason": "[느슨한 단계] 유효하지 않은 related 쌍입니다"
+          },
+          "upstream": {
+            "error": "Scan comparison returned an invalid related pair."
+          }
+        },
+        {
+          "label": "pair extra key (P5 키 집합)",
+          "response": {
+            "matches": [],
+            "uncertain": [
+              {
+                "beforeOccurrenceId": "before-1",
+                "afterOccurrenceId": "after-1",
+                "reason": "maybe",
+                "note": "extra"
+              }
+            ]
+          },
+          "expect": {
+            "exit": 1,
+            "reason": "uncertain 원소의 키는 정확히"
+          },
+          "upstream": {
+            "error": "Scan comparison returned an invalid match result."
+          }
+        },
+        {
+          "label": "match extra key (P5 키 집합)",
+          "response": {
+            "matches": [
+              {
+                "beforeOccurrenceIds": [
+                  "before-1"
+                ],
+                "afterOccurrenceIds": [
+                  "after-1"
+                ],
+                "confidence": "high",
+                "reason": "Same root cause.",
+                "score": 0.9
+              }
+            ],
+            "uncertain": []
+          },
+          "expect": {
+            "exit": 1,
+            "reason": "matches 원소의 키는 정확히"
+          },
+          "upstream": {
+            "error": "Scan comparison returned an invalid match result."
+          }
+        },
+        {
+          "label": "related blank reason (P5 reason 공백)",
+          "response": {
+            "matches": [],
+            "uncertain": [],
+            "related": [
+              {
+                "beforeOccurrenceId": "before-1",
+                "afterOccurrenceId": "after-1",
+                "reason": "\n"
+              }
+            ]
+          },
+          "expect": {
+            "exit": 1,
+            "reason": "세 값은 모두 공백이 아닌 문자열"
+          },
+          "upstream": {
+            "error": "Scan comparison returned an invalid match result."
+          }
+        }
+      ],
+      "upstream": {
+        "threads": 1,
+        "result": {
+          "matches": [],
+          "uncertain": []
+        },
+        "catalogueLine": "{\"page\":0,\"pageCount\":1,\"findings\":{\"before\":[{\"occurrenceId\":\"before-1\"}],\"after\":[{\"occurrenceId\":\"after-1\"}]}}"
+      }
+    },
+    {
+      "name": "input-blank-occurrence-id",
+      "source": "sdk/typescript/tests-ts/scan-comparison.test.ts — \"rejects empty occurrence IDs before matching\"",
+      "input": {
+        "before": [
+          {
+            "occurrenceId": " "
+          }
+        ],
+        "after": []
+      },
+      "catalogue": {
+        "exit": 1,
+        "reason": "비어 있지 않고 전역에서 유일"
+      },
+      "upstream": {
+        "threads": 0,
+        "error": "Scan comparison occurrence IDs must be nonempty and globally unique."
+      }
+    },
+    {
+      "name": "input-same-scan-duplicate",
+      "source": "sdk/typescript/tests-ts/scan-comparison.test.ts — \"rejects same-scan duplicate occurrence IDs before matching\"",
+      "input": {
+        "before": [
+          {
+            "occurrenceId": "duplicate"
+          },
+          {
+            "occurrenceId": "duplicate"
+          }
+        ],
+        "after": []
+      },
+      "catalogue": {
+        "exit": 1,
+        "reason": "비어 있지 않고 전역에서 유일"
+      },
+      "upstream": {
+        "threads": 0,
+        "error": "Scan comparison occurrence IDs must be nonempty and globally unique."
+      }
+    },
+    {
+      "name": "input-cross-scan-duplicate",
+      "source": "sdk/typescript/tests-ts/scan-comparison.test.ts — \"rejects cross-scan duplicate occurrence IDs before matching\"",
+      "input": {
+        "before": [
+          {
+            "occurrenceId": "duplicate"
+          }
+        ],
+        "after": [
+          {
+            "occurrenceId": "duplicate"
+          }
+        ]
+      },
+      "catalogue": {
+        "exit": 1,
+        "reason": "비어 있지 않고 전역에서 유일"
+      },
+      "upstream": {
+        "threads": 0,
+        "error": "Scan comparison occurrence IDs must be nonempty and globally unique."
+      }
+    }
+  ]
+}

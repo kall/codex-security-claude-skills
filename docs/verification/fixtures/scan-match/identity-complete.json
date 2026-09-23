@@ -1,0 +1,309 @@
+{
+  "description": "신원 병합만으로 완결되는 입력 — 카탈로그 단계가 complete=true 와 저장 페이로드를 바로 내고 서브에이전트를 부르지 않는다 (R10, AE2). upstream 필드는 npm 0.1.29 dist 의 matchScanFindingsInternal(singleTurn) 을 가짜 codex 로 돌려 기록한 값이다.",
+  "fixtures": [
+    {
+      "name": "ae2-all-same-finding-id",
+      "source": "AE2 (계획서) — before·after 의 모든 finding 이 같은 findingId 를 공유",
+      "input": {
+        "before": [
+          {
+            "occurrenceId": "b1",
+            "findingId": "csf_a",
+            "title": "Path traversal in extract"
+          },
+          {
+            "occurrenceId": "b2",
+            "findingId": "csf_b",
+            "title": "Missing authz on admin route"
+          },
+          {
+            "occurrenceId": "b3",
+            "findingId": "csf_a",
+            "title": "Path traversal in extract (rescan)"
+          }
+        ],
+        "after": [
+          {
+            "occurrenceId": "a1",
+            "findingId": "csf_a",
+            "title": "Path traversal in extract"
+          },
+          {
+            "occurrenceId": "a2",
+            "findingId": "csf_b",
+            "title": "Missing authz on admin route"
+          }
+        ]
+      },
+      "catalogue": {
+        "complete": true
+      },
+      "upstream": {
+        "threads": 0,
+        "result": {
+          "matches": [
+            {
+              "beforeOccurrenceIds": [
+                "b1",
+                "b3"
+              ],
+              "afterOccurrenceIds": [
+                "a1"
+              ],
+              "confidence": "high",
+              "reason": "The findings share a stable identity or a previously confirmed link."
+            },
+            {
+              "beforeOccurrenceIds": [
+                "b2"
+              ],
+              "afterOccurrenceIds": [
+                "a2"
+              ],
+              "confidence": "high",
+              "reason": "The findings share a stable identity or a previously confirmed link."
+            }
+          ],
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "name": "confirmed-aliases",
+      "source": "sdk/typescript/tests-ts/scan-comparison.test.ts — \"confirms confirmed aliases without starting Codex\"",
+      "input": {
+        "before": [
+          {
+            "occurrenceId": "before-0",
+            "findingId": "a"
+          }
+        ],
+        "after": [
+          {
+            "occurrenceId": "after-0",
+            "findingId": "b"
+          }
+        ],
+        "knownFindingGroups": [
+          [
+            "a",
+            "b"
+          ]
+        ]
+      },
+      "catalogue": {
+        "complete": true
+      },
+      "upstream": {
+        "threads": 0,
+        "result": {
+          "matches": [
+            {
+              "beforeOccurrenceIds": [
+                "before-0"
+              ],
+              "afterOccurrenceIds": [
+                "after-0"
+              ],
+              "confidence": "high",
+              "reason": "The findings share a stable identity or a previously confirmed link."
+            }
+          ],
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "name": "overlapping-aliases",
+      "source": "sdk/typescript/tests-ts/scan-comparison.test.ts — \"confirms overlapping aliases without starting Codex\"",
+      "input": {
+        "before": [
+          {
+            "occurrenceId": "before-0",
+            "findingId": "a"
+          }
+        ],
+        "after": [
+          {
+            "occurrenceId": "after-0",
+            "findingId": "c"
+          }
+        ],
+        "knownFindingGroups": [
+          [
+            "a",
+            "b"
+          ],
+          [
+            "b",
+            "c"
+          ]
+        ]
+      },
+      "catalogue": {
+        "complete": true
+      },
+      "upstream": {
+        "threads": 0,
+        "result": {
+          "matches": [
+            {
+              "beforeOccurrenceIds": [
+                "before-0"
+              ],
+              "afterOccurrenceIds": [
+                "after-0"
+              ],
+              "confidence": "high",
+              "reason": "The findings share a stable identity or a previously confirmed link."
+            }
+          ],
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "name": "repeated-stable-identities",
+      "source": "sdk/typescript/tests-ts/scan-comparison.test.ts — \"confirms repeated stable identities without starting Codex\"",
+      "input": {
+        "before": [
+          {
+            "occurrenceId": "before-0",
+            "findingId": "same"
+          },
+          {
+            "occurrenceId": "before-1",
+            "findingId": "same"
+          }
+        ],
+        "after": [
+          {
+            "occurrenceId": "after-0",
+            "findingId": "same"
+          },
+          {
+            "occurrenceId": "after-1",
+            "findingId": "same"
+          }
+        ],
+        "knownFindingGroups": []
+      },
+      "catalogue": {
+        "complete": true
+      },
+      "upstream": {
+        "threads": 0,
+        "result": {
+          "matches": [
+            {
+              "beforeOccurrenceIds": [
+                "before-0",
+                "before-1"
+              ],
+              "afterOccurrenceIds": [
+                "after-0",
+                "after-1"
+              ],
+              "confidence": "high",
+              "reason": "The findings share a stable identity or a previously confirmed link."
+            }
+          ],
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "name": "reuse-confirmed-alias-bridge",
+      "source": "sdk/typescript/tests-ts/finding-catalogue.test.ts — \"reuses a confirmed alias across opposite sides without starting Codex\"",
+      "input": {
+        "before": [
+          {
+            "occurrenceId": "old",
+            "findingId": "identity-a"
+          }
+        ],
+        "after": [
+          {
+            "occurrenceId": "new",
+            "findingId": "identity-b"
+          }
+        ],
+        "knownFindingGroups": [
+          [
+            "identity-a",
+            "identity-bridge"
+          ],
+          [
+            "identity-bridge",
+            "identity-b"
+          ]
+        ]
+      },
+      "catalogue": {
+        "complete": true
+      },
+      "upstream": {
+        "threads": 0,
+        "result": {
+          "matches": [
+            {
+              "beforeOccurrenceIds": [
+                "old"
+              ],
+              "afterOccurrenceIds": [
+                "new"
+              ],
+              "confidence": "high",
+              "reason": "The findings share a stable identity or a previously confirmed link."
+            }
+          ],
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "name": "empty-before",
+      "source": "sdk/typescript/tests-ts/scan-comparison.test.ts — \"does not start Codex when either scan has no findings\"",
+      "input": {
+        "before": [],
+        "after": [
+          {
+            "occurrenceId": "after"
+          }
+        ]
+      },
+      "catalogue": {
+        "complete": true
+      },
+      "upstream": {
+        "threads": 0,
+        "result": {
+          "matches": [],
+          "uncertain": []
+        }
+      }
+    },
+    {
+      "name": "empty-after",
+      "source": "sdk/typescript/tests-ts/scan-comparison.test.ts — \"does not start Codex when either scan has no findings\"",
+      "input": {
+        "before": [
+          {
+            "occurrenceId": "before"
+          }
+        ],
+        "after": []
+      },
+      "catalogue": {
+        "complete": true
+      },
+      "upstream": {
+        "threads": 0,
+        "result": {
+          "matches": [],
+          "uncertain": []
+        }
+      }
+    }
+  ]
+}

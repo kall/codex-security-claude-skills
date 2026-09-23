@@ -1,0 +1,1326 @@
+{
+  "description": "최종 조정(펼침 → 신원 그룹 병합 → 그룹 내 uncertain·related 제거 → 강제 검증) 픽스처. 대부분 상류 테스트 케이스를 옮겼다. 응답은 서브에이전트가 대표 카드 ID 로 반환한 JSON 이다.",
+  "fixtures": [
+    {
+      "name": "split-confirmed-historical-group",
+      "source": "sdk/typescript/tests-ts/scan-comparison.test.ts — \"never lets a model split a confirmed historical group\"",
+      "input": {
+        "before": [
+          {
+            "occurrenceId": "before-a",
+            "findingId": "known-a"
+          },
+          {
+            "occurrenceId": "before-b",
+            "findingId": "known-b"
+          }
+        ],
+        "after": [
+          {
+            "occurrenceId": "after",
+            "findingId": "new"
+          }
+        ],
+        "knownFindingGroups": [
+          [
+            "known-a",
+            "known-b"
+          ]
+        ]
+      },
+      "catalogue": {
+        "complete": false,
+        "beforeCardIds": [
+          "before-b"
+        ],
+        "representativeOccurrences": {
+          "before-b": [
+            "before-a",
+            "before-b"
+          ]
+        },
+        "cards": {
+          "before-b": {
+            "occurrenceCount": 2,
+            "issueId": "known-a"
+          }
+        }
+      },
+      "cases": [
+        {
+          "label": "대표가 아닌 before-a 로 매칭하면 거부",
+          "response": {
+            "matches": [
+              {
+                "beforeOccurrenceIds": [
+                  "before-a"
+                ],
+                "afterOccurrenceIds": [
+                  "after"
+                ],
+                "confidence": "high",
+                "reason": "Incorrectly separates a confirmed identity."
+              }
+            ],
+            "uncertain": []
+          },
+          "expect": {
+            "exit": 1,
+            "reason": "[느슨한 단계] 미지의 before occurrence"
+          },
+          "upstream": {
+            "error": "Scan comparison referenced an unknown before occurrence."
+          }
+        },
+        {
+          "label": "대표 before-b 로 매칭하면 before-a·before-b 로 펼친다",
+          "response": {
+            "matches": [
+              {
+                "beforeOccurrenceIds": [
+                  "before-b"
+                ],
+                "afterOccurrenceIds": [
+                  "after"
+                ],
+                "confidence": "high",
+                "reason": "Incorrectly separates a confirmed identity."
+              }
+            ],
+            "uncertain": []
+          },
+          "expect": {
+            "exit": 0
+          },
+          "upstream": {
+            "result": {
+              "matches": [
+                {
+                  "beforeOccurrenceIds": [
+                    "before-a",
+                    "before-b"
+                  ],
+                  "afterOccurrenceIds": [
+                    "after"
+                  ],
+                  "confidence": "high",
+                  "reason": "Incorrectly separates a confirmed identity."
+                }
+              ],
+              "uncertain": []
+            }
+          }
+        }
+      ],
+      "upstream": {
+        "threads": 1,
+        "result": {
+          "matches": [],
+          "uncertain": []
+        },
+        "catalogueLine": "{\"page\":0,\"pageCount\":1,\"findings\":{\"before\":[{\"occurrenceId\":\"before-b\",\"findingId\":\"known-b\",\"occurrenceCount\":2,\"issueId\":\"known-a\"}],\"after\":[{\"occurrenceId\":\"after\",\"findingId\":\"new\"}]}}"
+      }
+    },
+    {
+      "name": "cross-side-alias-omitted",
+      "source": "sdk/typescript/tests-ts/finding-catalogue.test.ts — \"preserves an omitted cross-side alias while matching another finding\"",
+      "input": {
+        "before": [
+          {
+            "occurrenceId": "old",
+            "findingId": "identity-a"
+          }
+        ],
+        "after": [
+          {
+            "occurrenceId": "new",
+            "findingId": "identity-b"
+          },
+          {
+            "occurrenceId": "other",
+            "findingId": "identity-c"
+          }
+        ],
+        "knownFindingGroups": [
+          [
+            "identity-a",
+            "identity-b"
+          ]
+        ]
+      },
+      "catalogue": {
+        "complete": false,
+        "beforeCardIds": [
+          "old"
+        ]
+      },
+      "cases": [
+        {
+          "label": "신원 그룹 안의 uncertain 은 오류 없이 제거되고 다른 그룹의 related 는 남는다",
+          "response": {
+            "matches": [],
+            "uncertain": [
+              {
+                "beforeOccurrenceId": "old",
+                "afterOccurrenceId": "new",
+                "reason": "The model omitted a confirmed alias."
+              }
+            ],
+            "related": [
+              {
+                "beforeOccurrenceId": "old",
+                "afterOccurrenceId": "other",
+                "reason": "A related control."
+              }
+            ]
+          },
+          "expect": {
+            "exit": 0
+          },
+          "upstream": {
+            "result": {
+              "matches": [
+                {
+                  "beforeOccurrenceIds": [
+                    "old"
+                  ],
+                  "afterOccurrenceIds": [
+                    "new"
+                  ],
+                  "confidence": "high",
+                  "reason": "The findings share a stable identity or a previously confirmed link."
+                }
+              ],
+              "uncertain": [],
+              "related": [
+                {
+                  "beforeOccurrenceId": "old",
+                  "afterOccurrenceId": "other",
+                  "reason": "A related control."
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "upstream": {
+        "threads": 1,
+        "result": {
+          "matches": [
+            {
+              "beforeOccurrenceIds": [
+                "old"
+              ],
+              "afterOccurrenceIds": [
+                "new"
+              ],
+              "confidence": "high",
+              "reason": "The findings share a stable identity or a previously confirmed link."
+            }
+          ],
+          "uncertain": []
+        },
+        "catalogueLine": "{\"page\":0,\"pageCount\":1,\"findings\":{\"before\":[{\"occurrenceId\":\"old\",\"findingId\":\"identity-a\",\"issueId\":\"identity-a\"}],\"after\":[{\"occurrenceId\":\"new\",\"findingId\":\"identity-b\"},{\"occurrenceId\":\"other\",\"findingId\":\"identity-c\"}]}}"
+      }
+    },
+    {
+      "name": "cross-side-alias-extended",
+      "source": "sdk/typescript/tests-ts/finding-catalogue.test.ts — \"preserves an extended cross-side alias while matching another finding\"",
+      "input": {
+        "before": [
+          {
+            "occurrenceId": "old",
+            "findingId": "identity-a"
+          }
+        ],
+        "after": [
+          {
+            "occurrenceId": "new",
+            "findingId": "identity-b"
+          },
+          {
+            "occurrenceId": "other",
+            "findingId": "identity-c"
+          }
+        ],
+        "knownFindingGroups": [
+          [
+            "identity-a",
+            "identity-b"
+          ]
+        ]
+      },
+      "catalogue": {
+        "complete": false,
+        "beforeCardIds": [
+          "old"
+        ]
+      },
+      "cases": [
+        {
+          "label": "신원 그룹 카드에 새 findingId 인 after 가 매칭되면 그룹에 합쳐지고, 그룹 안 related 는 제거된다",
+          "response": {
+            "matches": [
+              {
+                "beforeOccurrenceIds": [
+                  "old"
+                ],
+                "afterOccurrenceIds": [
+                  "other"
+                ],
+                "confidence": "high",
+                "reason": "The same control was split."
+              }
+            ],
+            "uncertain": [],
+            "related": [
+              {
+                "beforeOccurrenceId": "old",
+                "afterOccurrenceId": "new",
+                "reason": "A related control."
+              }
+            ]
+          },
+          "expect": {
+            "exit": 0
+          },
+          "upstream": {
+            "result": {
+              "matches": [
+                {
+                  "beforeOccurrenceIds": [
+                    "old"
+                  ],
+                  "afterOccurrenceIds": [
+                    "other",
+                    "new"
+                  ],
+                  "confidence": "high",
+                  "reason": "The same control was split."
+                }
+              ],
+              "uncertain": [],
+              "related": []
+            }
+          }
+        }
+      ],
+      "upstream": {
+        "threads": 1,
+        "result": {
+          "matches": [
+            {
+              "beforeOccurrenceIds": [
+                "old"
+              ],
+              "afterOccurrenceIds": [
+                "new"
+              ],
+              "confidence": "high",
+              "reason": "The findings share a stable identity or a previously confirmed link."
+            }
+          ],
+          "uncertain": []
+        },
+        "catalogueLine": "{\"page\":0,\"pageCount\":1,\"findings\":{\"before\":[{\"occurrenceId\":\"old\",\"findingId\":\"identity-a\",\"issueId\":\"identity-a\"}],\"after\":[{\"occurrenceId\":\"new\",\"findingId\":\"identity-b\"},{\"occurrenceId\":\"other\",\"findingId\":\"identity-c\"}]}}"
+      }
+    },
+    {
+      "name": "later-side-aliases-merge-two-matches",
+      "source": "sdk/typescript/tests-ts/finding-catalogue.test.ts — \"extends semantic matches through aliases found only on the later side\"",
+      "input": {
+        "before": [
+          {
+            "occurrenceId": "old-x"
+          },
+          {
+            "occurrenceId": "old-y"
+          }
+        ],
+        "after": [
+          {
+            "occurrenceId": "new-a",
+            "findingId": "identity-a"
+          },
+          {
+            "occurrenceId": "new-b",
+            "findingId": "identity-b"
+          },
+          {
+            "occurrenceId": "new-c",
+            "findingId": "identity-c"
+          }
+        ],
+        "knownFindingGroups": [
+          [
+            "identity-a",
+            "identity-b"
+          ],
+          [
+            "identity-b",
+            "identity-c"
+          ]
+        ]
+      },
+      "catalogue": {
+        "complete": false,
+        "beforeCardIds": [
+          "old-x",
+          "old-y"
+        ]
+      },
+      "cases": [
+        {
+          "label": "한 신원 그룹에 걸친 두 매칭은 하나로 합쳐진다",
+          "response": {
+            "matches": [
+              {
+                "beforeOccurrenceIds": [
+                  "old-y"
+                ],
+                "afterOccurrenceIds": [
+                  "new-b"
+                ],
+                "confidence": "high",
+                "reason": "The second route reaches the shared control."
+              },
+              {
+                "beforeOccurrenceIds": [
+                  "old-x"
+                ],
+                "afterOccurrenceIds": [
+                  "new-a"
+                ],
+                "confidence": "high",
+                "reason": "The first route reaches the shared control."
+              }
+            ],
+            "uncertain": [],
+            "related": [
+              {
+                "beforeOccurrenceId": "old-x",
+                "afterOccurrenceId": "new-b",
+                "reason": "The model did not reuse the confirmed alias."
+              }
+            ]
+          },
+          "expect": {
+            "exit": 0
+          },
+          "upstream": {
+            "result": {
+              "matches": [
+                {
+                  "beforeOccurrenceIds": [
+                    "old-y",
+                    "old-x"
+                  ],
+                  "afterOccurrenceIds": [
+                    "new-b",
+                    "new-a",
+                    "new-c"
+                  ],
+                  "confidence": "high",
+                  "reason": "The second route reaches the shared control. The first route reaches the shared control."
+                }
+              ],
+              "uncertain": [],
+              "related": []
+            }
+          }
+        }
+      ],
+      "upstream": {
+        "threads": 1,
+        "result": {
+          "matches": [],
+          "uncertain": []
+        },
+        "catalogueLine": "{\"page\":0,\"pageCount\":1,\"findings\":{\"before\":[{\"occurrenceId\":\"old-x\"},{\"occurrenceId\":\"old-y\"}],\"after\":[{\"occurrenceId\":\"new-a\",\"findingId\":\"identity-a\"},{\"occurrenceId\":\"new-b\",\"findingId\":\"identity-b\"},{\"occurrenceId\":\"new-c\",\"findingId\":\"identity-c\"}]}}"
+      }
+    },
+    {
+      "name": "same-stable-finding-uncertain-dropped",
+      "source": "sdk/typescript/tests-ts/scan-comparison.test.ts — \"never accepts uncertainty between occurrences of the same stable finding\"",
+      "input": {
+        "before": [
+          {
+            "occurrenceId": "before",
+            "findingId": "shared-identity"
+          },
+          {
+            "occurrenceId": "other-before",
+            "findingId": "other-before"
+          }
+        ],
+        "after": [
+          {
+            "occurrenceId": "after",
+            "findingId": "shared-identity"
+          },
+          {
+            "occurrenceId": "other-after",
+            "findingId": "other-after"
+          }
+        ]
+      },
+      "catalogue": {
+        "complete": false,
+        "beforeCardIds": [
+          "before",
+          "other-before"
+        ]
+      },
+      "cases": [
+        {
+          "label": "같은 findingId 쌍의 uncertain 은 제거되고 신원 매칭은 기본 사유로 저장된다",
+          "response": {
+            "matches": [],
+            "uncertain": [
+              {
+                "beforeOccurrenceId": "before",
+                "afterOccurrenceId": "after",
+                "reason": "Incorrectly treats the same stable identity as uncertain."
+              }
+            ]
+          },
+          "expect": {
+            "exit": 0
+          },
+          "upstream": {
+            "result": {
+              "matches": [
+                {
+                  "beforeOccurrenceIds": [
+                    "before"
+                  ],
+                  "afterOccurrenceIds": [
+                    "after"
+                  ],
+                  "confidence": "high",
+                  "reason": "The findings share a stable identity or a previously confirmed link."
+                }
+              ],
+              "uncertain": []
+            }
+          }
+        }
+      ],
+      "upstream": {
+        "threads": 1,
+        "result": {
+          "matches": [
+            {
+              "beforeOccurrenceIds": [
+                "before"
+              ],
+              "afterOccurrenceIds": [
+                "after"
+              ],
+              "confidence": "high",
+              "reason": "The findings share a stable identity or a previously confirmed link."
+            }
+          ],
+          "uncertain": []
+        },
+        "catalogueLine": "{\"page\":0,\"pageCount\":1,\"findings\":{\"before\":[{\"occurrenceId\":\"before\",\"findingId\":\"shared-identity\",\"issueId\":\"shared-identity\"},{\"occurrenceId\":\"other-before\",\"findingId\":\"other-before\",\"issueId\":\"other-before\"}],\"after\":[{\"occurrenceId\":\"after\",\"findingId\":\"shared-identity\"},{\"occurrenceId\":\"other-after\",\"findingId\":\"other-after\"}]}}"
+      }
+    },
+    {
+      "name": "honors-confirmed-groups-with-related",
+      "source": "sdk/typescript/tests-ts/scan-comparison.test.ts — \"honors confirmed historical groups and preserves distinct related findings\"",
+      "input": {
+        "before": [
+          {
+            "occurrenceId": "before-known",
+            "findingId": "known-a"
+          },
+          {
+            "occurrenceId": "before-related",
+            "findingId": "related-a"
+          }
+        ],
+        "after": [
+          {
+            "occurrenceId": "after-known",
+            "findingId": "known-b"
+          },
+          {
+            "occurrenceId": "after-related",
+            "findingId": "related-b"
+          }
+        ],
+        "knownFindingGroups": [
+          [
+            "known-a",
+            "known-b"
+          ]
+        ]
+      },
+      "catalogue": {
+        "complete": false,
+        "beforeCardIds": [
+          "before-known",
+          "before-related"
+        ],
+        "cards": {
+          "before-known": {
+            "issueId": "known-a"
+          },
+          "before-related": {
+            "issueId": "related-a"
+          }
+        }
+      },
+      "cases": [
+        {
+          "label": "서브에이전트 사유가 신원 매칭의 기본 사유를 대신하고 related 는 보존된다",
+          "response": {
+            "matches": [
+              {
+                "beforeOccurrenceIds": [
+                  "before-known"
+                ],
+                "afterOccurrenceIds": [
+                  "after-known"
+                ],
+                "confidence": "high",
+                "reason": "Previously confirmed root cause."
+              }
+            ],
+            "uncertain": [],
+            "related": [
+              {
+                "beforeOccurrenceId": "before-related",
+                "afterOccurrenceId": "after-related",
+                "reason": "Related controls remain independently vulnerable."
+              }
+            ]
+          },
+          "expect": {
+            "exit": 0
+          },
+          "upstream": {
+            "result": {
+              "matches": [
+                {
+                  "beforeOccurrenceIds": [
+                    "before-known"
+                  ],
+                  "afterOccurrenceIds": [
+                    "after-known"
+                  ],
+                  "confidence": "high",
+                  "reason": "Previously confirmed root cause."
+                }
+              ],
+              "uncertain": [],
+              "related": [
+                {
+                  "beforeOccurrenceId": "before-related",
+                  "afterOccurrenceId": "after-related",
+                  "reason": "Related controls remain independently vulnerable."
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "upstream": {
+        "threads": 1,
+        "result": {
+          "matches": [
+            {
+              "beforeOccurrenceIds": [
+                "before-known"
+              ],
+              "afterOccurrenceIds": [
+                "after-known"
+              ],
+              "confidence": "high",
+              "reason": "The findings share a stable identity or a previously confirmed link."
+            }
+          ],
+          "uncertain": []
+        },
+        "catalogueLine": "{\"page\":0,\"pageCount\":1,\"findings\":{\"before\":[{\"occurrenceId\":\"before-known\",\"findingId\":\"known-a\",\"issueId\":\"known-a\"},{\"occurrenceId\":\"before-related\",\"findingId\":\"related-a\",\"issueId\":\"related-a\"}],\"after\":[{\"occurrenceId\":\"after-known\",\"findingId\":\"known-b\"},{\"occurrenceId\":\"after-related\",\"findingId\":\"related-b\"}]}}"
+      }
+    },
+    {
+      "name": "small-inputs-one-turn",
+      "source": "sdk/typescript/tests-ts/scan-comparison.test.ts — \"compares small inputs with one restricted structured-output turn\"",
+      "input": {
+        "before": [
+          {
+            "occurrenceId": "before-1"
+          },
+          {
+            "occurrenceId": "before-2"
+          }
+        ],
+        "after": [
+          {
+            "occurrenceId": "after-1"
+          },
+          {
+            "occurrenceId": "after-2"
+          },
+          {
+            "occurrenceId": "after-3"
+          }
+        ]
+      },
+      "catalogue": {
+        "complete": false,
+        "beforeCardIds": [
+          "before-1",
+          "before-2"
+        ]
+      },
+      "cases": [
+        {
+          "label": "분할 매칭과 uncertain 이 그대로 저장된다",
+          "response": {
+            "matches": [
+              {
+                "beforeOccurrenceIds": [
+                  "before-1"
+                ],
+                "afterOccurrenceIds": [
+                  "after-1",
+                  "after-2"
+                ],
+                "confidence": "high",
+                "reason": "The later scan split the same vulnerable extractor."
+              }
+            ],
+            "uncertain": [
+              {
+                "beforeOccurrenceId": "before-2",
+                "afterOccurrenceId": "after-3",
+                "reason": "A second entry point might be independently exploitable."
+              }
+            ]
+          },
+          "expect": {
+            "exit": 0
+          },
+          "upstream": {
+            "result": {
+              "matches": [
+                {
+                  "beforeOccurrenceIds": [
+                    "before-1"
+                  ],
+                  "afterOccurrenceIds": [
+                    "after-1",
+                    "after-2"
+                  ],
+                  "confidence": "high",
+                  "reason": "The later scan split the same vulnerable extractor."
+                }
+              ],
+              "uncertain": [
+                {
+                  "beforeOccurrenceId": "before-2",
+                  "afterOccurrenceId": "after-3",
+                  "reason": "A second entry point might be independently exploitable."
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "upstream": {
+        "threads": 1,
+        "result": {
+          "matches": [],
+          "uncertain": []
+        },
+        "catalogueLine": "{\"page\":0,\"pageCount\":1,\"findings\":{\"before\":[{\"occurrenceId\":\"before-1\"},{\"occurrenceId\":\"before-2\"}],\"after\":[{\"occurrenceId\":\"after-1\"},{\"occurrenceId\":\"after-2\"},{\"occurrenceId\":\"after-3\"}]}}"
+      }
+    },
+    {
+      "name": "known-identity-uncertain-residual",
+      "source": "sdk/typescript/tests-ts/finding-catalogue.test.ts — \"rejects uncertainty for a finding with a known identity match\"",
+      "input": {
+        "before": [
+          {
+            "occurrenceId": "old",
+            "findingId": "identity-a"
+          }
+        ],
+        "after": [
+          {
+            "occurrenceId": "new",
+            "findingId": "identity-b"
+          },
+          {
+            "occurrenceId": "other",
+            "findingId": "identity-c"
+          }
+        ],
+        "knownFindingGroups": [
+          [
+            "identity-a",
+            "identity-b"
+          ]
+        ]
+      },
+      "catalogue": {
+        "complete": false,
+        "beforeCardIds": [
+          "old"
+        ]
+      },
+      "cases": [
+        {
+          "label": "신원으로 이미 매칭된 before 를 다른 그룹과 uncertain 으로 묶은 잔여 모순은 강제 단계에서 거부",
+          "response": {
+            "matches": [],
+            "uncertain": [
+              {
+                "beforeOccurrenceId": "old",
+                "afterOccurrenceId": "other",
+                "reason": "The earlier finding may instead match another result."
+              }
+            ]
+          },
+          "expect": {
+            "exit": 1,
+            "reason": "[강제 단계] 유효하지 않은 uncertain 쌍입니다: (old, other)"
+          },
+          "upstream": {
+            "error": "Scan comparison returned an invalid uncertain pair."
+          }
+        }
+      ],
+      "upstream": {
+        "threads": 1,
+        "result": {
+          "matches": [
+            {
+              "beforeOccurrenceIds": [
+                "old"
+              ],
+              "afterOccurrenceIds": [
+                "new"
+              ],
+              "confidence": "high",
+              "reason": "The findings share a stable identity or a previously confirmed link."
+            }
+          ],
+          "uncertain": []
+        },
+        "catalogueLine": "{\"page\":0,\"pageCount\":1,\"findings\":{\"before\":[{\"occurrenceId\":\"old\",\"findingId\":\"identity-a\",\"issueId\":\"identity-a\"}],\"after\":[{\"occurrenceId\":\"new\",\"findingId\":\"identity-b\"},{\"occurrenceId\":\"other\",\"findingId\":\"identity-c\"}]}}"
+      }
+    },
+    {
+      "name": "known-after-identity-uncertain-residual",
+      "source": "sdk/typescript/tests-ts/finding-catalogue.test.ts — \"reconciles known after identities with historical uncertainty set to false\"",
+      "input": {
+        "before": [
+          {
+            "occurrenceId": "old",
+            "findingId": "identity-a"
+          },
+          {
+            "occurrenceId": "other",
+            "findingId": "identity-c"
+          }
+        ],
+        "after": [
+          {
+            "occurrenceId": "new",
+            "findingId": "identity-b"
+          }
+        ],
+        "knownFindingGroups": [
+          [
+            "identity-a",
+            "identity-b"
+          ]
+        ]
+      },
+      "catalogue": {
+        "complete": false,
+        "beforeCardIds": [
+          "old",
+          "other"
+        ]
+      },
+      "cases": [
+        {
+          "label": "신원으로 이미 매칭된 after 를 uncertain 으로 재사용한 잔여 모순은 강제 단계에서 거부",
+          "response": {
+            "matches": [],
+            "uncertain": [
+              {
+                "beforeOccurrenceId": "other",
+                "afterOccurrenceId": "new",
+                "reason": "A different historical finding may share the control."
+              }
+            ]
+          },
+          "expect": {
+            "exit": 1,
+            "reason": "[강제 단계] 유효하지 않은 uncertain 쌍입니다: (other, new)"
+          },
+          "upstream": {
+            "error": "Scan comparison returned an invalid uncertain pair."
+          }
+        }
+      ],
+      "upstream": {
+        "threads": 1,
+        "result": {
+          "matches": [
+            {
+              "beforeOccurrenceIds": [
+                "old"
+              ],
+              "afterOccurrenceIds": [
+                "new"
+              ],
+              "confidence": "high",
+              "reason": "The findings share a stable identity or a previously confirmed link."
+            }
+          ],
+          "uncertain": []
+        },
+        "catalogueLine": "{\"page\":0,\"pageCount\":1,\"findings\":{\"before\":[{\"occurrenceId\":\"old\",\"findingId\":\"identity-a\",\"issueId\":\"identity-a\"},{\"occurrenceId\":\"other\",\"findingId\":\"identity-c\",\"issueId\":\"identity-c\"}],\"after\":[{\"occurrenceId\":\"new\",\"findingId\":\"identity-b\"}]}}"
+      }
+    },
+    {
+      "name": "related-kept-separate",
+      "source": "sdk/typescript/tests-ts/finding-catalogue.test.ts — \"keeps related findings separate from confirmed and uncertain pairs\"",
+      "input": {
+        "before": [
+          {
+            "occurrenceId": "old"
+          }
+        ],
+        "after": [
+          {
+            "occurrenceId": "same"
+          },
+          {
+            "occurrenceId": "different"
+          }
+        ]
+      },
+      "catalogue": {
+        "complete": false,
+        "beforeCardIds": [
+          "old"
+        ]
+      },
+      "cases": [
+        {
+          "label": "정상: 매칭 + 다른 after 와의 related",
+          "response": {
+            "matches": [
+              {
+                "beforeOccurrenceIds": [
+                  "old"
+                ],
+                "afterOccurrenceIds": [
+                  "same"
+                ],
+                "confidence": "high",
+                "reason": "Same control."
+              }
+            ],
+            "uncertain": [],
+            "related": [
+              {
+                "beforeOccurrenceId": "old",
+                "afterOccurrenceId": "different",
+                "reason": "Independent controls in the same component."
+              }
+            ]
+          },
+          "expect": {
+            "exit": 0
+          },
+          "upstream": {
+            "result": {
+              "matches": [
+                {
+                  "beforeOccurrenceIds": [
+                    "old"
+                  ],
+                  "afterOccurrenceIds": [
+                    "same"
+                  ],
+                  "confidence": "high",
+                  "reason": "Same control."
+                }
+              ],
+              "uncertain": [],
+              "related": [
+                {
+                  "beforeOccurrenceId": "old",
+                  "afterOccurrenceId": "different",
+                  "reason": "Independent controls in the same component."
+                }
+              ]
+            }
+          }
+        },
+        {
+          "label": "related 쌍 중복",
+          "response": {
+            "matches": [
+              {
+                "beforeOccurrenceIds": [
+                  "old"
+                ],
+                "afterOccurrenceIds": [
+                  "same"
+                ],
+                "confidence": "high",
+                "reason": "Same control."
+              }
+            ],
+            "uncertain": [],
+            "related": [
+              {
+                "beforeOccurrenceId": "old",
+                "afterOccurrenceId": "different",
+                "reason": "Independent controls in the same component."
+              },
+              {
+                "beforeOccurrenceId": "old",
+                "afterOccurrenceId": "different",
+                "reason": "Independent controls in the same component."
+              }
+            ]
+          },
+          "expect": {
+            "exit": 1,
+            "reason": "[느슨한 단계] 유효하지 않은 related 쌍입니다: (old, different)"
+          },
+          "upstream": {
+            "error": "Scan comparison returned an invalid related pair."
+          }
+        },
+        {
+          "label": "related 가 같은 확정 매칭 그룹",
+          "response": {
+            "matches": [
+              {
+                "beforeOccurrenceIds": [
+                  "old"
+                ],
+                "afterOccurrenceIds": [
+                  "same"
+                ],
+                "confidence": "high",
+                "reason": "Same control."
+              }
+            ],
+            "uncertain": [],
+            "related": [
+              {
+                "beforeOccurrenceId": "old",
+                "afterOccurrenceId": "same",
+                "reason": "Independent controls in the same component."
+              }
+            ]
+          },
+          "expect": {
+            "exit": 1,
+            "reason": "[느슨한 단계] 유효하지 않은 related 쌍입니다: (old, same)"
+          },
+          "upstream": {
+            "error": "Scan comparison returned an invalid related pair."
+          }
+        },
+        {
+          "label": "related 가 uncertain 쌍과 동일",
+          "response": {
+            "matches": [],
+            "uncertain": [
+              {
+                "beforeOccurrenceId": "old",
+                "afterOccurrenceId": "different",
+                "reason": "Independent controls in the same component."
+              }
+            ],
+            "related": [
+              {
+                "beforeOccurrenceId": "old",
+                "afterOccurrenceId": "different",
+                "reason": "Independent controls in the same component."
+              }
+            ]
+          },
+          "expect": {
+            "exit": 1,
+            "reason": "[느슨한 단계] 유효하지 않은 related 쌍입니다: (old, different)"
+          },
+          "upstream": {
+            "error": "Scan comparison returned an invalid related pair."
+          }
+        },
+        {
+          "label": "related 미지 before",
+          "response": {
+            "matches": [],
+            "uncertain": [],
+            "related": [
+              {
+                "beforeOccurrenceId": "outside",
+                "afterOccurrenceId": "different",
+                "reason": "Independent controls in the same component."
+              }
+            ]
+          },
+          "expect": {
+            "exit": 1,
+            "reason": "[느슨한 단계] 유효하지 않은 related 쌍입니다: (outside, different)"
+          },
+          "upstream": {
+            "error": "Scan comparison returned an invalid related pair."
+          }
+        }
+      ],
+      "upstream": {
+        "threads": 1,
+        "result": {
+          "matches": [],
+          "uncertain": []
+        },
+        "catalogueLine": "{\"page\":0,\"pageCount\":1,\"findings\":{\"before\":[{\"occurrenceId\":\"old\"}],\"after\":[{\"occurrenceId\":\"same\"},{\"occurrenceId\":\"different\"}]}}"
+      }
+    },
+    {
+      "name": "related-across-confirmed-groups",
+      "source": "sdk/typescript/tests-ts/finding-catalogue.test.ts — \"allows related pairs across different confirmed groups\"",
+      "input": {
+        "before": [
+          {
+            "occurrenceId": "a1"
+          },
+          {
+            "occurrenceId": "a2"
+          },
+          {
+            "occurrenceId": "b"
+          },
+          {
+            "occurrenceId": "unmatched-before"
+          }
+        ],
+        "after": [
+          {
+            "occurrenceId": "x1"
+          },
+          {
+            "occurrenceId": "x2"
+          },
+          {
+            "occurrenceId": "y"
+          },
+          {
+            "occurrenceId": "unmatched-after"
+          }
+        ]
+      },
+      "catalogue": {
+        "complete": false,
+        "beforeCardIds": [
+          "a1",
+          "a2",
+          "b",
+          "unmatched-before"
+        ]
+      },
+      "cases": [
+        {
+          "label": "정상: 서로 다른 확정 그룹 사이 related",
+          "response": {
+            "matches": [
+              {
+                "beforeOccurrenceIds": [
+                  "a1",
+                  "a2"
+                ],
+                "afterOccurrenceIds": [
+                  "x1",
+                  "x2"
+                ],
+                "confidence": "high",
+                "reason": "First synthetic control."
+              },
+              {
+                "beforeOccurrenceIds": [
+                  "b"
+                ],
+                "afterOccurrenceIds": [
+                  "y"
+                ],
+                "confidence": "high",
+                "reason": "Second synthetic control."
+              }
+            ],
+            "uncertain": [],
+            "related": [
+              {
+                "beforeOccurrenceId": "a2",
+                "afterOccurrenceId": "y",
+                "reason": "Separate synthetic controls."
+              },
+              {
+                "beforeOccurrenceId": "unmatched-before",
+                "afterOccurrenceId": "unmatched-after",
+                "reason": "Separate synthetic controls."
+              }
+            ]
+          },
+          "expect": {
+            "exit": 0
+          },
+          "upstream": {
+            "result": {
+              "matches": [
+                {
+                  "beforeOccurrenceIds": [
+                    "a1",
+                    "a2"
+                  ],
+                  "afterOccurrenceIds": [
+                    "x1",
+                    "x2"
+                  ],
+                  "confidence": "high",
+                  "reason": "First synthetic control."
+                },
+                {
+                  "beforeOccurrenceIds": [
+                    "b"
+                  ],
+                  "afterOccurrenceIds": [
+                    "y"
+                  ],
+                  "confidence": "high",
+                  "reason": "Second synthetic control."
+                }
+              ],
+              "uncertain": [],
+              "related": [
+                {
+                  "beforeOccurrenceId": "a2",
+                  "afterOccurrenceId": "y",
+                  "reason": "Separate synthetic controls."
+                },
+                {
+                  "beforeOccurrenceId": "unmatched-before",
+                  "afterOccurrenceId": "unmatched-after",
+                  "reason": "Separate synthetic controls."
+                }
+              ]
+            }
+          }
+        },
+        {
+          "label": "같은 확정 그룹의 다른 쌍(a2, x2)",
+          "response": {
+            "matches": [
+              {
+                "beforeOccurrenceIds": [
+                  "a1",
+                  "a2"
+                ],
+                "afterOccurrenceIds": [
+                  "x1",
+                  "x2"
+                ],
+                "confidence": "high",
+                "reason": "First synthetic control."
+              },
+              {
+                "beforeOccurrenceIds": [
+                  "b"
+                ],
+                "afterOccurrenceIds": [
+                  "y"
+                ],
+                "confidence": "high",
+                "reason": "Second synthetic control."
+              }
+            ],
+            "uncertain": [],
+            "related": [
+              {
+                "beforeOccurrenceId": "a2",
+                "afterOccurrenceId": "x2",
+                "reason": "Separate synthetic controls."
+              }
+            ]
+          },
+          "expect": {
+            "exit": 1,
+            "reason": "[느슨한 단계] 유효하지 않은 related 쌍입니다: (a2, x2)"
+          },
+          "upstream": {
+            "error": "Scan comparison returned an invalid related pair."
+          }
+        },
+        {
+          "label": "같은 확정 그룹(b, y)",
+          "response": {
+            "matches": [
+              {
+                "beforeOccurrenceIds": [
+                  "a1",
+                  "a2"
+                ],
+                "afterOccurrenceIds": [
+                  "x1",
+                  "x2"
+                ],
+                "confidence": "high",
+                "reason": "First synthetic control."
+              },
+              {
+                "beforeOccurrenceIds": [
+                  "b"
+                ],
+                "afterOccurrenceIds": [
+                  "y"
+                ],
+                "confidence": "high",
+                "reason": "Second synthetic control."
+              }
+            ],
+            "uncertain": [],
+            "related": [
+              {
+                "beforeOccurrenceId": "b",
+                "afterOccurrenceId": "y",
+                "reason": "Separate synthetic controls."
+              }
+            ]
+          },
+          "expect": {
+            "exit": 1,
+            "reason": "[느슨한 단계] 유효하지 않은 related 쌍입니다: (b, y)"
+          },
+          "upstream": {
+            "error": "Scan comparison returned an invalid related pair."
+          }
+        }
+      ],
+      "upstream": {
+        "threads": 1,
+        "result": {
+          "matches": [],
+          "uncertain": []
+        },
+        "catalogueLine": "{\"page\":0,\"pageCount\":1,\"findings\":{\"before\":[{\"occurrenceId\":\"a1\"},{\"occurrenceId\":\"a2\"},{\"occurrenceId\":\"b\"},{\"occurrenceId\":\"unmatched-before\"}],\"after\":[{\"occurrenceId\":\"x1\"},{\"occurrenceId\":\"x2\"},{\"occurrenceId\":\"y\"},{\"occurrenceId\":\"unmatched-after\"}]}}"
+      }
+    }
+  ]
+}

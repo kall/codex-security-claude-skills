@@ -1,0 +1,624 @@
+{
+  "description": "대표 카드 생성(groupFindings / findingCatalogue / compactFinding) 픽스처. catalogue.cards 는 부분 일치 기대값이고, upstream.catalogueLine 은 dist 가 프롬프트 마지막 줄에 실은 카탈로그 JSON 원문이다(우리 --catalogue-out 파일과 문자 단위로 같아야 한다).",
+  "fixtures": [
+    {
+      "name": "groups-only-stable-identities",
+      "source": "sdk/typescript/tests-ts/finding-catalogue.test.ts — \"groups only stable identities and confirmed aliases\"",
+      "input": {
+        "before": [
+          {
+            "occurrenceId": "first",
+            "rootCause": "The shared control",
+            "remediation": "Fix the shared control",
+            "findingId": "identity-a",
+            "title": "First description"
+          },
+          {
+            "occurrenceId": "same",
+            "rootCause": "The shared control",
+            "remediation": "Fix the shared control",
+            "findingId": "identity-a",
+            "title": "Same identity"
+          },
+          {
+            "occurrenceId": "renamed",
+            "rootCause": "The shared control",
+            "remediation": "Fix the shared control",
+            "findingId": "identity-c",
+            "title": "Renamed description"
+          },
+          {
+            "occurrenceId": "independent",
+            "findingId": "identity-d",
+            "title": "Same identity"
+          }
+        ],
+        "after": [
+          {
+            "occurrenceId": "new",
+            "findingId": "identity-z",
+            "title": "Unrelated later finding"
+          }
+        ],
+        "knownFindingGroups": [
+          [
+            "identity-a",
+            "identity-b"
+          ],
+          [
+            "identity-b",
+            "identity-c"
+          ]
+        ]
+      },
+      "catalogue": {
+        "complete": false,
+        "beforeCardIds": [
+          "renamed",
+          "independent"
+        ],
+        "representativeOccurrences": {
+          "renamed": [
+            "first",
+            "same",
+            "renamed"
+          ],
+          "independent": [
+            "independent"
+          ]
+        },
+        "cards": {
+          "renamed": {
+            "issueId": "identity-a",
+            "occurrenceCount": 3,
+            "earlierDescriptions": [
+              {
+                "title": "First description"
+              },
+              {
+                "title": "Same identity"
+              }
+            ]
+          }
+        },
+        "absentCardKeys": {
+          "independent": [
+            "occurrenceCount",
+            "earlierDescriptions"
+          ]
+        }
+      },
+      "cases": [
+        {
+          "label": "대표 ID(renamed)로 매칭하면 세 occurrence 로 펼친다",
+          "response": {
+            "matches": [
+              {
+                "beforeOccurrenceIds": [
+                  "renamed"
+                ],
+                "afterOccurrenceIds": [
+                  "new"
+                ],
+                "confidence": "high",
+                "reason": "Same shared control."
+              }
+            ],
+            "uncertain": []
+          },
+          "expect": {
+            "exit": 0
+          },
+          "upstream": {
+            "result": {
+              "matches": [
+                {
+                  "beforeOccurrenceIds": [
+                    "first",
+                    "same",
+                    "renamed"
+                  ],
+                  "afterOccurrenceIds": [
+                    "new"
+                  ],
+                  "confidence": "high",
+                  "reason": "Same shared control."
+                }
+              ],
+              "uncertain": []
+            }
+          }
+        }
+      ],
+      "upstream": {
+        "threads": 1,
+        "result": {
+          "matches": [],
+          "uncertain": []
+        },
+        "catalogueLine": "{\"page\":0,\"pageCount\":1,\"findings\":{\"before\":[{\"occurrenceId\":\"renamed\",\"findingId\":\"identity-c\",\"title\":\"Renamed description\",\"rootCause\":\"The shared control\",\"remediation\":\"Fix the shared control\",\"occurrenceCount\":3,\"earlierDescriptions\":[{\"title\":\"First description\"},{\"title\":\"Same identity\"}],\"issueId\":\"identity-a\"},{\"occurrenceId\":\"independent\",\"findingId\":\"identity-d\",\"title\":\"Same identity\",\"issueId\":\"identity-d\"}],\"after\":[{\"occurrenceId\":\"new\",\"findingId\":\"identity-z\",\"title\":\"Unrelated later finding\"}]}}"
+      }
+    },
+    {
+      "name": "fold-three-same-finding-id",
+      "source": "U5 시나리오 — 같은 findingId 인 before occurrence 3개가 대표 카드 1장으로 접히고, 서술이 다른 과거 occurrence 만 earlierDescriptions 에 중복 없이 들어간다",
+      "input": {
+        "before": [
+          {
+            "occurrenceId": "b-old-1",
+            "findingId": "csf_same",
+            "title": "Old title",
+            "summary": "Unvalidated path reaches open()",
+            "remediation": "Normalize the path"
+          },
+          {
+            "occurrenceId": "b-old-2",
+            "findingId": "csf_same",
+            "title": "Old title",
+            "summary": "Unvalidated path reaches open()",
+            "remediation": "Normalize the path"
+          },
+          {
+            "occurrenceId": "b-latest",
+            "findingId": "csf_same",
+            "title": "Current title",
+            "summary": "Unvalidated path reaches open()",
+            "remediation": "Normalize the path"
+          },
+          {
+            "occurrenceId": "b-same-text",
+            "findingId": "csf_other",
+            "title": "Log injection",
+            "summary": "User input is logged raw"
+          },
+          {
+            "occurrenceId": "b-same-text-2",
+            "findingId": "csf_other",
+            "title": "Log injection",
+            "summary": "User input is logged raw"
+          }
+        ],
+        "after": [
+          {
+            "occurrenceId": "a-new",
+            "findingId": "csf_new",
+            "title": "Archive member path escapes root"
+          }
+        ]
+      },
+      "catalogue": {
+        "complete": false,
+        "beforeCardIds": [
+          "b-latest",
+          "b-same-text-2"
+        ],
+        "representativeOccurrences": {
+          "b-latest": [
+            "b-old-1",
+            "b-old-2",
+            "b-latest"
+          ],
+          "b-same-text-2": [
+            "b-same-text",
+            "b-same-text-2"
+          ]
+        },
+        "cards": {
+          "b-latest": {
+            "occurrenceCount": 3,
+            "issueId": "csf_same",
+            "title": "Current title",
+            "earlierDescriptions": [
+              {
+                "title": "Old title"
+              }
+            ]
+          },
+          "b-same-text-2": {
+            "occurrenceCount": 2,
+            "issueId": "csf_other"
+          }
+        },
+        "absentCardKeys": {
+          "b-same-text-2": [
+            "earlierDescriptions"
+          ]
+        }
+      },
+      "cases": [
+        {
+          "label": "대표 ID(b-latest)로 매칭하면 occurrence 3개로 펼친다",
+          "response": {
+            "matches": [
+              {
+                "beforeOccurrenceIds": [
+                  "b-latest"
+                ],
+                "afterOccurrenceIds": [
+                  "a-new"
+                ],
+                "confidence": "high",
+                "reason": "The later scan renamed the same path-traversal control."
+              }
+            ],
+            "uncertain": [],
+            "related": [
+              {
+                "beforeOccurrenceId": "b-same-text-2",
+                "afterOccurrenceId": "a-new",
+                "reason": "Same module, separate logging control."
+              }
+            ]
+          },
+          "expect": {
+            "exit": 0
+          },
+          "upstream": {
+            "result": {
+              "matches": [
+                {
+                  "beforeOccurrenceIds": [
+                    "b-old-1",
+                    "b-old-2",
+                    "b-latest"
+                  ],
+                  "afterOccurrenceIds": [
+                    "a-new"
+                  ],
+                  "confidence": "high",
+                  "reason": "The later scan renamed the same path-traversal control."
+                }
+              ],
+              "uncertain": [],
+              "related": [
+                {
+                  "beforeOccurrenceId": "b-same-text",
+                  "afterOccurrenceId": "a-new",
+                  "reason": "Same module, separate logging control."
+                },
+                {
+                  "beforeOccurrenceId": "b-same-text-2",
+                  "afterOccurrenceId": "a-new",
+                  "reason": "Same module, separate logging control."
+                }
+              ]
+            }
+          }
+        },
+        {
+          "label": "대표가 아닌 occurrence(b-old-1)로 매칭하면 느슨한 단계에서 거부",
+          "response": {
+            "matches": [
+              {
+                "beforeOccurrenceIds": [
+                  "b-old-1"
+                ],
+                "afterOccurrenceIds": [
+                  "a-new"
+                ],
+                "confidence": "high",
+                "reason": "Uses a folded occurrence."
+              }
+            ],
+            "uncertain": []
+          },
+          "expect": {
+            "exit": 1,
+            "reason": "[느슨한 단계] 미지의 before occurrence"
+          },
+          "upstream": {
+            "error": "Scan comparison referenced an unknown before occurrence."
+          }
+        }
+      ],
+      "upstream": {
+        "threads": 1,
+        "result": {
+          "matches": [],
+          "uncertain": []
+        },
+        "catalogueLine": "{\"page\":0,\"pageCount\":1,\"findings\":{\"before\":[{\"occurrenceId\":\"b-latest\",\"findingId\":\"csf_same\",\"title\":\"Current title\",\"rootCause\":\"Unvalidated path reaches open()\",\"remediation\":\"Normalize the path\",\"occurrenceCount\":3,\"earlierDescriptions\":[{\"title\":\"Old title\"}],\"issueId\":\"csf_same\"},{\"occurrenceId\":\"b-same-text-2\",\"findingId\":\"csf_other\",\"title\":\"Log injection\",\"rootCause\":\"User input is logged raw\",\"occurrenceCount\":2,\"issueId\":\"csf_other\"}],\"after\":[{\"occurrenceId\":\"a-new\",\"findingId\":\"csf_new\",\"title\":\"Archive member path escapes root\"}]}}"
+      }
+    },
+    {
+      "name": "root-control-compaction",
+      "source": "sdk/typescript/tests-ts/finding-catalogue.test.ts — \"keeps root-control metadata and leaves full evidence out of cards\"",
+      "input": {
+        "before": [
+          {
+            "occurrenceId": "old",
+            "title": "Synthetic missing ownership check",
+            "identity": {
+              "anchor": "document-access",
+              "instance": "read-document"
+            },
+            "root_cause": {
+              "summary": "The shared control omits ownership",
+              "code": "FULL_CODE"
+            },
+            "remediation": "Check ownership in the shared control",
+            "codeEvidence": [
+              {
+                "code": "FULL_CODE"
+              }
+            ],
+            "locations": [
+              {
+                "path": "route.ts",
+                "startLine": 2,
+                "role": "entrypoint"
+              },
+              {
+                "path": "access.ts",
+                "startLine": 8,
+                "role": "root_control"
+              }
+            ],
+            "attackPath": {
+              "data_flow": {
+                "source": "document ID",
+                "sink": "readDocument",
+                "transformations": [
+                  "FULL_FLOW"
+                ]
+              },
+              "reachability": {
+                "attacker": "signed-in user",
+                "entrypoint": "GET /documents/:id"
+              }
+            }
+          }
+        ],
+        "after": [
+          {
+            "occurrenceId": "new",
+            "findingId": "csf_new",
+            "title": "Ownership check missing in reader",
+            "ruleId": "authz.missing-ownership",
+            "taxonomy": {
+              "category": "access-control",
+              "cwe": [
+                "CWE-639"
+              ],
+              "extra": "dropped"
+            },
+            "rootCause": "",
+            "summary": "Summary is not a fallback when rootCause is an empty string",
+            "severity": {
+              "level": "high"
+            },
+            "locations": [
+              {
+                "path": "reader.ts",
+                "startLine": 3,
+                "role": "sink"
+              },
+              {
+                "path": "policy.ts",
+                "startLine": 10,
+                "endLine": 12,
+                "role": "expected_control",
+                "note": "dropped"
+              }
+            ],
+            "attackPath": {
+              "dataflow": {
+                "source": "id",
+                "sink": "read"
+              },
+              "reachability": "public"
+            },
+            "affectedComponent": "documents",
+            "boundaryCrossed": false,
+            "fingerprints": {
+              "primary": "dropped"
+            }
+          },
+          {
+            "occurrenceId": "fallback",
+            "root_cause": {
+              "summary": null
+            },
+            "summary": "Falls back to summary",
+            "locations": [
+              {
+                "path": "first.ts",
+                "role": "entrypoint"
+              },
+              "not-a-record",
+              {
+                "path": "second.ts",
+                "role": "sink"
+              }
+            ],
+            "attackPath": {
+              "dataFlow": {},
+              "reachability": {
+                "attacker": ""
+              }
+            }
+          }
+        ]
+      },
+      "catalogue": {
+        "complete": false,
+        "beforeCardIds": [
+          "old"
+        ],
+        "cards": {
+          "old": {
+            "rootCause": "The shared control omits ownership",
+            "locations": [
+              {
+                "path": "access.ts",
+                "startLine": 8,
+                "role": "root_control"
+              }
+            ],
+            "attackPath": {
+              "dataFlow": {
+                "source": "document ID",
+                "sink": "readDocument"
+              },
+              "reachability": {
+                "attacker": "signed-in user",
+                "entrypoint": "GET /documents/:id"
+              }
+            }
+          }
+        },
+        "catalogueExcludes": [
+          "FULL_CODE",
+          "FULL_FLOW",
+          "dropped"
+        ]
+      },
+      "cases": [
+        {
+          "label": "빈 판정이면 저장 페이로드도 비어 있다",
+          "response": {
+            "matches": [],
+            "uncertain": []
+          },
+          "expect": {
+            "exit": 0
+          },
+          "upstream": {
+            "result": {
+              "matches": [],
+              "uncertain": []
+            }
+          }
+        }
+      ],
+      "upstream": {
+        "threads": 1,
+        "result": {
+          "matches": [],
+          "uncertain": []
+        },
+        "catalogueLine": "{\"page\":0,\"pageCount\":1,\"findings\":{\"before\":[{\"occurrenceId\":\"old\",\"title\":\"Synthetic missing ownership check\",\"identity\":{\"anchor\":\"document-access\",\"instance\":\"read-document\"},\"rootCause\":\"The shared control omits ownership\",\"remediation\":\"Check ownership in the shared control\",\"locations\":[{\"path\":\"access.ts\",\"startLine\":8,\"role\":\"root_control\"}],\"attackPath\":{\"dataFlow\":{\"source\":\"document ID\",\"sink\":\"readDocument\"},\"reachability\":{\"attacker\":\"signed-in user\",\"entrypoint\":\"GET /documents/:id\"}}}],\"after\":[{\"occurrenceId\":\"new\",\"findingId\":\"csf_new\",\"title\":\"Ownership check missing in reader\",\"ruleId\":\"authz.missing-ownership\",\"taxonomy\":{\"category\":\"access-control\",\"cwe\":[\"CWE-639\"]},\"locations\":[{\"path\":\"policy.ts\",\"startLine\":10,\"endLine\":12,\"role\":\"expected_control\"}],\"attackPath\":{\"dataFlow\":{\"source\":\"id\",\"sink\":\"read\"},\"reachability\":\"public\"},\"affectedComponent\":\"documents\",\"boundaryCrossed\":false},{\"occurrenceId\":\"fallback\",\"rootCause\":\"Falls back to summary\",\"locations\":[{\"path\":\"first.ts\",\"role\":\"entrypoint\"}]}]}}"
+      }
+    },
+    {
+      "name": "blank-finding-id-empty",
+      "source": "sdk/typescript/tests-ts/finding-catalogue.test.ts — \"does not treat a blank finding identity as a confirmed match (\\\"\\\")\"",
+      "input": {
+        "before": [
+          {
+            "occurrenceId": "old",
+            "findingId": ""
+          }
+        ],
+        "after": [
+          {
+            "occurrenceId": "new",
+            "findingId": ""
+          }
+        ],
+        "knownFindingGroups": [
+          [
+            ""
+          ]
+        ]
+      },
+      "catalogue": {
+        "complete": false,
+        "beforeCardIds": [
+          "old"
+        ],
+        "absentCardKeys": {
+          "old": [
+            "issueId"
+          ]
+        }
+      },
+      "cases": [
+        {
+          "label": "빈 판정",
+          "response": {
+            "matches": [],
+            "uncertain": []
+          },
+          "expect": {
+            "exit": 0
+          },
+          "upstream": {
+            "result": {
+              "matches": [],
+              "uncertain": []
+            }
+          }
+        }
+      ],
+      "upstream": {
+        "threads": 1,
+        "result": {
+          "matches": [],
+          "uncertain": []
+        },
+        "catalogueLine": "{\"page\":0,\"pageCount\":1,\"findings\":{\"before\":[{\"occurrenceId\":\"old\"}],\"after\":[{\"occurrenceId\":\"new\"}]}}"
+      }
+    },
+    {
+      "name": "blank-finding-id-spaces",
+      "source": "sdk/typescript/tests-ts/finding-catalogue.test.ts — \"does not treat a blank finding identity as a confirmed match (\\\"   \\\")\"",
+      "input": {
+        "before": [
+          {
+            "occurrenceId": "identity-before",
+            "findingId": "identity-a"
+          }
+        ],
+        "after": [
+          {
+            "occurrenceId": "identity-after",
+            "findingId": "identity-b"
+          }
+        ],
+        "knownFindingGroups": [
+          [
+            "   ",
+            "identity-a"
+          ],
+          [
+            "   ",
+            "identity-b"
+          ]
+        ]
+      },
+      "catalogue": {
+        "complete": false,
+        "beforeCardIds": [
+          "identity-before"
+        ]
+      },
+      "cases": [
+        {
+          "label": "공백 findingId 로는 두 그룹이 이어지지 않는다",
+          "response": {
+            "matches": [],
+            "uncertain": []
+          },
+          "expect": {
+            "exit": 0
+          },
+          "upstream": {
+            "result": {
+              "matches": [],
+              "uncertain": []
+            }
+          }
+        }
+      ],
+      "upstream": {
+        "threads": 1,
+        "result": {
+          "matches": [],
+          "uncertain": []
+        },
+        "catalogueLine": "{\"page\":0,\"pageCount\":1,\"findings\":{\"before\":[{\"occurrenceId\":\"identity-before\",\"findingId\":\"identity-a\",\"issueId\":\"identity-a\"}],\"after\":[{\"occurrenceId\":\"identity-after\",\"findingId\":\"identity-b\"}]}}"
+      }
+    }
+  ]
+}
