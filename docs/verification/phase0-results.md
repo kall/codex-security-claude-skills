@@ -1255,3 +1255,18 @@ npm 태그와 매니페스트 번호는 별개 축이다. git 이력으로 확�
 | `patch --validation-prompt-file` | npm 0.1.29 | `b4119d13` |
 
 npm 0.1.26~0.1.29는 모두 매니페스트 0.1.95다. npm 0.1.26에는 Python 리졸버가 남아 있고 Node 헬퍼가 없다.
+
+### 정합 작업 뒤 재검증 (2026-09-23)
+
+`feat/codex-security-0129-alignment` 브랜치의 모든 유닛(U1~U10)과 코드 리뷰 수정 반영 뒤, npm 0.1.29(매니페스트 0.1.95) 설치본에서 다시 돌렸다.
+
+| 스크립트 | 결과 | OK 단언 |
+| --- | --- | --- |
+| `repro-u1-search-command.sh` | exit 0, `ALL ASSERTIONS PASSED` | 73 |
+| `repro-u4.sh` | exit 0, `ALL ASSERTIONS PASSED` | 49 |
+| `repro-u5-match-validator.sh` | exit 0, `ALL ASSERTIONS PASSED` (픽스처 러너 453건, dist 대조 실패 0) | 707 |
+| `repro-u7-coverage-recovery.sh` | exit 0, `ALL ASSERTIONS PASSED` | 56 |
+| `repro-u8-policy-severity.sh` | exit 0, `ALL ASSERTIONS PASSED` | 258 |
+| `repro-u3.sh` 요약 | S5 `exit=0`, S6 `exit=0`, S9 `exit=1`, S9b `exit=0` — 기대값과 일치 | — |
+
+자기채점 5종의 FAIL·SKIP은 0건이다. 새 단언 가운데 변경을 붙잡는 것(repro-u4 H·I·J, repro-u8의 신뢰 게이트 순서·저장 전 경로 검사)은 0.1.25 사본 또는 수정 전 코드에서 실패함을 확인했다.
