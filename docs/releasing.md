@@ -17,10 +17,11 @@ bash tools/make-release.sh --version v0.1.0 --repo kall/codex-security-claude-sk
 스크립트가 하는 일:
 
 1. `SKILL.md`를 가진 스킬 디렉터리 **전부** + `install.sh` + `skills/README.md` 수집
-   (`__pycache__` 제외). `bootstrap.py`가 빠지면 **빌드를 중단**한다.
+   (`__pycache__` 제외). `bootstrap.py`나 공용 관문 `workflow_digest.mjs`가 빠지면 **빌드를 중단**한다.
 2. 매뉴얼(`docs/install-and-usage.md`)과 재검증 도구 수집 — `repro-u3.sh`, `repro-u4.sh`,
    `repro-u1-search-command.sh`, `repro-u5-match-validator.sh`, `repro-u7-coverage-recovery.sh`,
-   `fixtures/*.json`.
+   `repro-u8-policy-severity.sh`, 그리고 `fixtures/` 전체(하위 디렉터리 `scan-match/` 포함 —
+   `repro-u5`가 이 픽스처가 없으면 exit 2다).
 3. `LICENSE` 복사 + `NOTICE` 생성(업스트림 Apache-2.0 파생 관계·비지원 경로 명시).
 4. 배포본 진입점 `README.md` 생성(설치 3줄 + 검증된 플러그인 조합).
 5. **배포본에 없는 문서로의 상대 링크를 절대 GitHub URL로 치환**한다(개발 기록 문서는 담지
@@ -41,11 +42,12 @@ bash $D/repro-u4.sh                  # 봉인 계약 + 인벤토리 정확성
 bash $D/repro-u1-search-command.sh   # 검색 명령 확보와 신뢰 게이트
 bash $D/repro-u7-coverage-recovery.sh  # 커버리지 정직성 + 복구 경로
 bash $D/repro-u5-match-validator.sh  # 매칭 검증기
+bash $D/repro-u8-policy-severity.sh  # SECURITY.md 초안·심각도 재분류 결정론 부분
 ```
 
-기대: 체크섬 OK → 스킬 7종 설치 → 프로브가 플러그인 경로·버전·검색 명령·게이트 사본 보고
-(`--check`도 **exit 0/2/1** 세 값을 낸다 — 2는 ripgrep 미확보이며 통과가 아니다) →
-자기 채점 스크립트 네 개가 모두 `ALL ASSERTIONS PASSED`(exit 0).
+기대: 체크섬 OK → 스킬 9종 설치 → 프로브가 플러그인 경로·버전·검색 명령·Node·SECURITY.md 헬퍼·
+게이트 사본 보고, "사용 불가" 경고 줄 없음(`--check`도 **exit 0/2/1** 세 값을 낸다 — 2는 ripgrep
+미확보이며 통과가 아니다) → 자기 채점 스크립트 다섯 개가 모두 `ALL ASSERTIONS PASSED`(exit 0).
 
 **exit 2(`INCOMPLETE`)는 통과가 아니다.** 전제(ripgrep, 플러그인 사본)를 확보하지 못해 검증하지
 못한 블록이 있다는 뜻이다. 릴리즈 검증에서는 exit 2를 실패로 취급하고, 전제를 갖춘 뒤 다시 돌린다
@@ -120,8 +122,21 @@ tarball을 교체하지 말고 새 버전을 올린다 — 사용자가 체크�
 
 업스트림이 번들 플러그인을 갱신하면 스킬 동작이 바뀔 수 있다. 순서:
 
-1. 새 플러그인으로 자기 채점 스크립트 넷(`repro-u4.sh`, `repro-u1-search-command.sh`,
-   `repro-u7-coverage-recovery.sh`, `repro-u5-match-validator.sh`)과 관측형 `repro-u3.sh` 실행 →
-   계약 변화 확인. exit 2는 미검증이므로 전제를 갖춰 다시 돌린다.
-2. 변화가 있으면 해당 SKILL.md와 매뉴얼(특히 3.4절 표)을 갱신.
-3. 새 버전으로 재배포하고 릴리즈 노트에 검증된 조합을 갱신.
+1. **고정한 상류 영문 리터럴을 새 상류 태그와 다시 대조한다.** 아래 네 곳은 상류 원문을 복사 시점 커밋
+   (현재 태그 `npm-v0.1.29` = `6620a380f86c26d6c6428a660b2a90c3b5a1fa45`)과 함께 고정했다. 상류 저장소에서
+   `git diff npm-v<이전> npm-v<새 버전> -- <원본 파일>`로 원본을 보고, 바뀌었으면 리터럴과 복사 시점 커밋을
+   함께 갱신한다. 회귀 스크립트만으로는 전부 잡히지 않는다.
+
+   | 고정 위치 | 상류 원본 | 드리프트 자동 감지 |
+   | --- | --- | --- |
+   | `skills/codex-security-scan-match/SKILL.md` 「상류 판정 문장」 | `sdk/typescript/src/scan-comparison.ts` `comparisonPrompt()` | 없음 — 컴파일된 `dist/scan-comparison.js`에 같은 문자열이 있지만 회귀 스크립트가 대조하지 않는다(블록 S는 카탈로그·조정 결과만 대조) |
+   | `skills/codex-security-policy/scripts/policy_draft.mjs` `UPSTREAM_*` | `sdk/typescript/src/security-policy.ts` `runSecurityPolicyStages()` | `repro-u8` P7·P11이 설치된 dist와 대조 |
+   | `skills/codex-security-classify-severity/scripts/classify_severity.mjs` `UPSTREAM_CLASSIFY_INSTRUCTIONS` | `sdk/typescript/src/classify-severity.ts` `classifySeverityInternal()` | 있음 — 스킬 `prepare`가 다르면 중단하고, `repro-u8` S12가 대조 |
+   | `skills/codex-security-patch/SKILL.md` 「검증 지시의 위치와 상류 주입 문구」 | `sdk/typescript/src/cli.ts` `runSkill()`의 검증 프롬프트 블록 | 없음 — 컴파일된 `dist/cli.js`에 같은 문자열이 있지만 회귀 스크립트가 대조하지 않는다 |
+
+2. 새 플러그인으로 자기 채점 스크립트 다섯(`repro-u4.sh`, `repro-u1-search-command.sh`,
+   `repro-u7-coverage-recovery.sh`, `repro-u5-match-validator.sh`, `repro-u8-policy-severity.sh`)과
+   관측형 `repro-u3.sh` 실행 → 계약 변화 확인. exit 2는 미검증이므로 전제를 갖춰 다시 돌린다.
+3. 변화가 있으면 해당 SKILL.md와 매뉴얼(특히 3.4절 표)을 갱신. 스캔 스킬의 버전 경고 기준
+   (매니페스트 축)과 각 스킬의 "기준 실측 버전"(npm 축)을 함께 올린다.
+4. 새 버전으로 재배포하고 릴리즈 노트에 검증된 조합을 갱신.

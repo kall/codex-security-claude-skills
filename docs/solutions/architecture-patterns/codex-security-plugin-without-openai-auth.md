@@ -1,7 +1,7 @@
 ---
 title: "codex-security 번들 플러그인을 OpenAI 인증 없이 Claude Code 스킬로 실행하기"
 date: 2026-07-30
-last_updated: 2026-09-10
+last_updated: 2026-09-23
 category: architecture-patterns
 module: codex-security-claude-skills
 problem_type: architecture_pattern
@@ -141,8 +141,9 @@ codex-security의 스캔 기능은 공식적으로 Codex 바이너리(OpenAI 인
    필요로 하지 않으면 `shlex.quote(raw) == raw`라 정의상 만족되므로, `H13f`가 공백 담긴 저장소
    경로로 부트스트랩을 다시 돌려 `repoRoot` 축을 실제로 행사한다.
 
-   **남는 검출 공백**: `H13e`가 읽는 것은 이 축을 보간하는 세 파일
-   (`codex-security-scan`·`-diff-scan`·`-deep-scan`)뿐이고 저장소의 SKILL.md는 7개다.
+   **남는 검출 공백**: `H13e`가 읽는 것은 이 축을 보간하는 다섯 파일
+   (`codex-security-scan`·`-diff-scan`·`-deep-scan`·`-policy`·`-classify-severity`)뿐이고 저장소의
+   SKILL.md는 9개다.
    `skills/codex-security-scan-match/SKILL.md`는 같은 축(`<python>`·`<plugin_dir>`)을 명령형에
    보간하는데 회귀망 밖이다(현재는 맨몸이라 무해). 또 `H13e`는 **보간 형태**만 고정할 뿐
    "어느 필드를 가리키는가"라는 산문 지시는 잡지 못한다 —
@@ -189,13 +190,66 @@ codex-security의 스캔 기능은 공식적으로 Codex 바이너리(OpenAI 인
    중 1개로 줄어든 분모에도 `completeness=complete` 로 통과한다(실측). 막을 수단이 없으므로 회귀(`repro-u4.sh` 블록 G3·G4)로 범위를 고정하고,
    상류가 `--no-config`를 주기 시작하면 그 블록이 실패로 알린다.
 
+10. **상류 `artifact-storage.md` 저장 정책은 적용하지 않는다(P6-KTD8).** npm 0.1.28부터 상류 스킬
+   문서(`skills/threat-model/SKILL.md`, `skills/validation/SKILL.md`, `skills/fix-finding/SKILL.md`,
+   `references/scan-artifacts.md` 등)가 `references/artifact-storage.md`를 읽고 따르라고 지시한다.
+   그 정책은 scanId를 MCP로 먼저 받고, 산출물을 `save_codex_security_artifact`로만 저장하고, 셸로 쓴
+   정본 파일로 폴백하지 말라고 한다. 따르면 이 저장소의 터미널 정본 경로(셸로 쓴 draft →
+   `finalize_scan_contract.py` → 선택적 `complete-scan`)가 막힌다. 근거는 두 가지다. `artifact-storage.md`
+   스스로 "Explicit user instructions still take precedence"라고 쓰고, 사용자가 설치해 호출한 스킬의
+   지시가 그 명시 지시다. 또 터미널 정본 경로는 npm 0.1.29에서도 finalizer와 `complete-scan`이
+   받아들인다(`repro-u3.sh`·`repro-u4.sh` 실측). "MCP 지시는 무시한다"는 한 줄로는 부족하다. 그 정책이
+   자기가 "older terminal file-authoring fallbacks"보다 우선한다고 쓰기 때문이다. 그래서 상류 문서를
+   읽는 스킬마다 비적용을 명시한다.
+   → 정본 서술은 `skills/codex-security-scan/SKILL.md`의 prompt-only 절이다. 같은 문단을
+   `codex-security-diff-scan`·`-deep-scan`·`-validate`·`-patch`·`-policy`의 SKILL.md가 참조하거나
+   반복한다. 정책 초안 스킬은 서브에이전트 프롬프트에도 이 저장·편집 지시를 따르지 말라고 넣는다.
+
+11. **Node는 `rg`와 같은 신뢰 게이트로 해석하고, 모든 Node 호출은 `env -i`로 환경을 교체한다(P6-KTD6).**
+   npm 0.1.27부터 SECURITY.md 리졸버가 Python에서 Node 헬퍼(`scripts/launch_codex_security_mcp --helper
+   resolve-security-md`)로 옮겨졌다. 런처는 `CODEX_MCP_NODE_PATH` → `CODEX_BROWSER_USE_NODE_PATH` → PATH의
+   `node` 순으로 Node를 고르므로, 대상 저장소가 PATH에 `node_modules/.bin`을 얹으면 저장소가 커밋한 `node`가
+   실행된다. 그래서 부트스트랩이 같은 순서의 후보를 계약 1·9의 게이트(리터럴·realpath 둘 다 저장소 밖,
+   실행해서 Node인지 확인)로 해석하고, 소비자는 그 경로를 `CODEX_MCP_NODE_PATH`로 넘긴다. 게이트만으로는
+   부족하다. `env -i` 없이 부르면 호출 환경의 `NODE_OPTIONS=--require <저장소 JS>`가 신뢰한 Node에 그대로
+   적용된다(실측). 그래서 실행 형태를 `env -i <trusted_child_env> <node> <스크립트>` 하나로 고정한다. 이
+   저장소의 `.mjs` 스크립트는 셰뱅을 두지 않고(셰뱅 `#!/usr/bin/env node`는 PATH의 첫 `node`를 고른다),
+   `NODE_OPTIONS`나 node 실행 옵션이 남아 있으면 실행을 거부한다. 이 거부는 심층 방어다. `--require`는
+   이미 실행된 뒤이므로 1차 방어선은 `env -i`다. 헬퍼나 Node가 없어도 부트스트랩은 실패하지 않는다.
+   전체 스캔은 정책 해결을 고지와 함께 건너뛰고, 정책 해결이 입력 자체인 `codex-security-policy`는 중단한다.
+   → `skills/codex-security-scan/scripts/bootstrap.py`의 `resolve_node`, `probe_node`,
+   `resolve_security_md_helper`, `resolve_sdk`, 그리고 `skills/codex-security-scan/scripts/workflow_digest.mjs`
+   머리말. 회귀는 `repro-u1-search-command.sh` H14(저장소 안 Node 거부, 문서화한 호출 형태, 1 MiB 초과)와
+   `repro-u8-policy-severity.sh` P9·S8·S9(`NODE_OPTIONS` 주입 차단, 저장소 `node_modules/.bin/node` 미실행,
+   셰뱅 없음)가 고정한다.
+
+12. **상류 dist가 export하는 결정론 함수는 재구현하지 않고 직접 부른다.** npm 번들의 `dist/`는
+   `finding-workflow.js`의 `workflowDigest`, `security-policy.js`의 스냅샷·인벤토리 함수,
+   `classify-severity.js`·`classify-scan-severity.js`의 분류·저장·읽기 함수를 export한다(phase0-results.md
+   0.1.29 부록 4번). 재구현하면 JS 키 정렬·`JSON.stringify` 숫자 표기·링크 체인·Git 메타데이터 규칙이
+   Python 사본과 조용히 어긋난다. 그래서 부트스트랩이 채택한 패키지의 `dist/`를 허용 목록
+   (`UPSTREAM_MODULES`)으로만 import한다. 모델 호출 자리는 상류의 내부 주입점으로 바꾼다. 예를 들어
+   `classifySeverityInternal`은 `options.codex`(읽기 전용 Codex 클라이언트)가 있으면 인증·설정·Codex 실행
+   파일 해석을 건너뛴다. 스킬은 여기에 **가짜 Codex**를 넣어 상류가 조립한 프롬프트를 받고, 격리
+   서브에이전트의 반환을 돌려준다. 그러면 저장·재사용·검증·결과 파일 기록이 상류 코드 그대로 돈다. export되지
+   않는 함수(`reconcileComparison`·`validateComparison`·`comparisonPrompt`)는 여전히 이식이 필요하다. 이식본은
+   `matchScanFindingsInternal`에 가짜 Codex를 넣어 얻은 상류 결과와 대조한다. 상류 영문 프롬프트를 리터럴로
+   고정한 곳은 복사 시점 커밋을 적고, 설치된 dist 문자열과 대조해 드리프트를 잡는다. 상류 소스 체크아웃에는
+   `dist/`가 없으므로 이 방식을 쓰는 스킬(`codex-security-policy`·`codex-security-classify-severity`)은 npm
+   설치본에서만 동작한다.
+   → `skills/codex-security-scan/scripts/workflow_digest.mjs`(공용 관문), `skills/codex-security-policy/scripts/policy_draft.mjs`,
+   `skills/codex-security-classify-severity/scripts/classify_severity.mjs`(가짜 Codex 주입과 `UPSTREAM_CLASSIFY_INSTRUCTIONS`
+   드리프트 검사), `skills/codex-security-scan-match/scripts/validate_matches.py`(이식본). 회귀는
+   `repro-u5-match-validator.sh` 블록 S(가짜 Codex로 돌린 상류 dist 결과 대조)와 `repro-u8-policy-severity.sh`
+   P1·P2·P7·P11·S1·S12가 고정한다.
+
 ## Why This Matters
 
 이 패턴이 없으면 codex-security는 OpenAI 구독이 있어야만 쓸 수 있다. 결정론 계층이 무인증임을 활용하면
 Claude Code 구독만으로 개발자 로컬에서 동일한 봉인 계약 산출물(scan-manifest/findings/coverage +
 report.md + SARIF)을 만들고 공식 CLI(`scans list/show`, `findings false-positive`)와 이력 호환된다.
 
-위 10개 계약(1, 1-b, 2~9 — `1-b`가 별 항목이므로 번호 최댓값보다 하나 많다)을 어기면 게이트가 조용히
+위 13개 계약(1, 1-b, 2~12 — `1-b`가 별 항목이므로 번호 최댓값보다 하나 많다)을 어기면 게이트가 조용히
 통과하거나(신뢰 게이트 우회, 빈 커버리지 봉인), complete가 반드시 실패하거나(contract 미반영),
 되돌릴 수 없는 이력 손상(자동 fail-scan)이 발생한다.
 
@@ -213,8 +267,10 @@ report.md + SARIF)을 만들고 공식 CLI(`scans list/show`, `findings false-po
 - **계약 2(finalize-first)** — `complete-scan`이 binding을 주입하지 않고 검증만 한다는 사실은
   complete가 반복 실패한 뒤에 드러났다.
 - **계약 5(집합 기반 정산)** — 건수 비교로는 "다른 파일을 같은 수만큼 리뷰한" 경우를 못 잡는다.
+- **계약 11(Node `env -i`)** — 신뢰 게이트를 통과한 Node라도 호출 환경의 `NODE_OPTIONS=--require …`가
+  그대로 적용된다는 것은 실측으로 확인했다. 경로 게이트만 보면 놓친다.
 
-나머지(계약 3·4·6·7·8)는 상류 코드·스키마를 읽어 사전에 도출한 것이고, 실패를 겪은 적은 없다.
+나머지(계약 3·4·6·7·8·10·12)는 상류 코드·스키마를 읽어 사전에 도출한 것이고, 실패를 겪은 적은 없다.
 구분해 두는 이유: "전부 사고로 배웠다"고 쓰면 사전 독해로 막을 수 있는 부분까지 불가피했던 것처럼
 읽히고, 다음 사람이 코드를 먼저 읽지 않게 된다.
 
@@ -226,6 +282,8 @@ report.md + SARIF)을 만들고 공식 CLI(`scans list/show`, `findings false-po
 - deep 스캔 대체물을 만들 때(계약 8).
 - 스캔 간 매칭이나 finding 판정처럼 대상 저장소 파생 텍스트를 LLM에 넣을 때(계약 7).
 - 커버리지 분모가 되는 파일 목록을 만들 때, 또는 대상 저장소에서 외부 실행 파일을 해석할 때(계약 9).
+- 상류 스킬 문서가 MCP 저장 도구나 별도 저장 정책을 지시할 때(계약 10).
+- 상류 Node 헬퍼나 npm `dist/` 함수를 호출할 때(계약 11·12).
 - **스킬 문서의 명령형이 부트스트랩 출력을 셸에 보간할 때(계약 9의 문서 절반).** 더 넓게는,
   프로그램이 정화한 값을 내보내고 **사람이나 에이전트가 문서를 읽어** 그것을 셸·SQL·URL·템플릿에
   보간하는 모든 구조. 이스케이프 함수의 출력은 소비자 쪽 문맥에 따라 유효성이 달라진다

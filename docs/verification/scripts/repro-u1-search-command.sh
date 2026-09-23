@@ -1025,7 +1025,8 @@ fi
 # H13e. **문서 계약**: 인용본을 내보내는 것만으로는 계약을 못 지킨다. 소비자
 # 명령형이 자리표시자를 이중인용 안에 두면(`PATH="<search_path_env>"`) 인용본의
 # 단일인용은 리터럴이 되고 $() 는 그대로 확장된다 — 실측으로 두 축 모두 실행됐다.
-# 세 SKILL.md 의 명령형에 그 형태가 남아 있지 않은지 고정한다.
+# 인용본을 명령형에 넣는 SKILL.md 다섯 개(스캔 3종 + policy·classify-severity)의
+# 명령형에 그 형태가 남아 있지 않은지 고정한다.
 if [ ! -f "$REPO_ROOT/skills/codex-security-scan/SKILL.md" ]; then
   skip "H13e: 스킬 트리를 찾지 못했습니다($REPO_ROOT) — 문서 계약은 검증되지 않았습니다"
 else
@@ -1037,6 +1038,8 @@ quoted_axes = (
     "repo_root", "plugin_dir", "scan_dir", "python_command", "python",
     "search_path_env", "trusted_path_env", "trusted_child_env", "pathEnv", "root",
     "node", "security_md_launcher",
+    # codex-security-policy·codex-security-classify-severity 가 쓰는 shellQuoted.* 축.
+    "sdk_dist", "sdk_cli", "state_dir",
 )
 # 여는 큰따옴표 **바로 뒤**만 보면 자리표시자가 더 긴 이중인용 문자열 중간에
 # 오는 형태(`"… <scan_dir>/x"`)를 놓친다. 자리표시자 앞의 큰따옴표 개수가
@@ -1051,7 +1054,10 @@ def double_quoted_axes(line: str) -> list[str]:
         if line.count('"', 0, m.start()) % 2 == 1
     ]
 problems = []
-for name in ("codex-security-scan", "codex-security-diff-scan", "codex-security-deep-scan"):
+for name in (
+    "codex-security-scan", "codex-security-diff-scan", "codex-security-deep-scan",
+    "codex-security-policy", "codex-security-classify-severity",
+):
     path = root / "skills" / name / "SKILL.md"
     if not path.is_file():
         problems.append(f"{name}/SKILL.md 가 없습니다")

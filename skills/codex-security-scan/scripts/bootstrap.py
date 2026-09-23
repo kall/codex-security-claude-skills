@@ -670,7 +670,7 @@ def npx_cache_bases(target_repo: Path) -> list[Path]:
 
 # 상류 저장소 체크아웃 안에서 플러그인 소스가 놓이는 상대 경로들.
 # 상류가 레이아웃을 옮겼으므로 둘 다 시도한다:
-#   plugins/codex-security          — 현재(npm 0.1.25 시점 소스 트리)
+#   plugins/codex-security          — 현재(npm 0.1.29 시점 소스 트리)
 #   sdk/typescript/_bundled_plugin  — 과거 레이아웃(옛 체크아웃 호환)
 # npm 배포본 안에서는 여전히 `_bundled_plugin` 이므로 그 경로는 별도로 다룬다.
 SDK_REPO_RELATIVE = (

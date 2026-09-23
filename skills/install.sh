@@ -240,6 +240,25 @@ else:
     if reason:
         print(f"             {reason}")
 
+# 신규 스킬 2종의 전제(P6-KTD6). 종료코드는 바꾸지 않는다 — 주력 스캔 스킬과 무관하게
+# 두 스킬만 쓸 수 없는 상태이므로, 어느 스킬을 못 쓰는지와 그 이유만 알린다.
+#   codex-security-policy            : Node + SECURITY.md 헬퍼 + npm dist/ 가 모두 필요
+#   codex-security-classify-severity : Node + npm dist/ 가 필요
+sdk = data.get("sdk") or {}
+sdk_reason = sdk.get("reason") or "npm 번들 dist/ 없음"
+if not node:
+    no_node = "신뢰할 수 있는 node 없음"
+    print(f"  경고     : codex-security-policy 사용 불가 — {no_node}")
+    print(f"  경고     : codex-security-classify-severity 사용 불가 — {no_node}")
+else:
+    if not helper.get("available"):
+        print("  경고     : codex-security-policy 사용 불가 — "
+              f"{helper.get('reason') or 'SECURITY.md 헬퍼 없음'}")
+    elif not sdk.get("dist"):
+        print(f"  경고     : codex-security-policy 사용 불가 — {sdk_reason}")
+    if not sdk.get("dist"):
+        print(f"  경고     : codex-security-classify-severity 사용 불가 — {sdk_reason}")
+
 # 같은 pluginVersion 에서도 워킹트리 게이트 처리가 다르다 — 심볼 존재로 판별한다.
 db = plugin_root / "scripts" / "workbench_db.py"
 try:

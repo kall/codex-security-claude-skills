@@ -457,7 +457,7 @@ S9B_CODE=$LAST_CODE
 
 # ---------------------------------------------------------------------------
 say "요약 (관측 종료코드 / 기대값)"
-printf 'S5  complete-scan (repo 수정됨)     exit=%s  기대 1=하드 실패 사본 / 0=경고 사본 (0.1.94 실측: 0)\n' "$S5_CODE" | tee -a "$LOG"
+printf 'S5  complete-scan (repo 수정됨)     exit=%s  기대 1=하드 실패 사본 / 0=경고 사본 (0.1.95 실측: 0)\n' "$S5_CODE" | tee -a "$LOG"
 printf 'S6  complete-scan (repo 무수정)     exit=%s  기대 0\n' "$S6_CODE" | tee -a "$LOG"
 printf 'S9  complete-scan --claim-token     exit=%s  기대 1\n' "$S9_CODE" | tee -a "$LOG"
 printf 'S9b complete-scan (토큰 없이)       exit=%s  기대 0\n' "$S9B_CODE" | tee -a "$LOG"

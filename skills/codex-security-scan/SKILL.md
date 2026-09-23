@@ -99,12 +99,16 @@ fallbacks"보다 우선한다고 쓰기 때문이다. 그래서 상류 문서가
      자식 프로세스로 돌릴 때 원시 `$PATH`를 물려주지 말고 이 값을 쓴다 — 상류 스크립트들이
      `git`·`rg`를 PATH에서 해석해 `cwd=대상 저장소`로 실행하기 때문이다(P5-KTD2).
    - **시작 고지**: 선택된 플러그인의 절대 경로와 `pluginVersion`을 사용자에게 알린다.
-     `pluginVersion`이 이 번역 지침 작성 기준(**0.1.94**, npm 0.1.25)과 다르면 "플러그인 버전이
+     `pluginVersion`이 이 번역 지침 작성 기준(**매니페스트 0.1.95**, npm 0.1.29)과 다르면 "플러그인 버전이
      매핑 기준과 다름 — 워크플로 지시가 바뀌었을 수 있음"을 경고한다. 이 값은 매니페스트
-     버전이며 npm 패키지 버전과 다른 축이다(npm 0.1.25 = 매니페스트 0.1.94).
-   - **표기 규약**: 이 저장소의 문서는 두 축을 **항상 이름으로 구분해** 쓴다 — `npm 0.1.25`,
-     `매니페스트 0.1.94`. 축 없이 "플러그인 0.1.x"로 쓰지 않는다. 두 축의 숫자 범위가 겹쳐서
+     버전이며 npm 패키지 버전과 다른 축이다(npm 0.1.29 = 매니페스트 0.1.95).
+   - **표기 규약**: 이 저장소의 문서는 두 축을 **항상 이름으로 구분해** 쓴다 — `npm 0.1.29`,
+     `매니페스트 0.1.95`. 축 없이 "플러그인 0.1.x"로 쓰지 않는다. 두 축의 숫자 범위가 겹쳐서
      (npm 0.1.20과 매니페스트 0.1.20이 둘 다 존재) 축을 생략하면 어느 쪽인지 알 수 없다.
+   - **경고로 구분되지 않는 구간(P6-KTD1)**: npm 0.1.26~0.1.29는 모두 매니페스트 0.1.95다. 그래서
+     이 경고는 네 버전을 구분하지 못한다. npm 0.1.26에는 Node 헬퍼(`securityMdHelper`)가 없어서
+     3번 정책 해결이 고지와 함께 건너뛰어진다(`securityMdHelper.available: false`). 헬퍼는
+     npm 0.1.27부터 있다. 검증된 조합인 npm 0.1.29 설치를 권장한다.
    - 검색 명령 해석 결과(`searchCommand.source`)도 함께 고지한다 — `trusted-executable`이면
      PATH의 ripgrep, `claude-shim`이면 Claude Code 바이너리를 `rg`로 노출한 심링크다.
    - `ok: false`이면 `stage`·`error`의 한국어 안내를 그대로 사용자에게 전하고 **중단**한다
@@ -177,7 +181,7 @@ fallbacks"보다 우선한다고 쓰기 때문이다. 그래서 상류 문서가
   `scan.sealedAt`·`scan.artifacts`가 **없는 unsealed draft**로 쓴다.
   npm 0.1.29 finalizer는 unsealed draft의 `scan.artifacts: []`를 지우고 봉인한다(`repro-u4.sh` H2).
   이것은 호환성 완화일 뿐이다. 이 스킬은 계속 `scan.artifacts`를 쓰지 않는다.
-  (매니페스트 0.1.94의 `scan.status`는 `completed`/`failed`/`canceled`/`interrupted` 열거형이며
+  (매니페스트 0.1.95의 `scan.status`는 `completed`/`failed`/`canceled`/`interrupted` 열거형이며
   finalizer가 결정한다. 이 경로는 항상 `completed`로 봉인되고, 값은 `report.md` 요약표의
   `Scan outcome` 행에 표시된다.)
 - **모델 소유 식별자**: `ruleId`, `identity.anchor`, 선택 `identity.instance`는 **소문자 slug**
@@ -202,7 +206,7 @@ fallbacks"보다 우선한다고 쓰기 때문이다. 그래서 상류 문서가
 `skills/security-scan/SKILL.md`, `references/core-scan.md`,
 `references/scan-artifacts.md`, `references/final-report.md`, `references/finding-detail-fields.md`.
 
-**상류 문서 이동 주의(매니페스트 0.1.16~0.1.94 구간):** `skills/security-scan/references/repository-wide-scan.md`는
+**상류 문서 이동 주의(매니페스트 0.1.16~0.1.95 구간):** `skills/security-scan/references/repository-wide-scan.md`는
 **매니페스트 0.1.20**(npm 0.1.12에 처음 실림)에서 삭제되고 내용이 `references/core-scan.md`로 옮겨졌다. 또 상류 표준 스캔은 후보 원장
 (candidate ledger) 방식을 버리고 investigation packet + MCP 도구(`record_codex_security_scan_draft`)
 모델로 갔다. **원장 기반 절차의 권위 서술은 이 스킬 문서**이고, 원장 행 스키마와 중첩 레코드 필드는
@@ -510,8 +514,8 @@ draft — R6 금지 필드 없음), `findings.json`, `coverage.json`을 쓰고, 
 - `report.md`의 **절대 경로**(주 가독 산출물)와 SARIF 경로.
 - 커버리지 상태(`complete`/`partial`)와 미리뷰 파일 수. **근거는 `coverage_reconcile.py`의 요약
   (`completenessAfter`·`unreviewedCount`·`deferredCount`)이며 SARIF가 아니다**(P5-KTD8 · P5-R14).
-  상류 npm 0.1.25 SARIF는 종결 상태만 반영해 부분 커버리지 스캔도 '성공'으로 표시하고, `deferred`가
-  비면 경고조차 남기지 않는다. **SARIF의 성공 표시를 근거로 완전 커버리지를 주장하지 않는다.**
+  상류 SARIF는 npm 0.1.25부터 종결 상태만 반영해 부분 커버리지 스캔도 '성공'으로 표시하고, `deferred`가
+  비면 경고조차 남기지 않는다(npm 0.1.29에서도 같다. `repro-u4.sh` F). **SARIF의 성공 표시를 근거로 완전 커버리지를 주장하지 않는다.**
   정산 요약의 `partialWithoutDeferred`가 참이면 그 사실을 보고에 명시한다.
 - 0단계 경량 확인에서 **degraded path로 격하됐다면** 그 사실.
 - 실행·테스트 상태는 이 응답에서 직접 말한다. npm 0.1.29부터 `report.md`는 `Runtime or test status`

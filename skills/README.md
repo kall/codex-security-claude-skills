@@ -4,16 +4,20 @@
 여기서 설치된 사본 또는 링크일 뿐이므로, 수정은 항상 이 저장소에서 한다.
 
 - `codex-security-scan/` — 저장소 전체 표준 스캔. **공통 규칙의 정본**이며 다른 스킬이 참조한다
-  (`SKILL.md`, `scripts/bootstrap.py`, `scripts/coverage_reconcile.py`, `scripts/workbench_glue.py`)
+  (`SKILL.md`, `scripts/bootstrap.py`, `scripts/coverage_reconcile.py`, `scripts/workbench_glue.py`,
+  상류 npm `dist/` 공용 관문 `scripts/workflow_digest.mjs`)
 - `codex-security-diff-scan/` — 변경분(diff) 스캔
 - `codex-security-validate/` — 후보 finding의 진위 판정
 - `codex-security-patch/` — 보안 이슈 수정 (2단 승인)
 - `codex-security-verify-fix/` — 적용된 수정의 검증 (읽기 전용)
 - `codex-security-scan-match/` — 스캔 간 파인딩 매칭 (`scripts/validate_matches.py`)
 - `codex-security-deep-scan/` — 다중 패스 심층 스캔의 축소판(deep-lite)
+- `codex-security-policy/` — SECURITY.md 초안 작성, 저장소 무변경 (`scripts/policy_draft.mjs`)
+- `codex-security-classify-severity/` — 루브릭 기반 심각도 재분류 (`scripts/classify_severity.mjs`,
+  `scripts/saved_assessments.py`)
 - `install.sh` — 전역 스킬 디렉터리로 설치하는 스크립트
 
-> 스킬 7종의 전체 설치·사용 가이드(사전 요구사항, 환경변수, 스킬별 사용 예시, 워크벤치 이력 통합,
+> 스킬 9종의 전체 설치·사용 가이드(사전 요구사항, 환경변수, 스킬별 사용 예시, 워크벤치 이력 통합,
 > 트러블슈팅): [docs/install-and-usage.md](../docs/install-and-usage.md)
 >
 > 배포본(tarball) 빌드·릴리즈 절차: [docs/releasing.md](../docs/releasing.md)
@@ -45,7 +49,8 @@ bash skills/install.sh --link --force   # 기존 설치본 덮어쓰기
 따라서 **업스트림 OpenAI 지원 대상이 아니다.** 스킬 실행 중 발생하는 문제는 이 저장소에서 다룬다.
 
 재사용하는 자산은 번들 플러그인의 결정적(deterministic) 부분 — 워크벤치 스크립트, 계약 검증,
-리포트/SARIF 생성, JSON 스키마 — 이며, TypeScript SDK/CLI 코드는 수정하지 않는다.
+리포트/SARIF 생성, JSON 스키마, npm 배포본 `dist/`가 export하는 결정론 함수(digest·정책 스냅샷·
+심각도 분류 저장) — 이며, TypeScript SDK/CLI 코드는 수정하지 않는다.
 
 ## 이력 호환 범위
 

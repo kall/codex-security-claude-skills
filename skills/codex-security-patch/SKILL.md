@@ -74,12 +74,17 @@ codex-security 플러그인의 `fix-finding` 스킬을 Claude가 직접 수행�
 - 이 구획이 필요한 이유: "상류가 이긴다"를 조건 없이 적용하면 상류 문서 개정 한 번으로 이
   저장소의 승인 게이트가 조용히 사라진다. 게이트의 존재 이유는 상류 문서가 아니라 신뢰 경계다.
 
-기준 실측 버전은 **npm 0.1.25(매니페스트 0.1.94)**다. 상류 `## Workbench Remediation Stages`
+기준 실측 버전은 **npm 0.1.29(매니페스트 0.1.95)**다. 상류 `## Workbench Remediation Stages`
 절은 워크벤치 연동 범위이므로 이 스킬에서 수행하지 않는다(범위 밖).
 
-**상류 문서 변경 주의(플러그인 npm 0.1.18~0.1.25):** 5게이트 검증 서술은 npm 0.1.21
+**상류 문서 변경 주의(플러그인 npm 0.1.18~0.1.29):** 5게이트 검증 서술은 npm 0.1.21
 (매니페스트 0.1.60)에서 **3단 검증 + 별도 공격 단계**로 재작성됐다. 5단계·5게이트를 인용하는
-계약은 현재 상류에 존재하지 않으므로 인용하지 않는다.
+계약은 현재 상류에 존재하지 않으므로 인용하지 않는다. npm 0.1.25~0.1.29 구간에서 상류
+`skills/fix-finding/SKILL.md`가 바뀐 곳은 두 군데뿐이다(둘 다 npm 0.1.28, 상류 `36280ba6`·`6a96411d`).
+첫째, `description`의 발동 조건이 좁아졌다. 보안 취약점을 고치고 검증하라고 명시적으로 요청했을 때만
+쓰고, 일반 버그 수정·정확성/설계 리뷰 finding·일반 검증에는 쓰지 않는다. 이 스킬도 명시 호출로만
+발동하므로 절차는 바뀌지 않는다. 둘째, 첫 문단에 `artifact-storage.md` 저장 정책을 따르라는 줄이
+생겼다. 이 줄은 적용하지 않는다(바로 아래 절). `## Objective` 이하 본문은 이 구간에서 바뀌지 않았다.
 
 **상류 저장 정책은 적용하지 않는다(P6-KTD8).** 상류 `skills/fix-finding/SKILL.md`는 npm 0.1.28부터 첫
 문단에서 `references/artifact-storage.md`를 읽고 그 저장 정책을 따르라고 지시한다. 이 스킬은 그 지시를
@@ -100,8 +105,8 @@ instructions"이다. 저장소 편집은 1단 승인 뒤의 일반 편집 도구
 **출처 고정:** `sdk/typescript/src/cli.ts`의 `runSkill()` 안, 검증 프롬프트를 조립하는 블록(약 7370행,
 `options.validationPrompt` 분기. 파일 해석은 `resolvePatchValidationPrompt()`). 복사 시점 커밋
 `6620a380f86c26d6c6428a660b2a90c3b5a1fa45`(태그 `npm-v0.1.29`, npm 0.1.29 = 매니페스트 0.1.95).
-이 TypeScript 소스는 npm 번들에 없어 사용자 머신에서 대조할 수 없다. 다음 상류 정합 작업에서 이 블록을
-다시 대조한다.
+TypeScript 소스는 npm 번들에 없지만 같은 문자열이 컴파일된 `dist/cli.js`에 있어 문자열 검색으로 대조할
+수 있다. 회귀 스크립트는 이 블록을 자동으로 대조하지 않으므로, 다음 상류 정합 작업에서 다시 대조한다.
 
 ```text
 Use the following user-provided instructions for dynamic validation of the patch in this same task. Perform the requested environment setup, builds, tests, and runtime checks; use them to verify that the original issue no longer reproduces and legitimate behavior still works. Complete any requested cleanup. Report the commands, results, and evidence in the patch verification. Do not report fixed or verified if a required check fails or cannot run; report the failure or blocker instead.

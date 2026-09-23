@@ -3,7 +3,8 @@
 [English](README.md) | 한국어
 
 OpenAI/Codex 인증 없이 **Claude Code 구독 로그인만으로** [codex-security](https://github.com/openai/codex-security)
-의 보안 스캔 워크플로를 실행하는 Claude Code 스킬 7종.
+의 보안 스캔 워크플로를 실행하는 Claude Code 스킬 9종. SECURITY.md 초안 작성과 심각도 재분류도
+포함한다.
 
 LLM 두뇌 역할은 Claude Code 세션 자신이 맡고, 검증·ID 파생·봉인·리포트 생성은 codex-security
 번들 플러그인의 결정론(deterministic) Python 스크립트가 담당한다. 플러그인은 벤더링하지 않고
@@ -16,7 +17,7 @@ LLM 두뇌 역할은 Claude Code 세션 자신이 맡고, 검증·ID 파생·봉
 릴리즈 tarball을 받아 설치한다. 아니면 Claude Code 세션에 이 문구를 그대로 복사/붙여넣기해도 된다:
 
 ```
-https://github.com/kall/codex-security-claude-skills/releases/tag/v0.1.25 이거 설치해줘
+https://github.com/kall/codex-security-claude-skills/releases/tag/v0.1.29 이거 설치해줘
 ```
 
 ```bash
@@ -56,13 +57,18 @@ Claude Code를 재시작한 뒤 호출한다:
 | `codex-security-verify-fix` | 적용된 수정이 원래 취약점을 실제로 닫았는지 검증(읽기 전용) | 없음 |
 | `codex-security-scan-match` | 완료된 스캔 2개 사이 동일 근본 원인 finding 매칭 | 없음 |
 | `codex-security-deep-scan` | 다중 패스 심층 스캔의 축소판(deep-lite — 공식 deep과 비동등) | 없음 |
+| `codex-security-policy` | 저장소·컴포넌트의 SECURITY.md 초안 작성 — 초안은 저장소 밖에만 저장 | 없음 |
+| `codex-security-classify-severity` | 완료된 스캔의 finding을 루브릭으로 심각도 재분류 — 결과는 스캔 디렉터리와 워크벤치에 저장 | 없음 |
 
 ## 요구사항
 
 Claude Code(구독 로그인) · Python 3.10+ · git · codex-security 번들 플러그인.
-Node 22+는 플러그인 npm 설치와 공식 CLI 이력 조회에만 필요하다. Linux·macOS(Windows는 WSL).
+Node 22+는 플러그인 npm 설치, 스캔의 SECURITY.md 정책 해결(상류 Node 헬퍼),
+`codex-security-policy`·`codex-security-classify-severity`, 공식 CLI 이력 조회에 필요하다.
+Linux·macOS(Windows는 WSL).
 
-검증된 조합: `@openai/codex-security@0.1.25` (플러그인 매니페스트 `0.1.94`).
+검증된 조합: `@openai/codex-security@0.1.29` (플러그인 매니페스트 `0.1.95`). npm 0.1.26~0.1.29는 모두
+매니페스트 `0.1.95`라서 버전 경고로 구분되지 않는다. npm 0.1.29를 설치한다.
 
 ## 개발
 
@@ -74,9 +80,11 @@ bash skills/install.sh --link --check     # 링크 설치: 수정이 즉시 반�
 
 이 저장소에는 업스트림 소스(`sdk/`)가 없으므로 개발자도 플러그인을 별도로 확보한다 —
 `npm install -g @openai/codex-security`, 또는 업스트림을 clone해 두고
-`CODEX_SECURITY_SDK_REPO=<clone 경로>`를 지정한다. 플러그인 매니페스트 `0.1.94`에서는 두 사본의
+`CODEX_SECURITY_SDK_REPO=<clone 경로>`를 지정한다. 플러그인 매니페스트 `0.1.95`에서는 두 사본의
 워킹트리 게이트 처리가 **같다**(종결 성공 + 경고). 과거 `0.1.14`에서는 사본에 따라 하드 실패와
-경고로 갈렸으므로 `--check`는 여전히 이를 프로브한다. 자세한 내용은 매뉴얼 3.4절.
+경고로 갈렸으므로 `--check`는 여전히 이를 프로브한다. 자세한 내용은 매뉴얼 3.4절. 업스트림 체크아웃에는
+빌드된 `mcp/`와 `dist/`가 없다. 그래서 SECURITY.md 정책 해결, `codex-security-policy`,
+`codex-security-classify-severity`에는 npm 설치본이 필요하다.
 
 플러그인 업데이트 후 계약 회귀 확인:
 
@@ -85,16 +93,18 @@ bash docs/verification/scripts/repro-u4.sh                 # 봉인 계약 + 인
 bash docs/verification/scripts/repro-u1-search-command.sh  # 검색 명령 확보와 신뢰 게이트
 bash docs/verification/scripts/repro-u7-coverage-recovery.sh  # 커버리지 정직성 + 복구 경로
 bash docs/verification/scripts/repro-u5-match-validator.sh # 매칭 검증기
+bash docs/verification/scripts/repro-u8-policy-severity.sh # SECURITY.md 초안·심각도 재분류 결정론 부분
 bash docs/verification/scripts/repro-u3.sh                 # 워크벤치 계약(관측형)
 ```
 
-앞의 넷은 자기 채점형이다 — **exit 0** = 전부 통과, **exit 2**(`INCOMPLETE`) = 전제 부족으로
+앞의 다섯은 자기 채점형이다 — **exit 0** = 전부 통과, **exit 2**(`INCOMPLETE`) = 전제 부족으로
 검증하지 못한 블록이 있음(통과 아님), **exit 1** = 단언 실패. 저장소 전체 스캔은 ripgrep을
 요구하므로(상류 인벤토리 스크립트가 `rg`를 PATH에서만 해석한다) PATH에 `rg`가 없으면 Claude Code
-내장 ripgrep을 심링크로 노출해 쓴다 — 둘 다 없으면 스캔이 시작되지 않고 위 두 스크립트는 exit 2다.
+내장 ripgrep을 심링크로 노출해 쓴다 — 둘 다 없으면 스캔이 시작되지 않고 `repro-u4.sh`·
+`repro-u1-search-command.sh`는 exit 2다.
 
 - 배포본 빌드·릴리즈 절차: [docs/releasing.md](docs/releasing.md)
-- 설계 배경과 필수 계약 10개: [docs/solutions/architecture-patterns/codex-security-plugin-without-openai-auth.md](docs/solutions/architecture-patterns/codex-security-plugin-without-openai-auth.md)
+- 설계 배경과 필수 계약 13개: [docs/solutions/architecture-patterns/codex-security-plugin-without-openai-auth.md](docs/solutions/architecture-patterns/codex-security-plugin-without-openai-auth.md)
 - 단계별 실측 검증: [docs/verification/](docs/verification/)
 
 ## 라이선스
