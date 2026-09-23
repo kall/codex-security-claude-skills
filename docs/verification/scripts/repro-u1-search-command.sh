@@ -1277,12 +1277,16 @@ else
     bad "H14f: 문서 형태 호출 exit $H14F_RC — $(head -c 300 "$RUN/h14f.helper.err")"
   fi
   # 대조군: env -i 없이 부르면 NODE_OPTIONS 가 전달되어 실패한다. 실패할 수 없는
-  # 대조군은 H14f 의 비공허성을 지키지 못한다.
+  # 대조군은 H14f 의 비공허성을 지키지 못한다. 0 이 아닌 종료코드만으로는 부족하다 —
+  # 무관한 실패(런처 경로 오류 등)도 통과시키기 때문이다. stderr 에 preload 실패
+  # (없는 preload 파일 이름)가 보여야 NODE_OPTIONS 가 발동한 것으로 인정한다.
   NODE_OPTIONS="$NODE_OPTS_EVIL" bash -c "CODEX_MCP_NODE_PATH=$H14F_NODE $H14F_LAUNCHER --helper resolve-security-md --repo $H14F_REPO --scope $H14F_REPO --out -" \
-    >/dev/null 2>&1
+    >/dev/null 2>"$RUN/h14f.ctrl.err"
   H14F_CTRL=$?
-  if [ "$H14F_CTRL" != "0" ]; then
-    ok "H14f 대조군: env -i 없이 부르면 NODE_OPTIONS 가 발동함 (exit $H14F_CTRL)"
+  if [ "$H14F_CTRL" != "0" ] && grep -qF 'nonexistent-preload.js' "$RUN/h14f.ctrl.err"; then
+    ok "H14f 대조군: env -i 없이 부르면 NODE_OPTIONS preload 가 발동해 실패함 (exit $H14F_CTRL)"
+  elif [ "$H14F_CTRL" != "0" ]; then
+    bad "H14f 대조군: exit $H14F_CTRL 이지만 stderr 에 preload 실패가 없습니다(무관한 실패) — $(head -c 300 "$RUN/h14f.ctrl.err")"
   else
     bad "H14f 대조군: env -i 없이도 성공했습니다 — H14f 의 근거를 재확인하세요"
   fi
