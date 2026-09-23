@@ -35,6 +35,13 @@ finding을 검증하고 disposition을 기록한다. 스크립트 호출이 없�
 `record_codex_security_candidate_validations`)은 무시하고 **판정 규칙만** 따른다. 후보별로 최대 5기준 루브릭 → 최강 검증 경로 선택(crash/ASan/디버거/테스트/
 실제 인터페이스 재현 → 불가 시 정적 소스-싱크 추적).
 
+**상류 저장 정책은 적용하지 않는다(P6-KTD8).** 상류 `skills/validation/SKILL.md`는 npm 0.1.28부터 첫
+문단에서 `references/artifact-storage.md`를 읽고 그 저장 정책을 따르라고 지시한다. 아래에서 읽는
+`references/scan-artifacts.md`도 같은 정책을 가리킨다. 이 스킬은 그 지시를
+적용하지 않는다. 사용자가 호출한 이 스킬의 절차가 그 정책이 스스로 인정하는 "Explicit user
+instructions"이고, 결과는 아래 ledger 모드의 원자적 재작성 또는 응답으로만 남긴다. 근거의 정본은
+codex-security-scan SKILL.md의 prompt-only 절이다.
+
 각 finding에 대해 다음 중첩 `validation` 레코드를 만든다(`references/scan-artifacts.md` 정의):
 `disposition` ∈ {reportable, suppressed, not_applicable, deferred}, `method`, `confidence` ∈
 {high, medium, low}, `confidence_rationale`, `rubric`, `evidence`, `counterevidence_or_proof_gap`,

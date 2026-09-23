@@ -12,6 +12,11 @@ description: >-
 공식 deep 스캔은 Codex Subagents v2 런타임과 24시간 MCP 오케스트레이터에 결박되어 있어 동등
 재현이 불가능하다. 이 스킬은 **정직한 축소판**이다 — 동등하지 않음을 이름·고지·요약에 명시한다(KTD3).
 
+**상류 저장 정책(`references/artifact-storage.md`)은 적용하지 않는다(P6-KTD8).** 근거와 범위는 Phase 1
+SKILL.md의 prompt-only 절이 정본이다. 이 스킬이 후속 단계에서 읽는 `skills/threat-model/SKILL.md`·
+`skills/validation/SKILL.md`·`skills/attack-path-analysis/SKILL.md`가 그 정책을 가리켜도 멈추지 않고
+터미널 정본 경로를 계속한다.
+
 ## 0단계 — 고지·부트스트랩·등록
 
 1. **deep-lite 축소 고지(R9)**: 사용자에게 명시한다 — "이 스캔은 공식 deep 스캔과 **동등하지 않습니다**.
@@ -47,6 +52,13 @@ description: >-
 (`make-repo-rank-input`)에서는 실효가 없다 — 그 경로는 `rglob`을 쓰고 `rg`를 타지 않는다(실측).
 전체 스캔 인벤토리 호출과 형태를 맞춘 방어 조치다. **샤드 디렉터리는 반드시 `rank_shards`로
 명명하고 pool-plan 파일의 형제**로 둔다.
+
+**랭킹 입력 규칙(npm 0.1.29 기준).**
+- 랭킹 입력의 확장자 필터는 `rank_preview.TEXT_CODE_EXTENSIONS`다. npm 0.1.27~0.1.29에서 `.cjs`·
+  `.cts`·`.mts`·`.tf`가 추가돼 이 파일들도 랭킹 대상이 된다. 커버리지 분모인 `in_scope_files.txt`는
+  확장자 필터가 없는 `rg --files` 목록이라 이 변화와 무관하다.
+- 랭킹 미리보기는 **모든 파일에서 앞 64 KiB만** 읽는다. 0.1.25는 직접 요청한 스코프에만 이 제한을
+  두었다. 64 KiB 뒤의 코드는 랭킹 점수에 반영되지 않는다. 선택된 파일은 리뷰 팬아웃에서 전체를 읽는다.
 
 1. `make-repo-rank-input --repo <root> --out <disc>/rank_input.jsonl`
 2. `make-rank-shards --rank-input <disc>/rank_input.jsonl --out-dir <disc>/rank_shards [--max-rows 150]`
@@ -95,6 +107,24 @@ validation(compact 1회) → attack-path(compact 1회) → canonical JSON(순서
   있다(exit 0 + `ok:false`면 대상이 아니다 — Phase 1 SKILL.md 6단계의 판정 규칙이 정본).
 위협 모델은 저장소 전체 범위에서 1회, validation·attack-path도 각 1회의 중앙화 tail(플러그인
 deep-security-scan의 중앙화 tail 패턴)로 수행한다.
+
+- **`inventoryStrategy`**: draft의 `coverage.inventoryStrategy`는 `repository`로 쓴다. npm 0.1.29
+  finalizer는 기대 `coverage.mode`가 `deep_repository`인 unsealed draft에서 이 값을 무조건
+  `repository`로 덮어쓴다. 다른 값을 써도 봉인 결과는 같지만, 이 덮어쓰기에 기대지 않는다.
+
+## 공식 deep과의 차이 (npm 0.1.29 기준)
+
+공식 Deep의 부모 스캔 coverage는 npm 0.1.29에서 **설정값과 결과 요약만** 남는다. 코디네이터가
+설정한 경로를 `includePaths`·`excludePaths`에 복사하고, 집계 결과로 `completeness`를 정한다. 성공하면
+`complete`이고 `surfaces`·`explicitExclusions`·`deferred`는 빈 배열이며 `openQuestions`는 없다.
+시간 제한 안에 리뷰가 하나도 끝나지 않았을 때만 `partial`과 `deferred` 설명을 쓴다. 리포트는 설정한
+경로·제외 경로와 실행 결과를 finding과 함께 보여 준다(상류 `references/scan-contract.md`).
+
+deep-lite는 이 형태를 따르지 않는다. 표준 스캔과 같은 coverage를 쓴다. 리뷰한 표면을 `surfaces`에,
+남은 작업을 `deferred`에 기록하고, `completeness`는 `coverage_reconcile.py`가 파일별 리뷰 기록으로
+정한다. 그래서 두 결과의 `complete`는 뜻이 다르다. 공식 Deep의 `complete`는 "집계가 성공했다"이고,
+deep-lite의 `complete`는 "정산기가 인벤토리의 모든 파일이 리뷰됐음을 확인했다"이다. 두 결과를 나란히
+보고할 때는 이 차이를 밝힌다.
 
 ## 요약 (R9·R12)
 

@@ -49,6 +49,20 @@ DISCOVERY_SUBDIR = os.path.join("artifacts", "02_discovery")
 IN_SCOPE_BASENAME = "in_scope_files.txt"
 REVIEW_LOG_BASENAME = "review_log.jsonl"
 
+#: 인벤토리가 없거나 빈 원인 후보 — 줄바꿈이 든 경로(npm 0.1.29부터).
+#: 상류 generate_in_scope_files.py 는 스코프 안 경로 이름에 \n·\r 이 있으면 경로
+#: 이름 없이 "Repository contains a path that cannot fit in the file inventory" 로
+#: exit 2 한다. 출력은 원자적으로 쓰므로 새 인벤토리 파일이 생기지 않는다.
+#: 정산은 인벤토리를 재생성하지 않으므로 원인 후보만 안내한다.
+NEWLINE_PATH_HINT = (
+    "원인 후보: 스코프 안 경로 이름에 줄바꿈(\\n)이나 CR(\\r)이 있으면 상류 인벤토리가 "
+    "'Repository contains a path that cannot fit in the file inventory' 로 실패하고 "
+    "파일을 쓰지 않습니다(npm 0.1.29부터, 경로 이름은 알려 주지 않음). "
+    "codex-security-scan SKILL.md 2단계의 탐색 명령으로 그 경로를 찾으세요. "
+    "스코프 안에 있으면 이름을 바꾸기 전에는 그 스코프를 스캔할 수 없고, "
+    "그 경로를 포함하지 않는 디렉터리만 scoped-path 로 스캔할 수 있습니다."
+)
+
 #: 정산이 생성/갱신하는 deferred 항목의 고정 id. 재실행 시 이 id를 갱신하므로
 #: 리페어 루프에서 여러 번 돌려도 항목이 누적되지 않는다.
 DEFERRED_ID = "unreviewed-in-scope-files"
@@ -335,7 +349,7 @@ def reconcile_coverage(
             "diff·deep 범위에 리뷰 대상 파일이 없는 정직한 0건이면 정상입니다. "
             "전체 스캔이거나 인벤토리 생성 실패가 의심되면 스코프 인자, 상류 "
             "generate_in_scope_files.py 의 종료 상태, 부트스트랩이 보고한 searchCommand 를 "
-            "확인하세요(정산은 인벤토리를 재생성하지 않습니다)."
+            "확인하세요(정산은 인벤토리를 재생성하지 않습니다). " + NEWLINE_PATH_HINT
         )
         result.warnings.append(result_warning)
     elif not in_scope:
@@ -351,6 +365,7 @@ def reconcile_coverage(
             "중단합니다.\n"
             "확인할 것: 스코프 인자, 상류 generate_in_scope_files.py 의 종료 상태, "
             "부트스트랩이 보고한 searchCommand(해석된 ripgrep 경로).\n"
+            f"{NEWLINE_PATH_HINT}\n"
             "정산은 인벤토리를 재생성하지 않습니다.",
             EXIT_INPUT_ERROR,
         )
@@ -836,7 +851,9 @@ def run(args: argparse.Namespace, out) -> tuple[int, dict[str, Any]]:
         tried = "\n".join(f"  - {candidate}" for candidate in in_scope_candidates)
         raise ReconcileError(
             "in_scope_files.txt 를 찾을 수 없습니다 — 인벤토리 단계가 완료되지 않았습니다.\n"
-            f"다음 경로를 찾아봤습니다:\n{tried}",
+            f"다음 경로를 찾아봤습니다:\n{tried}\n"
+            "상류 generate_in_scope_files.py 의 종료 상태와 오류 문구를 먼저 확인하세요.\n"
+            f"{NEWLINE_PATH_HINT}",
             EXIT_INPUT_ERROR,
         )
 

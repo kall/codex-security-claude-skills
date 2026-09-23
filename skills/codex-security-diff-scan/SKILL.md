@@ -15,6 +15,11 @@ codex-security 플러그인의 `security-diff-scan` 스킬을 Claude가 직접 �
 리페어 루프)과 Phase 2의 워크벤치 수명주기를 **그대로 참조**하며, 차이점(대상 해석·diff 인벤토리·
 범위 규칙)만 아래에 정의한다.
 
+**상류 저장 정책(`references/artifact-storage.md`)은 적용하지 않는다(P6-KTD8).** 근거와 범위는 Phase 1
+SKILL.md의 prompt-only 절이 정본이다. 이 스킬이 읽는 `skills/threat-model/SKILL.md`·
+`skills/validation/SKILL.md`·`skills/attack-path-analysis/SKILL.md`가 그 정책을 가리켜도 멈추지 않고
+터미널 정본 경로를 계속한다.
+
 ## 대상 해석 (R8)
 
 | 인자 | target.kind | base / head |
@@ -78,6 +83,19 @@ codex-security 플러그인의 `security-diff-scan` 스킬을 Claude가 직접 �
    해석해 `cwd=대상 저장소`로 실행**하므로 정화된 PATH가 필요하다. 원시 `$PATH`를 물려주면 대상
    저장소가 커밋한 `./node_modules/.bin/git`이 실행된다(실측). 전체 스캔과 같은 이유이며 정본
    서술은 Phase 1 SKILL.md 2단계에 있다(P5-KTD2).
+
+   **diff 인벤토리에 들어가는 파일(npm 0.1.29 기준).** diff 인벤토리와 diff 랭킹 입력은 같은 규칙을
+   쓴다(`repro-u4.sh` I 블록).
+   - 확장자는 `rank_preview.TEXT_CODE_EXTENSIONS`로 거른다. npm 0.1.27~0.1.29에서 `.cjs`·`.cts`·
+     `.mts`·`.tf`가 추가됐다. 이 확장자 목록은 diff 인벤토리와 랭킹 입력(diff·저장소 모두)에만 쓰인다. 전체 스캔
+     인벤토리는 확장자 필터가 없는 `rg --files`라 0.1.25에서도 이 파일들을 포함했다.
+   - `.github/workflows/*` 변경은 제외 규칙(`path_is_diff_excluded`)에서 빠져 인벤토리에 남는다.
+     `.github`의 다른 파일(예: `dependabot.yml`)은 여전히 제외된다.
+   - diff에 이름에 `\n`·`\r`이 든 경로가 있으면 인벤토리가
+     `Git changes contain a path that cannot fit in the file inventory`로 실패한다. 이 동작은
+     0.1.25에도 있었다. 그 경로는 Phase 1 SKILL.md 2단계의 탐색 명령(`<스코프>`는 `.`)으로 찾아
+     사용자에게 보여 준다. 이름을 바꾸기 전에는 이 diff를 스캔할 수 없다.
+
    변경된 source-like 파일만 리뷰한다. 후보는 `normalize_candidates.py`로 단일 원장에 병합하되
    (Phase 1과 동일), **diff 스캔은 `--allow-missing-in-scope`를 반드시 붙인다**:
    ```bash

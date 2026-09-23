@@ -479,6 +479,279 @@ if [ -n "$SEARCH_PATH_ENV" ]; then
   fi
 fi
 
+# ---------------------------------------------------------------------------
+# H. 리포트·finalizer 완화 (npm 0.1.29, 상류 1518e933·936d850a)
+#
+#   H1  report.md 에 "Runtime or test status" 행이 없다. 값(scan.scope.runtimeStatus)
+#       은 매니페스트에 남지만 리포트는 표시하지 않는다.
+#   H2  unsealed draft 의 scan.artifacts: [] 를 finalizer 가 지우고 봉인한다.
+#       이것은 호환성 완화의 관측이다. 스킬 규약(R6 금지 필드)은 여전히
+#       scan.artifacts 를 쓰지 않는다.
+#   둘 다 0.1.25 에서는 실패해야 변화를 잡는 단언이다.
+# ---------------------------------------------------------------------------
+step "H. 리포트 runtime status 행 삭제 / unsealed artifacts: [] 봉인"
+if [ -f "$RUN/scan-a/report.md" ]; then
+  if grep -q "Runtime or test status" "$RUN/scan-a/report.md"; then
+    bad "H1: report.md 에 'Runtime or test status' 행이 있습니다 — 리포트가 실행·테스트 상태를 표시하지 않는다는 스킬 서술이 틀립니다"
+    grep -n "Runtime or test status" "$RUN/scan-a/report.md" | sed 's/^/     /'
+  else
+    ok "H1: report.md 에 'Runtime or test status' 행이 없음"
+  fi
+else
+  bad "H1: A 블록의 report.md 가 없어 검사할 수 없습니다"
+fi
+
+SCAN="$RUN/scan-h"
+mkdir -p "$SCAN"
+cp "$FIXTURES"/findings.json "$FIXTURES"/coverage.json "$SCAN/"
+PY - "$FIXTURES/scan-manifest.json" "$SCAN/scan-manifest.json" <<'EOF'
+import json, sys
+data = json.loads(open(sys.argv[1]).read())
+data["scan"]["artifacts"] = []
+open(sys.argv[2], "w").write(json.dumps(data, indent=2) + "\n")
+back = json.loads(open(sys.argv[2]).read())
+if back["scan"].get("artifacts") != [] or "sealedAt" in back["scan"]:
+    print("FAIL: 픽스처 변형(scan.artifacts: [])이 적용되지 않았습니다")
+    raise SystemExit(1)
+EOF
+expect_exit 0 "$?" "H2 픽스처 변형 적용"
+CODEX_SECURITY_STARTED_AT=2026-07-30T09:00:00Z PY "$FINALIZE" --scan-dir "$SCAN" --source-root "$SRC" \
+  > "$RUN/scan-h.out" 2>&1
+h_rc=$?
+expect_exit 0 "$h_rc" "H2 finalize (unsealed scan.artifacts: [] 봉인 성공 기대)"
+[ "$h_rc" != "0" ] && sed 's/^/     /' "$RUN/scan-h.out"
+if [ "$h_rc" = "0" ]; then
+  PY - "$SCAN/scan-manifest.json" <<'EOF'
+import json, sys
+scan = json.loads(open(sys.argv[1]).read())["scan"]
+paths = sorted(a.get("path") for a in scan.get("artifacts") or [])
+# 기대 집합은 손으로 열거한다. 빈 배열을 쓰지 않은 A 블록의 봉인 결과와 같다.
+expected = ["coverage.json", "findings.json"]
+if scan.get("sealedAt") and paths == expected:
+    print(f"OK   H3: 봉인 후 finalizer 가 artifacts 를 다시 채움 {paths}")
+else:
+    print(f"FAIL H3: 봉인 매니페스트의 artifacts 가 기대 {expected} 와 다르거나 sealedAt 이 없습니다: {paths}")
+    raise SystemExit(1)
+EOF
+  [ "$?" = "0" ] || FAILED=$((FAILED + 1))
+fi
+
+# ---------------------------------------------------------------------------
+# I. diff 인벤토리·diff 랭킹 입력 (npm 0.1.27~0.1.29, 상류 be7807de·fa5fe21c·46dce4a2)
+#
+#   새 확장자(.cjs .cts .mts .tf)는 rank_preview.TEXT_CODE_EXTENSIONS 에 들어갔다.
+#   이 집합은 diff 인벤토리와 랭킹 입력만 쓴다. 전체 인벤토리는 확장자 필터가
+#   없는 `rg --files` 라 0.1.25 에서도 이 파일들을 포함했다.
+#   diff 인벤토리는 .github/workflows/* 를 제외 규칙에서 빼서 유지한다.
+#   .github 의 다른 파일(dependabot.yml)은 계속 제외된다 — 음성 대조군이다.
+#   기대 집합은 손으로 열거한다(P5-KTD3). 상류 출력끼리 비교하지 않는다.
+# ---------------------------------------------------------------------------
+step "I. diff 인벤토리·랭킹 입력: 새 확장자와 .github/workflows"
+RANK_SCRIPT="$PLUGIN/scripts/generate_rank_input.py"
+GIT_BIN="$(command -v git || true)"
+if [ -z "$GIT_BIN" ]; then
+  skip "I: git 이 없어 diff 인벤토리를 검증할 수 없습니다"
+else
+  # diff 모드는 rg 를 타지 않는다. git 만 PATH 에서 해석하므로 git 이 있는
+  # 디렉터리만 PATH 로 준다(원시 $PATH 를 물려주지 않는다).
+  DIFF_PATH_ENV="${SEARCH_PATH_ENV:-$(dirname "$GIT_BIN"):/usr/bin:/bin}"
+  DIFF_HOME="$RUN/diff-home"
+  mkdir -p "$DIFF_HOME"
+  DREPO="$RUN/diff-repo"
+  mkdir -p "$DREPO/src"
+  ( cd "$DREPO" && git init -q --template= . )
+  mkdir -p "$DREPO/.git/info"
+  : > "$DREPO/.git/info/exclude"
+  printf 'print(1)\n' > "$DREPO/src/base.py"
+  dgit() { env -i PATH="$DIFF_PATH_ENV" HOME="$DIFF_HOME" GIT_CONFIG_NOSYSTEM=1 \
+    git -C "$DREPO" -c user.email=t@t -c user.name=t "$@"; }
+  dgit add -A >/dev/null && dgit commit -qm base >/dev/null
+  DBASE="$(dgit rev-parse HEAD)"
+
+  # 커밋 1: 새 확장자 4종 + workflow + 음성 대조군 + 기존 확장자 대조군.
+  mkdir -p "$DREPO/.github/workflows"
+  printf 'module.exports = 1;\n' > "$DREPO/src/a.cjs"
+  printf 'export const b = 1;\n' > "$DREPO/src/b.cts"
+  printf 'export const c = 1;\n' > "$DREPO/src/c.mts"
+  printf 'resource "null_resource" "x" {}\n' > "$DREPO/main.tf"
+  printf 'on: push\njobs: {}\n' > "$DREPO/.github/workflows/ci.yml"
+  printf 'version: 2\n' > "$DREPO/.github/dependabot.yml"
+  printf 'print(2)\n' > "$DREPO/src/control.py"
+  dgit add -A >/dev/null && dgit commit -qm exts >/dev/null
+  DMID="$(dgit rev-parse HEAD)"
+
+  # 커밋 2: workflow 파일만 바꾼다.
+  printf 'on: [push, pull_request]\njobs: {}\n' > "$DREPO/.github/workflows/ci.yml"
+  dgit add -A >/dev/null && dgit commit -qm workflow >/dev/null
+  DHEAD="$(dgit rev-parse HEAD)"
+
+  diff_inventory() { # diff_inventory <base> <head> <out>
+    env -i PATH="$DIFF_PATH_ENV" HOME="$DIFF_HOME" GIT_CONFIG_NOSYSTEM=1 \
+      PYTHONDONTWRITEBYTECODE=1 \
+      "$PYTHON_BIN" "$INV_SCRIPT" --repo "$DREPO" --scope . \
+      --diff-base "$1" --diff-head "$2" --diff-mode revisions --out "$3" > "$3.err" 2>&1
+  }
+  diff_rank_input() { # diff_rank_input <base> <head> <out> — 경로 목록만 뽑아 <out>.paths 에 쓴다
+    env -i PATH="$DIFF_PATH_ENV" HOME="$DIFF_HOME" GIT_CONFIG_NOSYSTEM=1 \
+      PYTHONDONTWRITEBYTECODE=1 \
+      "$PYTHON_BIN" "$RANK_SCRIPT" make-diff-rank-input --repo "$DREPO" \
+      --base "$1" --head "$2" --mode revisions --out "$3" > "$3.err" 2>&1 || return $?
+    PY - "$3" > "$3.paths" <<'EOF'
+import json, sys
+for line in open(sys.argv[1], encoding="utf-8"):
+    if line.strip():
+        print(json.loads(line)["path"])
+EOF
+  }
+  compare_set() { # compare_set <label> <expected-file> <actual-file> <설명>
+    if diff -u "$2" "$3" > "$3.diff" 2>&1; then
+      ok "$1: $4"
+    else
+      bad "$1: 기대 집합과 다름 — $4"
+      sed 's/^/     /' "$3.diff"
+    fi
+  }
+
+  printf '%s\n' .github/workflows/ci.yml main.tf src/a.cjs src/b.cts src/c.mts src/control.py \
+    | LC_ALL=C sort > "$RUN/diff1.expected"
+  printf '%s\n' .github/workflows/ci.yml > "$RUN/diff2.expected"
+
+  diff_inventory "$DBASE" "$DMID" "$RUN/diff1.inv"
+  i_rc=$?
+  expect_exit 0 "$i_rc" "I1 diff 인벤토리 생성 (새 확장자 커밋)"
+  [ "$i_rc" != "0" ] && sed 's/^/     /' "$RUN/diff1.inv.err"
+  LC_ALL=C sort "$RUN/diff1.inv" 2>/dev/null > "$RUN/diff1.inv.actual"
+  compare_set "I2" "$RUN/diff1.expected" "$RUN/diff1.inv.actual" \
+    "diff 인벤토리에 .cjs·.cts·.mts·.tf 와 .github/workflows/ci.yml 이 들어가고 .github/dependabot.yml 은 빠짐"
+
+  diff_rank_input "$DBASE" "$DMID" "$RUN/diff1.rank.jsonl"
+  expect_exit 0 "$?" "I3 diff 랭킹 입력 생성 (새 확장자 커밋)"
+  LC_ALL=C sort "$RUN/diff1.rank.jsonl.paths" 2>/dev/null > "$RUN/diff1.rank.actual"
+  compare_set "I4" "$RUN/diff1.expected" "$RUN/diff1.rank.actual" \
+    "diff 랭킹 입력이 diff 인벤토리와 같은 기대 집합"
+
+  diff_inventory "$DMID" "$DHEAD" "$RUN/diff2.inv"
+  expect_exit 0 "$?" "I5 diff 인벤토리 생성 (workflow 만 바꾼 커밋)"
+  LC_ALL=C sort "$RUN/diff2.inv" 2>/dev/null > "$RUN/diff2.inv.actual"
+  compare_set "I6" "$RUN/diff2.expected" "$RUN/diff2.inv.actual" \
+    ".github/workflows/ci.yml 만 바꾼 diff 의 인벤토리에 그 파일이 들어감"
+
+  diff_rank_input "$DMID" "$DHEAD" "$RUN/diff2.rank.jsonl"
+  expect_exit 0 "$?" "I7 diff 랭킹 입력 생성 (workflow 만 바꾼 커밋)"
+  LC_ALL=C sort "$RUN/diff2.rank.jsonl.paths" 2>/dev/null > "$RUN/diff2.rank.actual"
+  compare_set "I8" "$RUN/diff2.expected" "$RUN/diff2.rank.actual" \
+    ".github/workflows/ci.yml 만 바꾼 diff 의 랭킹 입력에 그 파일이 들어감"
+fi
+
+# ---------------------------------------------------------------------------
+# J. 줄바꿈이 든 경로 — 전체 인벤토리 하드 실패 (npm 0.1.29)
+#
+#   상류는 rg --null 로 받은 경로에 \n·\r 이 있으면 경로 이름 없이
+#   "Repository contains a path that cannot fit in the file inventory" 로 끝낸다.
+#   출력은 원자적으로 쓰므로 실패하면 in_scope_files.txt 가 생기지 않는다.
+#   0.1.25 는 그 경로를 두 줄로 쪼개 exit 0 으로 끝났다(분모 오염).
+#
+#   J4 는 스킬 문서의 탐색 명령을 **SKILL.md 에서 그대로 꺼내** 실행한다.
+#   여기서 명령을 다시 쓰면 문서가 바뀌어도 이 단언은 침묵한다.
+#   J4·J5 는 우리 문서·정산기의 단언이라 상류 버전과 무관하게 통과해야 한다.
+# ---------------------------------------------------------------------------
+step "J. 줄바꿈이 든 경로: 전체 인벤토리 하드 실패와 탐색 명령"
+SCAN_SKILL_MD="${CODEX_SECURITY_SCAN_SKILL_MD:-$WORK/../../../skills/codex-security-scan/SKILL.md}"
+RECONCILE="${CODEX_SECURITY_RECONCILE:-$WORK/../../../skills/codex-security-scan/scripts/coverage_reconcile.py}"
+if [ -z "$SEARCH_PATH_ENV" ]; then
+  skip "J: 검색 명령(rg)을 확보하지 못해 전체 인벤토리 실패를 검증할 수 없습니다(G 블록 참조)"
+else
+  NREPO="$RUN/newline-repo"
+  mkdir -p "$NREPO/src"
+  ( cd "$NREPO" && git init -q --template= . )
+  mkdir -p "$NREPO/.git/info"
+  : > "$NREPO/.git/info/exclude"
+  printf 'ok\n' > "$NREPO/src/ok.py"
+  NL_NAME="$NREPO/src/bad"$'\n'"name.py"
+  printf 'x\n' > "$NL_NAME"
+  NOUT="$RUN/newline-scan/artifacts/02_discovery/in_scope_files.txt"
+  mkdir -p "$(dirname "$NOUT")"
+  env -i PATH="$SEARCH_PATH_ENV" HOME="$INV_HOME" GIT_CONFIG_NOSYSTEM=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    "$PYTHON_BIN" "$INV_SCRIPT" --repo "$NREPO" --scope . --out "$NOUT" \
+    > "$RUN/newline.err" 2>&1
+  n_rc=$?
+  if [ "$n_rc" != "0" ]; then
+    ok "J1: 줄바꿈 경로가 있으면 전체 인벤토리가 exit $n_rc 로 실패"
+  else
+    bad "J1: 줄바꿈 경로가 있는데 전체 인벤토리가 exit 0 으로 끝났습니다(분모가 쪼개진 경로로 오염됨)"
+  fi
+  if grep -q "Repository contains a path that cannot fit in the file inventory" "$RUN/newline.err"; then
+    ok "J2: 상류 오류 문구가 스킬 문서의 인용과 일치 (경로 이름 없음)"
+  else
+    bad "J2: 상류 오류 문구가 다릅니다 — 스킬 문서의 인용을 갱신하세요"
+    sed 's/^/     /' "$RUN/newline.err"
+  fi
+  if [ -e "$NOUT" ]; then
+    bad "J3: 실패했는데 in_scope_files.txt 가 생겼습니다 — 정산기 안내(파일 없음 분기)의 전제가 틀립니다"
+  else
+    ok "J3: 실패 시 in_scope_files.txt 가 생기지 않음 (정산기는 '찾을 수 없습니다' 분기로 간다)"
+  fi
+
+  # J4. SKILL.md 의 탐색 명령. 마커 줄부터 닫는 ``` 까지 꺼내, 마커 줄의 들여쓰기만
+  #     걷어 낸다(python 코드의 상대 들여쓰기를 보존). 자리표시자는 인용본으로 바꾼다.
+  if [ ! -f "$SCAN_SKILL_MD" ]; then
+    bad "J4: 스캔 SKILL.md 를 찾지 못했습니다: $SCAN_SKILL_MD"
+  else
+    PY - "$SCAN_SKILL_MD" "$NREPO" "$PYTHON_BIN" > "$RUN/finder.sh" <<'EOF'
+import pathlib, re, shlex, sys
+lines = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
+start = next((i for i, l in enumerate(lines) if "newline-path-finder" in l), None)
+if start is None:
+    raise SystemExit(1)
+indent = len(lines[start]) - len(lines[start].lstrip(" "))
+body = []
+for line in lines[start:]:
+    if line.strip().startswith("```"):
+        break
+    body.append(line[indent:] if line[:indent].strip() == "" else line)
+text = "\n".join(body)
+text = text.replace("<repo_root>", shlex.quote(sys.argv[2]))
+text = text.replace("<스코프>", ".")
+text = text.replace("<python_command>", shlex.quote(sys.argv[3]))
+if re.search(r"<[a-z_]+>|<스코프>", text):
+    raise SystemExit(2)
+print(text)
+EOF
+    x_rc=$?
+    if [ "$x_rc" != "0" ]; then
+      bad "J4: SKILL.md 에서 탐색 명령(newline-path-finder 마커)을 꺼내지 못했습니다 (exit $x_rc)"
+    else
+      bash "$RUN/finder.sh" > "$RUN/finder.out" 2> "$RUN/finder.err"
+      f_rc=$?
+      if [ "$f_rc" = "0" ] && [ "$(wc -l < "$RUN/finder.out" | tr -d ' ')" = "1" ] \
+         && grep -qF 'src/bad\nname.py' "$RUN/finder.out"; then
+        ok "J4: 스킬 문서의 탐색 명령이 줄바꿈 경로 1개만 출력: $(cat "$RUN/finder.out")"
+      else
+        bad "J4: 스킬 문서의 탐색 명령이 줄바꿈 경로를 정확히 1개 출력하지 않았습니다 (exit $f_rc)"
+        sed 's/^/     /' "$RUN/finder.out" "$RUN/finder.err"
+      fi
+    fi
+  fi
+
+  # J5. 정산기 안내. 인벤토리가 없을 때 줄바꿈 경로를 원인 후보로 말하는가.
+  #     J3 결과와 섞이지 않게 인벤토리가 확실히 없는 별도 scan-dir 을 쓴다.
+  if [ ! -f "$RECONCILE" ]; then
+    bad "J5: coverage_reconcile.py 를 찾지 못했습니다: $RECONCILE"
+  else
+    mkdir -p "$RUN/newline-scan-missing/artifacts/02_discovery"
+    PY "$RECONCILE" --scan-dir "$RUN/newline-scan-missing" --source-root "$NREPO" \
+      > "$RUN/reconcile-nl.out" 2> "$RUN/reconcile-nl.err"
+    r_rc=$?
+    if [ "$r_rc" = "3" ] && grep -q "줄바꿈" "$RUN/reconcile-nl.err"; then
+      ok "J5: 인벤토리가 없으면 정산기가 exit 3 과 함께 줄바꿈 경로를 원인 후보로 안내"
+    else
+      bad "J5: 정산기 안내에 줄바꿈 경로 원인이 없거나 종료코드가 3 이 아닙니다 (exit $r_rc)"
+      sed 's/^/     /' "$RUN/reconcile-nl.err"
+    fi
+  fi
+fi
+
 printf '\n=== 결과 ===\n'
 if [ "$SKIPPED" -gt 0 ]; then
   printf 'SKIPPED ASSERTIONS: %s (검증되지 않은 항목이 있습니다)\n' "$SKIPPED"

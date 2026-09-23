@@ -1,9 +1,11 @@
 ---
 name: codex-security-verify-fix
 description: >-
-  이미 적용된 보안 수정이 원래 취약점을 실제로 제거했는지 저장소를 **변경하지 않고**
-  판정한다. finding별로 fixed/still_vulnerable/inconclusive 와 근거를 반환한다.
-  codex-security 플러그인 verify-fix 스킬 규약을 따른다. OpenAI/Codex 인증 없이
+  이미 적용된 보안 수정이 원래 취약점을 실제로 제거했는지 검증해 달라고 사용자가
+  명시적으로 요청할 때만 쓴다. 저장소를 **변경하지 않고** finding별로
+  fixed/still_vulnerable/inconclusive 와 근거를 반환한다. codex-security 플러그인
+  verify-fix 스킬 규약을 따른다. 수정 구현·일반 코드 리뷰·테스트 실행 중에 자동으로
+  쓰지 않고, 보안과 무관한 수정 검증에도 쓰지 않는다. OpenAI/Codex 인증 없이
   Claude Code 구독만으로 동작. 수정 자체는 codex-security-patch, 후보 finding의
   진위 판정은 codex-security-validate, 전체 스캔은 codex-security-scan을 쓴다.
 ---
@@ -19,6 +21,15 @@ codex-security 플러그인의 `verify-fix` 스킬을 Claude가 직접 수행한
 구간에서 **바이트 단위로 동일하다**(내용 변경 없음). 따라서 이 스킬의 정합 작업에서 확인할 것은
 상류 문구가 아니라, 이 문서가 참조하는 **다른 스킬의 계약 변화**(특히 `codex-security-patch`의
 승인 게이트 재구성)뿐이다. 상류만 다시 읽고 "변경 없음"으로 끝내면 헛짚는다.
+
+**발동 조건(npm 0.1.26부터).** 상류 `skills/verify-fix/SKILL.md`에 `## When to Use` 절이 생겼다. 보안
+수정 검증을 명시적으로 요청했을 때만 이 스킬을 쓰고, 그 밖의 작업에는 JSON 결과 계약을 적용하지
+말라는 내용이다. 이 스킬은 명시 요청으로만 발동하므로 발동하면 아래 결과 계약을 항상 적용한다.
+`codex-security-patch`가 수정 뒤에 테스트를 돌리는 것은 이 스킬의 호출이 아니다.
+
+**검증 지시 입력은 받지 않는다.** `codex-security-patch`의 검증 지시(R15)는 이 스킬의 입력이 아니다.
+이 스킬은 저장소를 바꾸지 않는 판정 전용이라, 환경 준비·빌드·정리처럼 상태를 바꿀 수 있는 사용자
+검증 절차를 실행하지 않는다. 상류 CLI의 `verify-fix` 명령에도 이 입력(`--validation-prompt-file`)이 없다.
 
 ## 0단계 — 부트스트랩과 입력 해석
 

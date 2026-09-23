@@ -22,6 +22,23 @@ description: >-
 이 스킬은 **prompt-only 경로만** 사용한다. MCP 앱 도구·데스크톱 워크스페이스·goal 도구
 분기는 존재하지 않으므로 플러그인 문서에서 그런 지시를 만나면 무시한다.
 
+**상류 저장 정책보다 이 절차가 우선한다(P6-KTD8).** 이 스킬이 읽는 상류 문서
+(`skills/threat-model/SKILL.md`, `skills/validation/SKILL.md`, `skills/attack-path-analysis/SKILL.md`,
+`references/scan-artifacts.md`, `references/final-report.md`)는
+npm 0.1.28부터 `references/artifact-storage.md`를 읽고 따르라고 지시한다. 그 정책은 scanId를 MCP로
+먼저 받고, 산출물을 `save_codex_security_artifact`로만 저장하고, 셸로 쓴 정본 파일로 폴백하지 말라고
+한다. **이 스킬은 그 정책을 적용하지 않는다.** 근거는 두 가지다.
+
+1. `artifact-storage.md` 스스로 "Explicit user instructions still take precedence"라고 쓴다. 사용자가
+   설치해 호출한 이 스킬의 지시가 그 명시 지시다.
+2. 터미널 정본 경로(셸로 쓴 draft → `finalize_scan_contract.py` → 선택적 워크벤치 `complete-scan`)는
+   이 저장소의 고유 계약이다. npm 0.1.29에서도 finalizer와 `complete-scan`이 이 경로를 받아들인다
+   (`repro-u3.sh`·`repro-u4.sh` 실측).
+
+"MCP 지시는 무시한다"는 위 문장만으로는 부족하다. 그 정책은 자기가 "older terminal file-authoring
+fallbacks"보다 우선한다고 쓰기 때문이다. 그래서 상류 문서가 그 정책을 가리켜도 멈추지 말고, 저장
+위치는 이 문서의 `<scan_dir>` 규약을 그대로 따른다.
+
 ---
 
 ## 0단계 — 부트스트랩과 경량 능력 확인
@@ -158,6 +175,8 @@ description: >-
   `findingId`, `occurrenceId`, `fingerprints`, `sealedAt`, `artifacts`, `documentType`,
   `schemaVersion`, `scan.status`, `coverageRef`, `findingsRef`. `scan-manifest.json`은
   `scan.sealedAt`·`scan.artifacts`가 **없는 unsealed draft**로 쓴다.
+  npm 0.1.29 finalizer는 unsealed draft의 `scan.artifacts: []`를 지우고 봉인한다(`repro-u4.sh` H2).
+  이것은 호환성 완화일 뿐이다. 이 스킬은 계속 `scan.artifacts`를 쓰지 않는다.
   (매니페스트 0.1.94의 `scan.status`는 `completed`/`failed`/`canceled`/`interrupted` 열거형이며
   finalizer가 결정한다. 이 경로는 항상 `completed`로 봉인되고, 값은 `report.md` 요약표의
   `Scan outcome` 행에 표시된다.)
@@ -255,6 +274,33 @@ description: >-
    `git grep`·`find`·`grep`으로 폴백하라고 지시한다. **전체 스캔 인벤토리 경로에서는 그 폴백을
    채택하지 않는다** — 폴백 산출물은 상류 인벤토리 집합과 달라 커버리지 분모가 어긋난다.
    대신 0단계에서 중단한다. 이 편차는 의도적이다.
+
+   **인벤토리 실패 — 줄바꿈이 든 경로(npm 0.1.29부터).** 스코프 안의 경로 이름에 `\n`이나 `\r`이
+   있으면 상류 스크립트가 인벤토리 전체를 실패시킨다(exit 2). 오류는 경로 이름 없이
+   `generate_in_scope_files: Repository contains a path that cannot fit in the file inventory`로만
+   나오고, 그 경로를 빼는 인자도 없다. 출력은 원자적으로 쓰므로 `in_scope_files.txt`가 생기지 않는다
+   (`repro-u4.sh` J1~J3). 이 오류를 보면 다음 순서로 안내한다.
+
+   1. 아래 명령으로 스코프 안에서 그 경로를 찾아 사용자에게 보여 준다. 이름에 `\n`·`\r`이 든 항목만
+      `repr` 형태로 한 줄씩 출력한다(`repro-u4.sh` J4가 이 블록을 그대로 실행한다).
+      ```bash
+      # newline-path-finder: NUL 구분 목록에서 이름에 \n·\r이 든 항목만 출력한다
+      ( cd <repo_root> && find <스코프> -name .git -prune -o -print0 ) | <python_command> -c 'import sys
+      for p in sys.stdin.buffer.read().split(b"\0"):
+          name = p.rsplit(b"/", 1)[-1]
+          if b"\n" in name or b"\r" in name:
+              print(repr(p))'
+      ```
+      `<스코프>`는 2단계 인벤토리 호출과 같은 값이다. 이 목록은 `.gitignore`를 보지 않으므로 인벤토리
+      실패의 원인이 아닌 무시된 미추적 항목도 나올 수 있다. 디렉터리 이름에 줄바꿈이 있으면 그
+      디렉터리가 나온다.
+   2. 그 경로가 스코프 안에 있으면 **이름을 바꾸기 전에는 이 스코프를 스캔할 수 없다**고 밝힌다.
+      이름 변경은 저장소 변경이므로 사용자가 직접 한다(R7 저장소 불변).
+   3. 대안으로, 그 경로를 포함하지 않는 디렉터리만 scoped-path로 스캔할 수 있다고 제시한다. 그때
+      커버리지는 요청한 경로에 한정된다는 점을 함께 밝힌다.
+
+   인벤토리를 손으로 만들거나 분모를 추측하지 않는다(P5-KTD3). 실패한 인벤토리로 리뷰를 시작하지
+   않는다.
 2. **목록의 모든 파일을 처음부터 끝까지 리뷰**한다. 예제·데모·픽스처·테스트라고 건너뛰지 않는다.
    한 파일에서 버그 하나 찾고 멈추지 않는다. 리뷰 불가(바이너리·생성물)는 그렇게 명시 열거한다.
 3. **리뷰 로그(R8)**: 파일 하나를 리뷰할 때마다 `<scan_dir>/artifacts/02_discovery/review_log.jsonl`에
@@ -468,5 +514,8 @@ draft — R6 금지 필드 없음), `findings.json`, `coverage.json`을 쓰고, 
   비면 경고조차 남기지 않는다. **SARIF의 성공 표시를 근거로 완전 커버리지를 주장하지 않는다.**
   정산 요약의 `partialWithoutDeferred`가 참이면 그 사실을 보고에 명시한다.
 - 0단계 경량 확인에서 **degraded path로 격하됐다면** 그 사실.
+- 실행·테스트 상태는 이 응답에서 직접 말한다. npm 0.1.29부터 `report.md`는 `Runtime or test status`
+  행을 표시하지 않는다(`repro-u4.sh` H1). 값은 `scan.scope.runtimeStatus`로 매니페스트에 계속
+  남기되, 리포트에 나온다고 쓰지 않는다.
 - 완전 커버리지를 주장하지 않는다 — 남은 파일·후보가 있으면 정직하게 명시한다.
 - 후속 옵션(내보내기 sarif/csv/json, 패치, 트래킹)을 **제안**만 하고 요청 없이는 실행하지 않는다.
