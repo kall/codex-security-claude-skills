@@ -1193,3 +1193,65 @@ npm 태그와 매니페스트 번호는 별개 축이다. git 이력으로 확�
 
 참고 매니페스트 대응: npm 0.1.19 → 0.1.22, 0.1.20 → 0.1.37, 0.1.21 → 0.1.60,
 0.1.22~0.1.24 → 0.1.79, 0.1.25 → 0.1.94.
+
+## 부록 — npm 0.1.29(매니페스트 0.1.95) 재실측 (2026-09-23)
+
+기준선을 npm 0.1.25(매니페스트 0.1.94)에서 npm 0.1.29(매니페스트 0.1.95)로 올리면서 재실측한 결과다. 위 본문과 0.1.25 부록은 시점 고정 기록이므로 덮어쓰지 않고 여기에 덧붙인다. 비교용 0.1.25 사본은 별도 prefix에 설치해 두고, 전역 설치본은 0.1.29로 교체했다.
+
+### 회귀 없음
+
+| 항목 | 결과 |
+| --- | --- |
+| `repro-u4.sh` | `ALL ASSERTIONS PASSED` |
+| `repro-u1-search-command.sh` | `ALL ASSERTIONS PASSED` |
+| `repro-u7-coverage-recovery.sh` | `ALL ASSERTIONS PASSED` |
+| `repro-u5-match-validator.sh` | `ALL ASSERTIONS PASSED` |
+| `repro-u3.sh` 요약 | S5 `exit=0`, S6 `exit=0`, S9 `exit=1`, S9b `exit=0` — 0.1.94 실측치와 동일 |
+| 터미널 정본 경로 | 셸로 쓴 draft → `finalize_scan_contract.py` 봉인 → `register-cli-scan`된 스캔의 `complete-scan` 성공. 0.1.29에서도 이 경로를 받아들인다 |
+| `producer.version` | `0.1.95` |
+
+기존 회귀 5종은 0.1.29에서 모두 통과한다. 즉 이번 상류 변경은 기존 단언이 붙잡지 않는 영역(삭제된 Python 리졸버, 매칭 호스트 조정, 새 확장자, 리포트 행)에서 일어났다.
+
+### 새로 관측한 계약 변화
+
+1. **SECURITY.md 리졸버가 Node 헬퍼로 옮겨졌다.** `scripts/resolve_security_md.py`가 없고, `scripts/launch_codex_security_mcp --helper resolve-security-md`가 `mcp/helpers.mjs`를 실행한다. 실측:
+   - `env -i HOME=… PATH=/usr/bin:/bin`(Node 없음): 런처가 `Codex Security could not find a Node runtime…`을 내고 **exit 127**.
+   - 같은 조건 + `CODEX_MCP_NODE_PATH=<node>`: 정상. `--scope`는 루트→리프 순으로 `## SECURITY.md source: "<path>"` 섹션을 이어 붙인다. `--list`는 정렬된 JSON 배열을 낸다.
+   - 1 MiB를 넘는 `SECURITY.md`: `resolve-security-md: error: SECURITY.md exceeds 1 MiB: <path>`, **exit 2**.
+   - `env -i` 없이 `NODE_OPTIONS=--require …`를 두면 Node가 그 옵션을 그대로 적용한다. 헬퍼 호출은 반드시 환경을 교체해야 한다.
+   - 상류 소스 체크아웃에는 빌드된 `mcp/`가 없어 헬퍼를 실행할 수 없다.
+
+2. **인증 없이 동작하는 CLI 명령.** 빈 `HOME`·`CODEX_HOME`·`CODEX_SECURITY_STATE_DIR`로 격리하고 실측했다.
+
+   | 명령 | 결과 |
+   | --- | --- |
+   | `init <file>` | 성공. 파일을 0600으로 쓴다 |
+   | `scan import --json <file>` | 성공. `<state>/scans/imports/codex-security-import-*`에 봉인 스캔을 만든다. **출력 경로의 모든 상위 디렉터리가 group/world 쓰기 불가여야 한다**(아니면 `Scan output parent must not be group- or world-writable without the sticky bit`로 exit 2) |
+   | `classify-severity --scan-dir <dir>`(루브릭 없음) | 성공. 기존 severity를 상속하고 `severity-classification.json`과 워크벤치 행을 쓴다 |
+   | `policy <repo> --dry-run --headless` | 성공. 모델을 시작하지 않고 입력만 검증한다(`authentication.verified: false`) |
+   | `publish scan --scan-dir <dir> --to linear --linear-team <아무 값> --dry-run` | 성공. Linear API 키 없이 미리보기를 낸다. 팀 ID가 없으면 `--linear-team or CODEX_SECURITY_LINEAR_TEAM is required.`로 exit 2 |
+
+3. **심각도 digest 검증은 TS 읽기 경로에만 있다.** 워크벤치 행의 `inputSha256` 첫 글자를 바꾸면, npm `dist/classify-scan-severity.js`의 `readScanSeverityClassification`과 `publish --dry-run`이 둘 다 `Severity assessment does not match the supplied findings. Classify the findings again.`로 실패한다. Python `read-severity-classification`은 행을 그대로 돌려준다. (첫 시도는 같은 문자로 치환해 값이 바뀌지 않았다. 대조군은 반드시 값이 바뀌었는지 확인해야 한다.)
+
+4. **npm 번들 `dist/`가 상류 함수를 내보낸다.** `finding-workflow.js`의 `workflowDigest`, `finding-catalogue.js`의 `groupFindings`·`findingCatalogue`·`compactFinding`, `security-policy.js`의 `readSecurityPolicySnapshot`·`inspectSecurityPolicySources` 등이 export된다. `reconcileComparison`·`validateComparison`·`comparisonPrompt`는 export되지 않는다. 따라서 digest와 정책 스냅샷은 상류 함수를 Node로 직접 호출해 재구현 없이 얻을 수 있고, 매칭 조정 규칙은 여전히 이식이 필요하다. 이식 결과는 `matchScanFindingsInternal`에 가짜 Codex를 넣어 얻은 상류 결과와 대조할 수 있다.
+
+### 상류 변경이 도입된 구간
+
+각 커밋이 조상으로 들어간 첫 태그를 `git merge-base --is-ancestor`로 확인했다.
+
+| 변경 | 첫 태그 | 커밋 |
+| --- | --- | --- |
+| 매칭 카탈로그·호스트 조정 | npm 0.1.26 | `0d781d7b`, `c8296885` |
+| `classify-severity` 신설 | npm 0.1.26 | `02d9317e` |
+| verify-fix 발동 조건 축소 | npm 0.1.26 | `5452c433` |
+| Daybreak 권고 신설 → 도구 부재 시 생략 | npm 0.1.26 → 0.1.28 | `66811955` → `11f4c015` |
+| SECURITY.md 리졸버 Python → Node | npm 0.1.27 | `b39e2457` |
+| `policy` 신설 | npm 0.1.27 | `7f54d238` |
+| diff 인벤토리 workflow 포함, CJS/TS 확장자 | npm 0.1.27 | `be7807de`, `fa5fe21c` |
+| `artifact-storage.md` 신설 | npm 0.1.28 | `6a96411d` |
+| fix-finding 발동 조건 축소 | npm 0.1.28 | `36280ba6` |
+| Terraform 확장자, 미리보기 64 KiB | npm 0.1.29 | `46dce4a2`, `ead0ee98` |
+| 리포트 runtime status 행 삭제, `artifacts: []` 봉인 | npm 0.1.29 | `1518e933`, `936d850a` |
+| `patch --validation-prompt-file` | npm 0.1.29 | `b4119d13` |
+
+npm 0.1.26~0.1.29는 모두 매니페스트 0.1.95다. npm 0.1.26에는 Python 리졸버가 남아 있고 Node 헬퍼가 없다.
