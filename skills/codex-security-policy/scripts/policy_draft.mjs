@@ -73,8 +73,8 @@ const REQUIRED_PLUGIN_FILES = [
   "skills/define-security-policy/SKILL.md",
   "mcp/helpers.mjs",
 ];
-// 우리 계약: 조립된 프롬프트 상한. scan-match 와 같은 값(상류 CODEX_MAX_INPUT_CHARACTERS ÷ 2).
-const MAX_PROMPT_CHARACTERS = 524_288;
+// 부모가 한 번의 Agent 호출로 프롬프트 전문을 내보내야 하므로 scan-match 실행 한도(P6-KTD5)와 같은 값을 쓴다.
+const MAX_PROMPT_CHARACTERS = 80_000;
 // 우리 계약: 저장 전 검사·형식 오류로 거부된 응답의 단계당 최대 시도 수.
 const MAX_STAGE_ATTEMPTS = 3;
 // 매니페스트 model 필드. OpenAI 모델이 아니라 Claude Code 서브에이전트가 만들었음을 그대로 적는다.
