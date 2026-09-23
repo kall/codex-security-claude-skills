@@ -271,6 +271,31 @@ chmod 700 "$RUN/gw"
 RP prepare "${PREP_ARGS[@]}" --bootstrap-repo-root "$R3/app" --repository "$R3" --path app >"$RUN/p3d.json"; code=$?
 expect_exit 2 "$code" "P3 부트스트랩 대상이 worktree 루트보다 좁으면 거부"
 contains "$(cat "$RUN/p3d.json")" "--target-repo" "P3 재부트스트랩 안내"
+# 신뢰 게이트는 코드 실행보다 먼저다: 대상 저장소 안의 --plugin-root / --sdk-dist 는 그 안의
+# mcp/helpers.mjs 나 dist 모듈을 실행·import 하기 **전에** 거부한다. 심은 코드는 실행되면 표식 파일을 만든다.
+R3T="$RUN/repos/trustgate"
+mkrepo "$R3T"; mkdir -p "$R3T/app"; printf 'x\n' >"$R3T/app/main.py"; commit_all "$R3T"
+cp -R "$PLUGIN_ROOT" "$R3T/planted-plugin"
+MARK_PLUGIN="$RUN/marker-plugin"
+printf 'import { writeFileSync } from "node:fs";\nwriteFileSync(%s, "executed");\nprocess.stdout.write("[]");\n' \
+  "$(PY -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$MARK_PLUGIN")" >"$R3T/planted-plugin/mcp/helpers.mjs"
+RP prepare --sdk-dist "$DIST" --plugin-root "$R3T/planted-plugin" --plugin-version "$PLUGIN_VERSION" \
+  --plugin-source CODEX_SECURITY_PLUGIN_ROOT --state-dir "$STATE" --bootstrap-repo-root "$R3T" \
+  --repository "$R3T" --path app >"$RUN/p3e.json"; code=$?
+expect_exit 2 "$code" "P3 대상 저장소 안 --plugin-root 거부"
+contains "$(cat "$RUN/p3e.json")" "신뢰 게이트 거부" "P3 --plugin-root 거부 사유(신뢰 게이트)"
+[ -e "$MARK_PLUGIN" ] && bad "P3 거부 전에 저장소 안 helpers.mjs 를 실행했다" || ok "P3 저장소 안 helpers.mjs 미실행(표식 없음)"
+mkdir -p "$R3T/planted-dist"
+MARK_DIST="$RUN/marker-dist"
+: >"$R3T/planted-dist/finding-workflow.js"
+printf 'import { writeFileSync } from "node:fs";\nwriteFileSync(%s, "executed");\n' \
+  "$(PY -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$MARK_DIST")" >"$R3T/planted-dist/security-policy.js"
+RP prepare --sdk-dist "$R3T/planted-dist" --plugin-root "$PLUGIN_ROOT" --plugin-version "$PLUGIN_VERSION" \
+  --plugin-source "$PLUGIN_SOURCE" --state-dir "$STATE" --bootstrap-repo-root "$R3T" \
+  --repository "$R3T" --path app >"$RUN/p3f.json"; code=$?
+expect_exit 2 "$code" "P3 대상 저장소 안 --sdk-dist 거부"
+contains "$(cat "$RUN/p3f.json")" "신뢰 게이트 거부" "P3 --sdk-dist 거부 사유(신뢰 게이트)"
+[ -e "$MARK_DIST" ] && bad "P3 거부 전에 저장소 안 dist 모듈을 import 했다" || ok "P3 저장소 안 dist 모듈 미실행(표식 없음)"
 
 # ---------------------------------------------------------------------------
 # P4. 1 MiB 초과 정책 — 해결 전에 보고
@@ -364,9 +389,22 @@ Config at \`/etc/nginx/nginx.conf:12\`."
 save architecture; expect_exit 2 $? "P6 절대 경로 줄 인용 → 저장 거부"
 contains "$(cat "$RUN/save.json")" "/etc/nginx/nginx.conf:12" "P6 거부한 경로를 보고"
 rm -f "$WORK3"/architecture.rejected-*.json "$WORK3"/architecture.rejection.json
+# `file:///절대경로` 와 `키:/절대경로` 형태도 절대 경로로 검사한다(홈 디렉터리 = 로컬 배치 접두어)
+PW_HOME="$(PY -c 'import os,pwd; print(pwd.getpwuid(os.getuid()).pw_dir)')"
+stage_json "$ARCH_FILE" "# Spec
+Credentials come from file://$PW_HOME/.aws/credentials."
+save architecture; expect_exit 2 $? "P6 file:// URL 의 홈 경로 → 저장 거부"
+contains "$(cat "$RUN/save.json")" "$PW_HOME/.aws/credentials" "P6 file:// 뒤 경로를 보고"
+rm -f "$WORK3"/architecture.rejected-*.json "$WORK3"/architecture.rejection.json
+stage_json "$ARCH_FILE" "# Spec
+Deploy key path:$PW_HOME/.ssh/id_rsa is used."
+save architecture; expect_exit 2 $? "P6 키:/절대경로 형태의 홈 경로 → 저장 거부"
+contains "$(cat "$RUN/save.json")" "$PW_HOME/.ssh/id_rsa" "P6 콜론 뒤 경로를 보고"
+rm -f "$WORK3"/architecture.rejected-*.json "$WORK3"/architecture.rejection.json
 # 깨끗한 문서 수용 — 일반 시스템 경로·API 경로·URL 은 허용
 stage_json "$ARCH_FILE" "# Project spec
-Entry point \`app/main.py:1\`. Path traversal could reach /etc/passwd via /api/v1/files. See https://example.com/docs/a." \
+Entry point \`app/main.py:1\`. Path traversal could reach /etc/passwd via /api/v1/files. See https://example.com/docs/a.
+Mirror: ssh://git.example.com/org/repo.git and https://docs.example.com/guide/setup.html:12." \
   '["Is the service internet-facing?","Who can call /admin?","Are tenants isolated?","Is TLS terminated upstream?"]' '["Deployment unknown"]'
 save architecture; expect_exit 0 $? "P6 깨끗한 문서 저장"
 expect_eq "0o600" "$(fmode "$OUT3/project-spec.md" 2>/dev/null)" "P6 project-spec.md 0600"

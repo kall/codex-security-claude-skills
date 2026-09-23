@@ -57,6 +57,8 @@ import {
 } from "../../codex-security-scan/scripts/workflow_digest.mjs";
 
 const execFileAsync = promisify(execFile);
+// 플러그인 헬퍼(mcp/helpers.mjs) 실행 한도. 넘으면 SIGTERM 으로 끝내고 GatewayError 로 알린다.
+const HELPER_TIMEOUT_MS = 120_000;
 
 // ---------------------------------------------------------------------------
 // 상수 — 상류 값은 출처를 단다
@@ -381,9 +383,14 @@ const CREDENTIAL_PATTERNS = [
   ["sk-api-key", /\bsk-[A-Za-z0-9_-]{20,}/],
 ];
 const GIT_METADATA_PATTERN = /(?:^|[^A-Za-z0-9_.-])\.git\//;
-// POSIX 절대 경로 토큰. 앞 글자가 단어·점·물결·슬래시·콜론·역슬래시·하이픈이면 절대 경로가 아니다
-// (상대 경로 `a/b`, URL `https://h/p`, `./x` 를 제외). 뒤의 `:숫자`는 인용 줄 번호다.
-const ABSOLUTE_PATH_PATTERN = /(?<![A-Za-z0-9_.~/:\\-])(\/[A-Za-z0-9._@%+=~-]+(?:\/[A-Za-z0-9._@%+=~-]*)*)(:\d+)?/g;
+// POSIX 절대 경로 토큰. 앞 글자가 단어·점·물결·슬래시·역슬래시·하이픈이면 절대 경로가 아니다
+// (상대 경로 `a/b`, `./x` 를 제외). 콜론은 막지 않는다 — `path:/home/u/.ssh/id_rsa` 같은 `키:/절대경로`
+// 도 검사한다. URL `scheme://h/p` 는 그대로 건너뛴다: 첫 `/` 뒤에 이름 글자가 없고(`//`), 둘째 `/` 는
+// 앞 글자가 `/` 이다. 뒤의 `:숫자`는 인용 줄 번호다.
+const ABSOLUTE_PATH_PATTERN = /(?<![A-Za-z0-9_.~/\\-])(\/[A-Za-z0-9._@%+=~-]+(?:\/[A-Za-z0-9._@%+=~-]*)*)(:\d+)?/g;
+// `file:///abs/path` 는 URL 이지만 로컬 파일을 가리킨다. 검사 전에 `file://` 를 공백으로 바꿔
+// 뒤의 `/abs/path` 가 일반 절대 경로로 검사되게 한다.
+const FILE_URL_SCHEME_PATTERN = /file:\/\//gi;
 
 function textFields(result) {
   const fields = [["markdown", result.markdown]];
@@ -409,7 +416,7 @@ export function presaveViolations(result, context) {
     }
     const git = GIT_METADATA_PATTERN.exec(text);
     if (git) violations.push({ field, kind: "git-metadata-path", excerpt: text.slice(git.index, git.index + 60).trim() });
-    for (const match of text.matchAll(ABSOLUTE_PATH_PATTERN)) {
+    for (const match of text.replace(FILE_URL_SCHEME_PATTERN, " ").matchAll(ABSOLUTE_PATH_PATTERN)) {
       const token = posix.normalize(match[1]);
       const citation = match[2] !== undefined;
       const local = context.layoutPrefixes.some((prefix) => isInside(prefix, token));
@@ -653,8 +660,14 @@ async function oversizedPolicies(pluginRoot, repository, componentDir) {
   const { stdout } = await execFileAsync(
     process.execPath,
     [join(pluginRoot, "mcp", "helpers.mjs"), "resolve-security-md", "--repo", repository, "--list"],
-    { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, env: process.env },
+    { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, env: process.env, timeout: HELPER_TIMEOUT_MS },
   ).catch((error) => {
+    if (error.killed || error.signal === "SIGTERM") {
+      throw new GatewayError(
+        `정책 인벤토리(resolve-security-md --list)가 제한 시간 ${HELPER_TIMEOUT_MS / 1000}초 안에 끝나지 않아 ` +
+          "중단했다. 저장소 크기와 플러그인 설치 상태를 확인한 뒤 다시 실행하라.",
+      );
+    }
     throw new GatewayError(
       `정책 인벤토리(resolve-security-md --list)가 실패했다: ${(error.stderr || error.message).trim()}`,
     );
@@ -688,6 +701,14 @@ function requireOutside(roots, candidate, label) {
   }
 }
 
+function requireTrustedCodeOutside(roots, pluginRoot, sdkDist) {
+  for (const [label, path] of [["플러그인 루트", pluginRoot], ["SDK dist", sdkDist]]) {
+    if (roots.some((root) => isInside(root, path))) {
+      throw new GatewayError(`${label}가 대상 저장소 안이다(신뢰 게이트 거부): ${path}`);
+    }
+  }
+}
+
 async function handlePrepare(args) {
   const sdkDist = resolveSdkDist(requireString(args, "sdkDist"));
   const pluginRoot = await realpath(requireString(args, "pluginRoot"));
@@ -698,6 +719,11 @@ async function handlePrepare(args) {
   const bootstrapRepoRoot = await realpath(requireString(args, "bootstrapRepoRoot"));
   const repositoryArg = await realpath(requireString(args, "repository"));
   const pathArg = typeof args.path === "string" && args.path !== "" ? args.path : ".";
+
+  // 신뢰 게이트는 플러그인 헬퍼(mcp/helpers.mjs)를 실행하거나 SDK dist 모듈을 import 하기 **전에**
+  // 검사한다. 대상 저장소 안의 코드를 먼저 실행하면 거부가 너무 늦다. protectedRoots 는 스냅샷 뒤에야
+  // 알 수 있으므로, 여기서는 부트스트랩 루트와 대상 인자로 먼저 막고 스냅샷 뒤에 한 번 더 검사한다.
+  requireTrustedCodeOutside([bootstrapRepoRoot, repositoryArg], pluginRoot, sdkDist);
 
   await requirePluginSupport(pluginRoot);
 
@@ -726,11 +752,7 @@ async function handlePrepare(args) {
     );
   }
   const trustRoots = [...new Set([bootstrapRepoRoot, ...protectedRoots])];
-  for (const [label, path] of [["플러그인 루트", pluginRoot], ["SDK dist", sdkDist]]) {
-    if (trustRoots.some((root) => isInside(root, path))) {
-      throw new GatewayError(`${label}가 대상 저장소 안이다(신뢰 게이트 거부): ${path}`);
-    }
-  }
+  requireTrustedCodeOutside(trustRoots, pluginRoot, sdkDist);
   let knowledgeBase = null;
   if (typeof args.knowledgeBase === "string" && args.knowledgeBase !== "") {
     knowledgeBase = await realpath(args.knowledgeBase).catch((error) => {

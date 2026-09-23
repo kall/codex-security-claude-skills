@@ -248,14 +248,29 @@ async function readNoFollow(path, limit) {
   }
 }
 
+// 자식 프로세스 실행 한도. 넘으면 SIGTERM 으로 끝내고 GatewayError 로 알린다.
+const PYTHON_TIMEOUT_MS = 120_000;
+const UPSTREAM_CLI_TIMEOUT_MS = 900_000;
+
+function timedOut(error) {
+  return Boolean(error) && (error.killed === true || error.signal === "SIGTERM");
+}
+
 function runPython(python, argv, input, environment) {
   return new Promise((resolvePromise, reject) => {
     const child = execFile(
       python,
       ["-I", "-X", "utf8", "-B", ...argv],
-      { encoding: "utf8", env: environment, maxBuffer: 64 * 1024 * 1024 },
+      { encoding: "utf8", env: environment, maxBuffer: 64 * 1024 * 1024, timeout: PYTHON_TIMEOUT_MS },
       (error, stdout, stderr) => {
-        if (error) {
+        if (timedOut(error)) {
+          reject(
+            new GatewayError(
+              `보조 스크립트가 제한 시간 ${PYTHON_TIMEOUT_MS / 1000}초 안에 끝나지 않아 중단했다. ` +
+                "Python 인터프리터와 스캔 디렉터리 상태를 확인한 뒤 다시 실행하라.",
+            ),
+          );
+        } else if (error) {
           reject(new GatewayError(`보조 스크립트가 실패했다: ${(stderr || error.message).trim().slice(0, 400)}`));
         } else {
           resolvePromise(stdout);
@@ -876,14 +891,22 @@ async function handleInherit(args) {
     ...(reprocess ? ["--reprocess"] : []),
     "--json",
   ];
-  const { code, stdout, stderr } = await new Promise((resolvePromise) => {
+  const { code, stdout, stderr, killed } = await new Promise((resolvePromise) => {
     execFile(
       process.execPath,
       cliArgs,
-      { encoding: "utf8", env: environment, cwd: repository, maxBuffer: 64 * 1024 * 1024 },
-      (error, out, err) => resolvePromise({ code: error ? (error.code ?? 1) : 0, stdout: out, stderr: err }),
+      { encoding: "utf8", env: environment, cwd: repository, maxBuffer: 64 * 1024 * 1024, timeout: UPSTREAM_CLI_TIMEOUT_MS },
+      (error, out, err) =>
+        resolvePromise({ code: error ? (error.code ?? 1) : 0, stdout: out, stderr: err, killed: timedOut(error) }),
     );
   });
+  if (killed) {
+    throw new GatewayError(
+      `상류 CLI classify-severity 가 제한 시간 ${UPSTREAM_CLI_TIMEOUT_MS / 1000}초 안에 끝나지 않아 중단했다. ` +
+        "--finding-id 로 대상을 줄이거나 나중에 다시 실행하라.",
+      { upstreamMessage: stderr.trim().slice(0, 2000) },
+    );
+  }
   if (code !== 0) {
     throw new GatewayError("상류 CLI classify-severity 가 실패했다. upstreamError 를 사용자에게 그대로 전하라.", {
       exitCode: code,
