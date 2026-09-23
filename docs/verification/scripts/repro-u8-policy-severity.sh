@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# U7·U8 재현 스크립트: 신규 스킬 두 개(codex-security-policy, 심각도 재분류)의 **결정론 부분**을
+# U7·U8 재현 스크립트: 신규 스킬 두 개(codex-security-policy, codex-security-classify-severity)의 **결정론 부분**을
 # 자기 채점한다. 서브에이전트 단계 자체는 돌리지 않는다 — 단계 결과는 미리 만든(canned) JSON 을 쓴다.
 #
 #   ── 정책 블록(U7: skills/codex-security-policy) ──────────────────────────────
@@ -17,7 +17,22 @@
 #   P8  마무리 — 스냅샷 불변이면 매니페스트·diff, 바뀌면 매니페스트 없음(AE4)
 #   P9  실행 형태 — env -i 로 NODE_OPTIONS 주입이 끊기고, 남아 있으면 스크립트가 거부
 #   P10 종단 결정론 흐름 — 파일 5개 0600, 저장소 밖, 대상 저장소 git status 깨끗
-#   ── 심각도 블록(U8) ── U8 이 이 아래 "SEVERITY BLOCK" 자리에 추가한다.
+#   ── 심각도 블록(U8: skills/codex-security-classify-severity) ─────────────────────
+#   S0  합성 봉인 스캔 — 격리 HOME/CODEX_HOME/STATE 로 `scan import --json`(예제 finding + 합성 finding 1개)
+#   S1  첫 통합 단언 — 고정 반환값으로 prepare → apply 후 상류 dist readScanSeverityClassification 이
+#       전부 읽는다. 대조군: 저장 행 inputSha256 첫 글자를 **다른** 글자로 바꾸면 같은 경로가 실패.
+#       publish scan --dry-run 도 결과를 받아들인다(excluded 는 이슈에서 빠짐)
+#   S2  AE5 같은 루브릭 재실행 → 판정 0회(전부 재사용)
+#   S3  AE5 루브릭 한 글자 변경 → 전부 재판정. prepare 는 워크벤치를 쓰지 않는다(begin 미호출)
+#   S4  --reprocess → 전부 재판정
+#   S5  잘못된 반환(assessed+level null / 여분 키 / findingId 불일치) 거부, 1회 재판정 후 중단,
+#       앞선 체크포인트 유지
+#   S6  시작 전 거부 — 없는 finding ID, 스캔 입력 개수, 반환 파일 누락, prepare 이후 입력 변경
+#   S7  루브릭 없음 → 상류 CLI 위임, 결과가 스킬 stateDir 워크벤치에 저장(대조군: STATE_DIR 누락)
+#   S8  대상 저장소 node_modules/.bin/node 가 PATH 맨 앞이어도 어떤 호출도 실행하지 않음
+#   S9  NODE_OPTIONS 거부 · 셰뱅 없음
+#   S10 조립 프롬프트 80,000자 상한 → 시작 전 거부   S11 PDF·DOCX 지식 베이스 거부
+#   S12 상류 리터럴 드리프트(설치된 dist 대조), 난수 표식, 신뢰/미신뢰 구획 = 상류 프롬프트 원문
 #
 # 종료코드: 0 = 전부 통과 / 2 = INCOMPLETE(전제 부족: node·상류 dist·헬퍼 없음) / 1 = 단언 실패.
 # exit 2 는 통과가 아니다.
@@ -635,9 +650,386 @@ expect_eq "ok" "$(cat "$RUN/p11.check")" "P11 세 단계 프롬프트가 상류 
 contains "$(cat "$RUN/ours-architecture.txt")" '"svc/sub/SECURITY.md"' "P11 하위 정책이 policyPaths 에 포함"
 RP cleanup --output-dir "$OUT11" >/dev/null
 
+# ===========================================================================
+# SEVERITY BLOCK (U8) — skills/codex-security-classify-severity
+#   상류 dist 함수(classifyScan…SeverityInternal + 가짜 Codex)로 분류·저장하고, 판정 자리만 고정 반환값
+#   (canned)으로 바꾼다. 검증 기준은 상류 TS 읽기 경로(readScanSeverityClassification — publish 가 쓰는
+#   함수)다. Python read-severity-classification 은 digest 를 거르지 않으므로 행 존재 확인에만 쓴다.
+# ===========================================================================
+CLASSIFY="$SKILLS/codex-security-classify-severity/scripts/classify_severity.mjs"
+[ -f "$CLASSIFY" ] || bad "classify_severity.mjs 가 없다: $CLASSIFY"
+if [ -z "$SDK_CLI" ] || [ -z "$PYTHON_B" ]; then
+  # 심각도 블록은 scan import·CLI 위임에 npm CLI 가 필요하다. 없으면 이 블록 전체가 전제 부족이다.
+  missing "상류 CLI(sdk.cli) 또는 부트스트랩 python 없음 — 심각도 블록을 건너뜀"
+  [ "$FAILED" -ne 0 ] && { echo "FAILED: $FAILED assertion(s)"; exit 1; }
+  echo "INCOMPLETE — 전제 부족: $MISSING"; exit 2
+fi
+
 # ---------------------------------------------------------------------------
-# SEVERITY BLOCK (U8) — U8 이 이 자리에 심각도 재분류 단언을 추가한다.
+# S0. 합성 봉인 스캔 — HOME·CODEX_HOME·STATE 를 격리한 scan import(상위 디렉터리 전부 0700)
 # ---------------------------------------------------------------------------
+step "S0. 합성 봉인 스캔(scan import)"
+SEV="$RUN/sev"; mkdir -p "$SEV/home" "$SEV/codex" "$SEV/state" "$SEV/in" "$SEV/repo"; chmod 700 "$SEV" "$SEV"/*
+SSTATE="$SEV/state"
+mkrepo "$SEV/repo" >/dev/null
+CODEX_SECURITY_STATE_DIR="$SSTATE" PY "$BOOTSTRAP" --target-repo "$SEV/repo" --no-scan-dir >"$SEV/boot.json" 2>"$SEV/boot.err" \
+  || bad "S0 심각도용 부트스트랩 실패: $(head -c 300 "$SEV/boot.json")"
+mapfile -d '' -t ENVS < <(PY -c 'import json,sys; [sys.stdout.write(e+"\0") for e in json.load(open(sys.argv[1]))["trustedChildEnv"]]' "$SEV/boot.json")
+expect_eq "$(cd "$SSTATE" && pwd -P)" "$(jget "$SEV/boot.json" 'd["stateDir"]')" "S0 부트스트랩 stateDir = 격리 상태 디렉터리"
+PY - "$PLUGIN_ROOT/examples/completed-scan/findings.json" "$SEV/in/findings.json" <<'PYEOF'
+import copy, json, sys
+doc = json.load(open(sys.argv[1]))
+first = doc["findings"][0]
+second = copy.deepcopy(first)
+second.update(
+    findingId="csf_000000000000000000000002",
+    occurrenceId="occ_000000000000000000000002",
+    ruleId="ssrf.preview-fetch",
+    title="Server-side request forgery through preview fetch",
+    summary="A user-supplied URL is fetched without host allow-listing. 한글 요약 포함.",
+)
+second["identity"] = {"anchor": "preview-fetch-without-allowlist"}
+second["fingerprints"] = {"algorithm": "codex-security/v1", "primary": "codex-security/v1:sha256:" + "ab" * 32}
+second["severity"] = {"level": "medium", "rationale": "Only an internal service is reachable.",
+                      "changeConditions": "Internet exposure of the preview endpoint would raise it."}
+doc["findings"].append(second)
+json.dump(doc, open(sys.argv[2], "w"), indent=1)
+PYEOF
+IMPORT_ENV=(HOME="$SEV/home" CODEX_HOME="$SEV/codex" CODEX_SECURITY_STATE_DIR="$SSTATE" PATH=/usr/bin:/bin PYTHON="$PYTHON_B")
+(cd "$SEV" && env -i "${IMPORT_ENV[@]}" "$NODE_B" "$SDK_CLI" scan import --json "$SEV/in/findings.json" --format json) >"$SEV/import.json" 2>"$SEV/import.err"
+expect_exit 0 $? "S0 scan import --json"
+SCAN_ID="$(jget "$SEV/import.json" 'd["manifest"]["scan"]["id"]')"
+SCAN_DIR="$(jget "$SEV/import.json" 'd["scanDir"]')"
+FID_A="$(jget "$SEV/import.json" 'd["findings"]["findings"][0]["findingId"]')"
+FID_B="$(jget "$SEV/import.json" 'd["findings"]["findings"][1]["findingId"]')"
+[ -n "$SCAN_ID" ] && [ -d "$SCAN_DIR" ] && ok "S0 봉인 스캔 $SCAN_ID (finding 2개: $FID_A, $FID_B)" || bad "S0 스캔 ID·디렉터리 없음"
+SEAL_BEFORE="$(cd "$SCAN_DIR" && sha256sum scan-manifest.json findings.json coverage.json)"
+
+# 스킬과 같은 호출 형태
+RC() { env -i "${ENVS[@]}" "$NODE_B" "$CLASSIFY" "$@"; }
+CS_ARGS=(--sdk-dist "$DIST" --state-dir "$SSTATE" --python "$PYTHON_B")
+
+# 독립 대조 도구: 상류 dist 읽기 경로를 이 스크립트가 직접 부른다(스킬 코드를 거치지 않는다).
+cat >"$SEV/dist_read.mjs" <<'JSEOF'
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+const [dist, scanDir, stateDir, python] = process.argv.slice(2);
+const load = (m) => import(pathToFileURL(join(dist, m)).href);
+const { loadContractWithScanDirectory } = await load("contract.js");
+const { bundledPluginRoot } = await load("runtime.js");
+const { readScanSeverityClassification } = await load("classify-scan-severity.js");
+const { contract, scanDirectory } = await loadContractWithScanDirectory(scanDir, { pluginRoot: await bundledPluginRoot() });
+const environment = { ...process.env, CODEX_SECURITY_STATE_DIR: stateDir, PYTHON: python };
+try {
+  const result = await readScanSeverityClassification(scanDirectory, contract.manifest.scan.id, contract.findings.findings, undefined, environment);
+  process.stdout.write(JSON.stringify({ ok: true, present: result !== undefined, result: result ?? null }));
+} catch (error) {
+  process.stdout.write(JSON.stringify({ ok: false, error: String(error?.message ?? error) }));
+}
+JSEOF
+dist_read() { env -i "${ENVS[@]}" "$NODE_B" "$SEV/dist_read.mjs" "$DIST" "$SCAN_DIR" "$SSTATE" "$PYTHON_B" >"$1"; }
+db_col() { # db_col <finding_id> <column> — 저장 행의 값(없으면 빈 문자열)
+  PY -c 'import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); r=c.execute(f"SELECT {sys.argv[3]} FROM finding_severity_assessments WHERE finding_id=?",(sys.argv[2],)).fetchone(); print("" if r is None or r[0] is None else r[0])' "$SSTATE/workbench.sqlite3" "$1" "$2"
+}
+db_set() { # db_set <finding_id> <column> <value>
+  PY -c 'import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); c.execute(f"UPDATE finding_severity_assessments SET {sys.argv[3]}=? WHERE finding_id=?",(sys.argv[4],sys.argv[2])); c.commit()' "$SSTATE/workbench.sqlite3" "$1" "$2" "$3"
+}
+# canned <prepare.json> <findingId> <answer-json> — 그 finding 의 answerFile 에 고정 반환값을 쓴다
+canned() {
+  local file
+  file="$(PY -c 'import json,sys; d=json.load(open(sys.argv[1])); print(next(p["answerFile"] for p in d["pending"] if p["findingId"]==sys.argv[2]))' "$1" "$2")"
+  printf '%s' "$3" >"$file"
+}
+ANS_A_OK="{\"findingId\":\"$FID_A\",\"decision\":\"assessed\",\"level\":\"high\",\"rubricLabel\":\"High\",\"rationale\":\"Unauthenticated attacker writes outside the extraction root.\",\"confidence\":\"high\",\"reviewTrigger\":null}"
+ANS_B_EXCL="{\"findingId\":\"$FID_B\",\"decision\":\"excluded\",\"level\":null,\"rubricLabel\":null,\"rationale\":\"The rubric excludes internal-only SSRF.\",\"confidence\":\"medium\",\"reviewTrigger\":\"Evidence that the preview endpoint is internet-facing.\"}"
+printf '# Severity rubric\n\nHigh: remote unauthenticated file write.\nExcluded: SSRF that reaches only internal services.\n' >"$SEV/in/rubric.md"
+printf 'The extraction service runs as an unprivileged user.\n' >"$SEV/in/kb.txt"
+
+# ---------------------------------------------------------------------------
+# S1. 첫 통합 단언 — 루브릭 경로 결과를 상류 dist 읽기 경로가 digest 재확인을 거쳐 읽는다 + 대조군
+# ---------------------------------------------------------------------------
+step "S1. 루브릭 분류 → 상류 dist 읽기 경로 + 대조군(inputSha256 변조)"
+RC prepare "${CS_ARGS[@]}" --scan-dir "$SCAN_DIR" --rubric "$SEV/in/rubric.md" --knowledge-base "$SEV/in/kb.txt" >"$SEV/s1p.json"; code=$?
+expect_exit 0 "$code" "S1 prepare"
+expect_eq "2" "$(jget "$SEV/s1p.json" 'len(d.get("pending",[]))')" "S1 분류할 finding 2개(저장 평가 없음)"
+S1W="$(jget "$SEV/s1p.json" 'd.get("workDir","")')"
+canned "$SEV/s1p.json" "$FID_A" "$ANS_A_OK"
+canned "$SEV/s1p.json" "$FID_B" "$ANS_B_EXCL"
+RC apply --work-dir "$S1W" >"$SEV/s1a.json"; code=$?
+expect_exit 0 "$code" "S1 apply(상류 classifyScanDirectorySeverityInternal + 가짜 Codex)"
+dist_read "$SEV/s1r.json"
+expect_eq "true" "$(jget "$SEV/s1r.json" 'd["ok"]')" "S1 상류 readScanSeverityClassification 이 오류 없이 읽는다"
+expect_eq "[\"$FID_A\", \"$FID_B\"]" "$(jget "$SEV/s1r.json" '[a["findingId"] for a in (d.get("result") or {}).get("assessments",[])]')" "S1 선택 finding 전부의 평가를 반환"
+expect_eq '["assessed:high:High", "excluded:None:None"]' "$(jget "$SEV/s1r.json" '[":".join(str(a[k]) for k in ("decision","level","rubricLabel")) for a in (d.get("result") or {}).get("assessments",[])]')" "S1 결정·레벨·루브릭 라벨이 고정 반환값 그대로"
+expect_eq "$(RD digest --sdk-dist "$DIST" --json "{\"value\": [$(PY -c 'import json,sys; print(json.dumps(open(sys.argv[1]).read()))' "$SEV/in/rubric.md")]}" | PY -c 'import json,sys; print(json.load(sys.stdin)["sha256"])')" \
+  "$(jget "$SEV/s1r.json" '(d.get("result") or {}).get("rubricSha256")')" "S1 rubricSha256 = workflowDigest([루브릭 텍스트])"
+[ -f "$SCAN_DIR/severity-classification.json" ] && ok "S1 severity-classification.json 기록" || bad "S1 severity-classification.json 없음"
+expect_eq "0o600" "$(fmode "$SCAN_DIR/severity-classification.json" 2>/dev/null)" "S1 결과 파일 0600"
+expect_eq "2" "$(jget "$SCAN_DIR/severity-classification.json" 'len(d["assessments"])')" "S1 결과 파일 평가 수 = 선택 finding 수"
+expect_eq "$SEAL_BEFORE" "$(cd "$SCAN_DIR" && sha256sum scan-manifest.json findings.json coverage.json)" "S1 봉인 정본 파일 불변"
+# 대조군: 저장 행 inputSha256 첫 글자를 **다른** 글자로 바꾸면 같은 읽기 경로가 실패해야 한다.
+ORIG_SHA="$(db_col "$FID_A" input_sha256)"
+case "$ORIG_SHA" in 0*) NEW_SHA="1${ORIG_SHA:1}" ;; *) NEW_SHA="0${ORIG_SHA:1}" ;; esac
+db_set "$FID_A" input_sha256 "$NEW_SHA"
+TAMPERED="$(db_col "$FID_A" input_sha256)"
+if [ -n "$ORIG_SHA" ] && [ "$TAMPERED" != "$ORIG_SHA" ] && [ "$TAMPERED" = "$NEW_SHA" ]; then ok "S1 대조군: 저장 행 값이 실제로 바뀜(${ORIG_SHA:0:4}… → ${TAMPERED:0:4}…)"; else bad "S1 대조군 변조가 값을 바꾸지 못함([$ORIG_SHA] → [$TAMPERED])"; fi
+dist_read "$SEV/s1t.json"
+expect_eq "false" "$(jget "$SEV/s1t.json" 'd["ok"]')" "S1 대조군: 변조 후 상류 읽기 경로가 실패"
+contains "$(cat "$SEV/s1t.json")" "Severity assessment does not match the supplied findings" "S1 대조군 상류 오류 문구"
+db_set "$FID_A" input_sha256 "$ORIG_SHA"
+dist_read "$SEV/s1u.json"
+expect_eq "true" "$(jget "$SEV/s1u.json" 'd["ok"]')" "S1 원복 후 다시 읽힌다"
+expect_eq "true" "$(jget "$SEV/s1a.json" 'd.get("publishReadable")')" "S1 apply 자기 확인(publishReadable)"
+expect_eq "[false, false]" "$(jget "$SEV/s1a.json" '[a["reused"] for a in d.get("assessments",[])]')" "S1 보고: 두 finding 모두 새로 분류(reused=false)"
+[ -e "$S1W" ] && bad "S1 성공 후 작업 디렉터리가 남음" || ok "S1 성공 후 작업 디렉터리 삭제"
+# 상류 publish 미리보기도 결과를 읽는다(Linear API 키 없이, 팀 ID 는 자리값)
+(cd "$SEV" && env -i "${IMPORT_ENV[@]}" "$NODE_B" "$SDK_CLI" publish scan --scan-dir "$SCAN_DIR" --to linear --linear-team placeholder --dry-run --json) >"$SEV/s1pub.json" 2>"$SEV/s1pub.err"
+expect_exit 0 $? "S1 상류 publish scan --dry-run 이 분류 결과를 받아들인다"
+contains "$(cat "$SEV/s1pub.json")" "[Codex Security][HIGH]" "S1 publish 미리보기에 루브릭 레벨(HIGH) 반영"
+not_contains "$(cat "$SEV/s1pub.json")" "Server-side request forgery through preview fetch" "S1 excluded finding 은 publish 이슈에서 빠진다"
+
+# ---------------------------------------------------------------------------
+# S2. AE5 — 같은 루브릭으로 다시 실행하면 서브에이전트 호출 0회(전부 재사용)
+# ---------------------------------------------------------------------------
+step "S2. AE5 같은 루브릭 재실행 → 전부 재사용"
+RC prepare "${CS_ARGS[@]}" --scan-dir "$SCAN_DIR" --rubric "$SEV/in/rubric.md" --knowledge-base "$SEV/in/kb.txt" >"$SEV/s2p.json"; code=$?
+expect_exit 0 "$code" "S2 prepare"
+expect_eq "0" "$(jget "$SEV/s2p.json" 'len(d.get("pending",[]))')" "S2 판정할 finding 0개(서브에이전트 호출 없음)"
+expect_eq "[\"$FID_A\", \"$FID_B\"]" "$(jget "$SEV/s2p.json" 'd.get("reused")')" "S2 두 finding 모두 재사용"
+RC apply --work-dir "$(jget "$SEV/s2p.json" 'd["workDir"]')" >"$SEV/s2a.json"; code=$?
+expect_exit 0 "$code" "S2 apply(답 없이 상류가 전부 재사용)"
+expect_eq "[true, true]" "$(jget "$SEV/s2a.json" '[a["reused"] for a in d.get("assessments",[])]')" "S2 보고: reused=true"
+dist_read "$SEV/s2r.json"; expect_eq "2" "$(jget "$SEV/s2r.json" 'len((d.get("result") or {}).get("assessments",[]))')" "S2 상류 읽기 경로 2건"
+
+# ---------------------------------------------------------------------------
+# S3. AE5 — 루브릭 한 글자 변경 → 전부 다시 판정. prepare 는 워크벤치를 쓰지 않는다
+# ---------------------------------------------------------------------------
+step "S3. 루브릭 한 글자 변경 → 전부 재판정, prepare 는 읽기 전용"
+sed 's/High:/Hig!:/' "$SEV/in/rubric.md" >"$SEV/in/rubric-1char.md"
+[ "$(cmp -l "$SEV/in/rubric.md" "$SEV/in/rubric-1char.md" | wc -l)" = "1" ] && ok "S3 루브릭이 정확히 한 글자 다름" || bad "S3 루브릭 차이가 한 글자가 아님"
+SEL_BEFORE="$(PY -c 'import sqlite3,sys; print(sqlite3.connect(sys.argv[1]).execute("SELECT finding_ids_json||assessed_at||rubric_sha256 FROM scan_severity_classifications").fetchall())' "$SSTATE/workbench.sqlite3")"
+RC prepare "${CS_ARGS[@]}" --scan-dir "$SCAN_DIR" --rubric "$SEV/in/rubric-1char.md" --knowledge-base "$SEV/in/kb.txt" >"$SEV/s3p.json"; code=$?
+expect_exit 0 "$code" "S3 prepare"
+expect_eq "2" "$(jget "$SEV/s3p.json" 'len(d.get("pending",[]))')" "S3 두 finding 모두 다시 판정 대상"
+expect_eq "$SEL_BEFORE" "$(PY -c 'import sqlite3,sys; print(sqlite3.connect(sys.argv[1]).execute("SELECT finding_ids_json||assessed_at||rubric_sha256 FROM scan_severity_classifications").fetchall())' "$SSTATE/workbench.sqlite3")" "S3 prepare 는 스캔 선택 행을 바꾸지 않음(begin 미호출)"
+dist_read "$SEV/s3r.json"; expect_eq "true" "$(jget "$SEV/s3r.json" 'd["ok"]')" "S3 prepare 후에도 이전 분류가 그대로 읽힘"
+RC cleanup --work-dir "$(jget "$SEV/s3p.json" 'd["workDir"]')" >/dev/null; expect_exit 0 $? "S3 cleanup"
+
+# ---------------------------------------------------------------------------
+# S4. --reprocess — digest 가 같아도 다시 판정
+# ---------------------------------------------------------------------------
+step "S4. --reprocess"
+RC prepare "${CS_ARGS[@]}" --scan-dir "$SCAN_DIR" --rubric "$SEV/in/rubric.md" --knowledge-base "$SEV/in/kb.txt" --reprocess >"$SEV/s4p.json"; code=$?
+expect_exit 0 "$code" "S4 prepare --reprocess"
+expect_eq "2" "$(jget "$SEV/s4p.json" 'len(d.get("pending",[]))')" "S4 두 finding 모두 다시 판정 대상"
+canned "$SEV/s4p.json" "$FID_A" "$ANS_A_OK"
+canned "$SEV/s4p.json" "$FID_B" "$(printf '```json\n%s\n```' "$ANS_B_EXCL")"
+RC apply --work-dir "$(jget "$SEV/s4p.json" 'd["workDir"]')" >"$SEV/s4a.json"; code=$?
+expect_exit 0 "$code" "S4 apply(코드 펜스 하나로 감싼 반환도 받음)"
+expect_eq "[false, false]" "$(jget "$SEV/s4a.json" '[a["reused"] for a in d.get("assessments",[])]')" "S4 보고: 재처리라 reused=false"
+
+# ---------------------------------------------------------------------------
+# S5. 잘못된 반환 — 거부, 1회 재판정 후 중단, 앞선 체크포인트 유지
+# ---------------------------------------------------------------------------
+step "S5. 잘못된 반환(level null / 여분 키 / findingId 불일치)"
+printf '# Rubric v3\n\nHigh: remote file write.\n' >"$SEV/in/rubric3.md"
+RC prepare "${CS_ARGS[@]}" --scan-dir "$SCAN_DIR" --rubric "$SEV/in/rubric3.md" >"$SEV/s5p.json"; code=$?
+expect_exit 0 "$code" "S5 prepare"
+S5W="$(jget "$SEV/s5p.json" 'd["workDir"]')"; R3SHA="$(jget "$SEV/s5p.json" 'd["rubricSha256"]')"
+canned "$SEV/s5p.json" "$FID_A" "$ANS_A_OK"
+canned "$SEV/s5p.json" "$FID_B" "{\"findingId\":\"$FID_B\",\"decision\":\"assessed\",\"level\":null,\"rubricLabel\":\"Medium\",\"rationale\":\"r\",\"confidence\":null,\"reviewTrigger\":null}"
+RC apply --work-dir "$S5W" >"$SEV/s5a.json"; code=$?
+expect_exit 2 "$code" "S5 assessed + level null → 거부"
+expect_eq "invalid|$FID_B|true" "$(jget "$SEV/s5a.json" '"|".join([str(d.get("status")), str(d.get("findingId")), str(d.get("retryAllowed")).lower()])')" "S5 어느 finding 인지 보고 + 1회 재판정 허용"
+contains "$(cat "$SEV/s5a.json")" "Severity classification returned an invalid assessment." "S5 상류 오류 문구"
+expect_eq "$R3SHA" "$(db_col "$FID_A" rubric_sha256)" "S5 앞선 finding(A)의 체크포인트는 저장돼 남음"
+[ "$(db_col "$FID_B" rubric_sha256)" != "$R3SHA" ] && ok "S5 거부된 finding(B)은 저장되지 않음" || bad "S5 거부된 반환이 저장됨"
+dist_read "$SEV/s5r.json"
+contains "$(cat "$SEV/s5r.json")" "Severity classification is incomplete or its inputs changed" "S5 미완료 실행 뒤 publish 읽기 경로는 incomplete(상류와 같은 상태)"
+RC prompt --work-dir "$S5W" --index 2 >"$SEV/s5prompt.txt"; code=$?
+expect_exit 0 "$code" "S5 재판정 프롬프트 생성"
+contains "$(cat "$SEV/s5prompt.txt")" "Retry notice" "S5 재판정 프롬프트에 재시도 안내"
+canned "$SEV/s5p.json" "$FID_B" "{\"findingId\":\"$FID_B\",\"decision\":\"excluded\",\"level\":null,\"rubricLabel\":null,\"rationale\":\"r\",\"confidence\":null,\"reviewTrigger\":null,\"extra\":1}"
+RC apply --work-dir "$S5W" >"$SEV/s5b.json"; code=$?
+expect_exit 2 "$code" "S5 여분 키 → 거부"
+expect_eq "false" "$(jget "$SEV/s5b.json" 'str(d.get("retryAllowed")).lower()')" "S5 두 번째 거부면 재판정 불가"
+expect_eq "[]" "$(jget "$SEV/s5b.json" 'd.get("checkpointsSavedThisAttempt")')" "S5 재시도 때 A 는 재사용(다시 저장하지 않음)"
+RC apply --work-dir "$S5W" >"$SEV/s5c.json"; code=$?
+expect_exit 2 "$code" "S5 한도 초과 후 apply 는 중단"
+expect_eq "stopped" "$(jget "$SEV/s5c.json" 'd.get("status")')" "S5 status=stopped"
+RC prompt --work-dir "$S5W" --index 2 >/dev/null; expect_exit 2 $? "S5 한도 초과 후 prompt 도 거부"
+RC cleanup --work-dir "$S5W" >/dev/null
+# findingId 불일치
+RC prepare "${CS_ARGS[@]}" --scan-dir "$SCAN_DIR" --rubric "$SEV/in/rubric3.md" --finding-id "$FID_B" >"$SEV/s5d.json"; code=$?
+expect_exit 0 "$code" "S5 prepare --finding-id B"
+expect_eq "[\"$FID_B\"]" "$(jget "$SEV/s5d.json" '[p["findingId"] for p in d.get("pending",[])]')" "S5 선택한 finding 만 판정 대상"
+canned "$SEV/s5d.json" "$FID_B" "$ANS_A_OK"
+RC apply --work-dir "$(jget "$SEV/s5d.json" 'd["workDir"]')" >"$SEV/s5e.json"; code=$?
+expect_exit 2 "$code" "S5 findingId 불일치 → 거부"
+expect_eq "invalid" "$(jget "$SEV/s5e.json" 'd.get("status")')" "S5 findingId 불일치 status=invalid"
+RC cleanup --work-dir "$(jget "$SEV/s5d.json" 'd["workDir"]')" >/dev/null
+
+# ---------------------------------------------------------------------------
+# S6. 입력 거부 — 없는 finding ID, 스캔 입력 개수, 반환 파일 누락, prepare 이후 입력 변경
+# ---------------------------------------------------------------------------
+step "S6. 시작 전 거부"
+count_work() { find "$SSTATE/severity-work" -mindepth 2 -maxdepth 2 -type d 2>/dev/null | wc -l; }
+W0="$(count_work)"
+RC prepare "${CS_ARGS[@]}" --scan-dir "$SCAN_DIR" --rubric "$SEV/in/rubric.md" --finding-id "$FID_A" --finding-id csf_does_not_exist >"$SEV/s6a.json"; code=$?
+expect_exit 2 "$code" "S6 없는 finding ID → 거부"
+contains "$(cat "$SEV/s6a.json")" "csf_does_not_exist" "S6 없는 ID 를 지목"
+contains "$(cat "$SEV/s6a.json")" "Selected finding IDs must belong to the supplied scan." "S6 상류 문구"
+expect_eq "$W0" "$(count_work)" "S6 거부 시 작업 디렉터리를 만들지 않음"
+RC prepare "${CS_ARGS[@]}" --scan "$SCAN_ID" --scan-dir "$SCAN_DIR" --rubric "$SEV/in/rubric.md" >/dev/null; expect_exit 1 $? "S6 --scan 과 --scan-dir 동시 지정 거부"
+RC prepare "${CS_ARGS[@]}" --rubric "$SEV/in/rubric.md" >/dev/null; expect_exit 1 $? "S6 스캔 입력 없음 거부"
+RC prepare "${CS_ARGS[@]}" --scan-dir "$SCAN_DIR" --rubric "$SEV/in/rubric-1char.md" >"$SEV/s6b.json"
+S6W="$(jget "$SEV/s6b.json" 'd["workDir"]')"
+RC apply --work-dir "$S6W" >"$SEV/s6c.json"; code=$?
+expect_exit 2 "$code" "S6 반환 파일 없으면 apply 거부"
+contains "$(cat "$SEV/s6c.json")" "반환 파일이 없다" "S6 누락 안내"
+canned "$SEV/s6b.json" "$FID_A" "$ANS_A_OK"; canned "$SEV/s6b.json" "$FID_B" "$ANS_B_EXCL"
+cp "$SEV/in/rubric-1char.md" "$SEV/in/rubric-1char.bak"; printf 'changed\n' >>"$SEV/in/rubric-1char.md"
+SEL_BEFORE="$(PY -c 'import sqlite3,sys; print(sqlite3.connect(sys.argv[1]).execute("SELECT finding_ids_json||assessed_at||coalesce(rubric_sha256,\"-\") FROM scan_severity_classifications").fetchall())' "$SSTATE/workbench.sqlite3")"
+RC apply --work-dir "$S6W" >"$SEV/s6d.json"; code=$?
+expect_exit 2 "$code" "S6 prepare 이후 루브릭이 바뀌면 apply 거부"
+contains "$(cat "$SEV/s6d.json")" "prepare 이후 입력이 바뀌었다" "S6 입력 변경 안내"
+expect_eq "$SEL_BEFORE" "$(PY -c 'import sqlite3,sys; print(sqlite3.connect(sys.argv[1]).execute("SELECT finding_ids_json||assessed_at||coalesce(rubric_sha256,\"-\") FROM scan_severity_classifications").fetchall())' "$SSTATE/workbench.sqlite3")" "S6 입력 변경 거부는 워크벤치 쓰기 전(begin 미호출)"
+mv "$SEV/in/rubric-1char.bak" "$SEV/in/rubric-1char.md"
+RC cleanup --work-dir "$S6W" >/dev/null
+
+# ---------------------------------------------------------------------------
+# S7. 루브릭 없는 경로 — 상류 CLI 위임, 결과가 스킬 stateDir 워크벤치에 저장
+# ---------------------------------------------------------------------------
+step "S7. 루브릭 없음 → 상류 CLI 위임(inherit)"
+INH_ARGS=(--sdk-dist "$DIST" --sdk-cli "$SDK_CLI" --state-dir "$SSTATE" --python "$PYTHON_B")
+# 대조군: STATE_DIR 없이 CLI 를 신뢰 환경으로 직접 부르면 HOME(=stateDir) 아래 빈 워크벤치를 쓴다
+DEFAULT_STATE="$SSTATE/.codex/state/plugins/codex-security"
+(env -i "${ENVS[@]}" PYTHON="$PYTHON_B" "$NODE_B" "$SDK_CLI" classify-severity --scan-dir "$SCAN_DIR" --json) >/dev/null 2>&1
+[ -f "$DEFAULT_STATE/workbench.sqlite3" ] && ok "S7 대조군: STATE_DIR 를 빼면 다른 워크벤치($DEFAULT_STATE)에 쓴다(실측 재현)" || bad "S7 대조군이 기본 상태 위치에 쓰지 않음 — 대조군 무력"
+rm -rf "$SSTATE/.codex"
+RC inherit "${INH_ARGS[@]}" --scan-dir "$SCAN_DIR" >"$SEV/s7a.json"; code=$?
+expect_exit 0 "$code" "S7 inherit --scan-dir"
+expect_eq '["existing-severity:high", "existing-severity:medium"]' "$(jget "$SEV/s7a.json" '[a["source"]+":"+str(a["level"]) for a in d.get("assessments",[])]')" "S7 기존 severity 상속"
+expect_eq "Internet exposure of the preview endpoint would raise it." "$(jget "$SEV/s7a.json" 'd["assessments"][1]["reviewTrigger"]')" "S7 changeConditions → reviewTrigger(상류 규칙)"
+expect_eq "true" "$(jget "$SEV/s7a.json" 'd.get("publishReadable")')" "S7 자기 확인(publishReadable)"
+dist_read "$SEV/s7r.json"
+expect_eq '["existing-severity", "existing-severity"]' "$(jget "$SEV/s7r.json" '[a["source"] for a in (d.get("result") or {}).get("assessments",[])]')" "S7 스킬 stateDir 워크벤치에서 상류 읽기 경로가 읽는다"
+[ -e "$SSTATE/.codex" ] && bad "S7 inherit 가 기본 상태 위치에 썼다" || ok "S7 inherit 는 기본 상태 위치를 쓰지 않음"
+RC inherit "${INH_ARGS[@]}" --scan "$SCAN_ID" --finding-id "$FID_B" >"$SEV/s7b.json"; code=$?
+expect_exit 0 "$code" "S7 inherit --scan <id> --finding-id"
+expect_eq "[\"$FID_B\"]" "$(jget "$SEV/s7b.json" '[a["findingId"] for a in d.get("assessments",[])]')" "S7 선택 finding 만"
+RC inherit --sdk-dist "$DIST" --state-dir "$SSTATE" --python "$PYTHON_B" --scan-dir "$SCAN_DIR" >"$SEV/s7c.json"; code=$?
+expect_exit 2 "$code" "S7 CLI 없음(--sdk-cli 누락) → 중단"
+contains "$(cat "$SEV/s7c.json")" "npm install -g @openai/codex-security" "S7 한국어 설치 안내"
+RC inherit "${INH_ARGS[@]}" --scan-dir "$SCAN_DIR" --finding-id csf_does_not_exist >"$SEV/s7d.json"; code=$?
+expect_exit 2 "$code" "S7 없는 finding ID → 시작 전 거부"
+
+# ---------------------------------------------------------------------------
+# S8. 신뢰 Node — 대상 저장소 node_modules/.bin/node 가 PATH 맨 앞이어도 실행되지 않는다
+# ---------------------------------------------------------------------------
+step "S8. node_modules/.bin/node 가 PATH 앞에 있어도 실행 안 됨"
+HOSTILE="$SEV/repo/node_modules/.bin"; SENT="$SEV/hostile-node.ran"
+mkdir -p "$HOSTILE"
+printf '#!/bin/sh\ntouch %s\nexec %s "$@"\n' "$SENT" "$NODE_B" >"$HOSTILE/node"; chmod +x "$HOSTILE/node"
+ENVH=()
+for e in "${ENVS[@]}"; do case "$e" in PATH=*) ENVH+=("PATH=$HOSTILE:${e#PATH=}") ;; *) ENVH+=("$e") ;; esac; done
+env -i "${ENVH[@]}" sh -c 'node -e 0' >/dev/null 2>&1
+[ -e "$SENT" ] && ok "S8 대조군: 이 PATH 에서 'node' 는 저장소 바이너리를 고른다" || bad "S8 대조군 무력(저장소 node 가 선택되지 않음)"
+rm -f "$SENT"
+PATH="$HOSTILE:$PATH" CODEX_SECURITY_STATE_DIR="$SSTATE" PY "$BOOTSTRAP" --target-repo "$SEV/repo" --no-scan-dir >"$SEV/s8boot.json" 2>/dev/null
+case "$(jget "$SEV/s8boot.json" '(d.get("node") or {}).get("path") or ""')" in "$HOSTILE"*|"") bad "S8 부트스트랩이 저장소 node 를 골랐거나 못 찾음" ;; *) ok "S8 부트스트랩은 저장소 밖 node 를 해석" ;; esac
+[ -e "$SENT" ] && bad "S8 부트스트랩이 저장소 node 를 실행함" || ok "S8 부트스트랩이 저장소 node 를 실행하지 않음"
+RH() { env -i "${ENVH[@]}" "$NODE_B" "$CLASSIFY" "$@"; }
+printf '# Rubric v4\n\nHigh: remote file write.\nMedium: internal SSRF.\n' >"$SEV/in/rubric4.md"
+RH prepare "${CS_ARGS[@]}" --scan "$SCAN_ID" --repository "$SEV/repo" --rubric "$SEV/in/rubric4.md" >"$SEV/s8p.json"; code=$?
+expect_exit 0 "$code" "S8 prepare --scan <id>(적대적 PATH)"
+canned "$SEV/s8p.json" "$FID_A" "$ANS_A_OK"
+canned "$SEV/s8p.json" "$FID_B" "{\"findingId\":\"$FID_B\",\"decision\":\"assessed\",\"level\":\"medium\",\"rubricLabel\":\"Medium\",\"rationale\":\"Internal SSRF.\",\"confidence\":\"low\",\"reviewTrigger\":null}"
+(cd "$SEV/repo" && RH apply --work-dir "$(jget "$SEV/s8p.json" 'd["workDir"]')") >"$SEV/s8a.json"; code=$?
+expect_exit 0 "$code" "S8 apply(classifyScanSeverityInternal 경로, 저장소 안 cwd)"
+(cd "$SEV/repo" && RH inherit "${INH_ARGS[@]}" --scan "$SCAN_ID" --finding-id "$FID_A") >/dev/null; expect_exit 0 $? "S8 inherit(CLI 위임, 저장소 안 cwd)"
+env -i "${ENVH[@]}" "$NODE_B" "$DIGEST" digest --sdk-dist "$DIST" --json '{"value": 1}' >/dev/null; expect_exit 0 $? "S8 digest 스크립트"
+[ -e "$SENT" ] && bad "S8 어떤 호출이 저장소 node 를 실행함" || ok "S8 prepare·apply·inherit·digest 가 저장소 node 를 실행하지 않음"
+
+# ---------------------------------------------------------------------------
+# S9. NODE_OPTIONS 거부 · 셰뱅 없음
+# ---------------------------------------------------------------------------
+step "S9. NODE_OPTIONS / 셰뱅"
+rm -f "$MARK"
+NODE_OPTIONS="--require=$HOOK" "$NODE_B" "$CLASSIFY" prepare "${CS_ARGS[@]}" --scan-dir "$SCAN_DIR" --rubric "$SEV/in/rubric.md" >"$SEV/s9a.json" 2>/dev/null; code=$?
+expect_exit 2 "$code" "S9 NODE_OPTIONS 가 남아 있으면 거부"
+contains "$(cat "$SEV/s9a.json")" "env -i" "S9 거부 안내"
+rm -f "$MARK"
+NODE_OPTIONS="--require=$HOOK" env -i "${ENVS[@]}" "$NODE_B" "$CLASSIFY" upstream-literals >/dev/null; expect_exit 0 $? "S9 env -i 형태는 정상"
+[ -e "$MARK" ] && bad "S9 env -i 인데 훅이 실행됨" || ok "S9 env -i 형태에서는 훅이 실행되지 않음"
+head -c 2 "$CLASSIFY" | grep -q '#!' && bad "S9 셰뱅이 있음" || ok "S9 셰뱅 없음: ${CLASSIFY##*/}"
+
+# ---------------------------------------------------------------------------
+# S10. 크기 상한 · S11. 텍스트 전용 지식 베이스
+# ---------------------------------------------------------------------------
+step "S10. 프롬프트 크기 상한(80,000자)"
+PY -c 'import sys; open(sys.argv[1],"w").write("# Big rubric\n" + ("x" * 90000) + "\n")' "$SEV/in/rubric-big.md"
+W0="$(count_work)"
+RC prepare "${CS_ARGS[@]}" --scan-dir "$SCAN_DIR" --rubric "$SEV/in/rubric-big.md" >"$SEV/s10.json"; code=$?
+expect_exit 2 "$code" "S10 상한 초과 → 시작 전 거부"
+contains "$(cat "$SEV/s10.json")" "80000" "S10 상한 보고"
+contains "$(cat "$SEV/s10.json")" "$FID_A (" "S10 finding 별 문자 수 보고"
+expect_eq "$W0" "$(count_work)" "S10 거부 시 작업 디렉터리 없음"
+step "S11. 지식 베이스 PDF·DOCX 거부"
+printf '%%PDF-1.4\n' >"$SEV/in/kb.pdf"
+RC prepare "${CS_ARGS[@]}" --scan-dir "$SCAN_DIR" --rubric "$SEV/in/rubric.md" --knowledge-base "$SEV/in/kb.pdf" >"$SEV/s11a.json"; code=$?
+expect_exit 2 "$code" "S11 PDF 지식 베이스 거부"
+contains "$(cat "$SEV/s11a.json")" "텍스트 파일" "S11 한국어 안내"
+mkdir -p "$SEV/in/kbdir/sub"; printf 'ok\n' >"$SEV/in/kbdir/a.md"; printf 'PK' >"$SEV/in/kbdir/sub/b.DOCX"
+RC prepare "${CS_ARGS[@]}" --scan-dir "$SCAN_DIR" --rubric "$SEV/in/rubric.md" --knowledge-base "$SEV/in/kbdir" >"$SEV/s11b.json"; code=$?
+expect_exit 2 "$code" "S11 디렉터리 안 DOCX 거부"
+contains "$(cat "$SEV/s11b.json")" "b.DOCX" "S11 문제 파일 지목"
+
+# ---------------------------------------------------------------------------
+# S12. 프롬프트 — 상류 리터럴 드리프트, 난수 표식, 미신뢰 구획 = 상류 데이터 줄
+# ---------------------------------------------------------------------------
+step "S12. 프롬프트 구획과 상류 리터럴"
+RC upstream-literals >"$SEV/s12lit.json"
+PY - "$SEV/s12lit.json" "$DIST" <<'PYEOF' >"$SEV/s12lit.check"
+import json, os, sys
+lit = json.load(open(sys.argv[1])); dist = sys.argv[2]
+read = lambda name: open(os.path.join(dist, name), encoding="utf-8").read()
+missing = [s for s in lit["instructions"] if s not in read("classify-severity.js")]
+for name, fragments in lit.items():
+    if name.endswith(".js"):
+        missing += [f"{name}: {s}" for s in fragments if s not in read(name)]
+print("ok" if not missing and len(lit["instructions"]) == 8 else "missing " + json.dumps(missing))
+PYEOF
+expect_eq "ok" "$(cat "$SEV/s12lit.check")" "S12 고정 리터럴 8문단·상류 오류 문구가 설치된 dist 모듈에 그대로 있다"
+RC prepare "${CS_ARGS[@]}" --scan-dir "$SCAN_DIR" --rubric "$SEV/in/rubric-1char.md" >"$SEV/s12p.json"
+S12W="$(jget "$SEV/s12p.json" 'd["workDir"]')"
+RC prompt --work-dir "$S12W" --index 1 >"$SEV/s12a.txt"; expect_exit 0 $? "S12 prompt 1"
+RC prompt --work-dir "$S12W" --index 1 >"$SEV/s12b.txt"
+PY - "$SEV/s12a.txt" "$SEV/s12b.txt" "$S12W/upstream/1.txt" "$SEV/s12lit.json" <<'PYEOF' >"$SEV/s12.check"
+import json, re, sys
+a, b, up = (open(p, encoding="utf-8").read() for p in sys.argv[1:4])
+lit = json.load(open(sys.argv[4]))["instructions"]
+bad = []
+ma = re.search(r"\[TRUSTED_INSTRUCTIONS ([0-9a-f]{16})\]", a); mb = re.search(r"\[TRUSTED_INSTRUCTIONS ([0-9a-f]{16})\]", b)
+if not ma or not mb: bad.append("marker")
+elif ma.group(1) == mb.group(1): bad.append("marker not fresh")
+else:
+    m = ma.group(1)
+    data = re.search(rf"\n\[UNTRUSTED_DATA {m}\]\n(.*)\n\[/UNTRUSTED_DATA {m}\]\n", a, re.S)
+    trusted = re.search(rf"\[TRUSTED_INSTRUCTIONS {m}\]\n(.*)\n\[/TRUSTED_INSTRUCTIONS {m}\]", a, re.S)
+    if not data or not trusted: bad.append("blocks")
+    else:
+        if up != "\n\n".join(lit) + "\n\n" + data.group(1): bad.append("upstream prompt != literal + untrusted data line")
+        if "\n\n".join(lit) not in trusted.group(1): bad.append("instructions not in trusted block")
+        if '"finding"' in trusted.group(1): bad.append("finding data leaked into trusted block")
+        if a.count(f"<<< {m}") != 2: bad.append("guard lines")
+print("ok" if not bad else "bad " + ",".join(bad))
+PYEOF
+expect_eq "ok" "$(cat "$SEV/s12.check")" "S12 호출마다 새 표식, 신뢰 구획=상류 지시, 미신뢰 구획=상류 데이터 줄(둘을 이으면 상류 프롬프트 원문)"
+RC prompt --work-dir "$S12W" --index 9 >/dev/null; expect_exit 1 $? "S12 없는 --index 는 사용법 오류"
+RC cleanup --work-dir "$S12W" >/dev/null
+[ -e "$S12W" ] && bad "S12 cleanup 후 작업 디렉터리가 남음" || ok "S12 cleanup 이 작업 디렉터리를 지움"
+expect_eq "$SEAL_BEFORE" "$(cd "$SCAN_DIR" && sha256sum scan-manifest.json findings.json coverage.json)" "S12 전 과정 동안 봉인 정본 파일 불변"
 
 echo
 if [ "$FAILED" -ne 0 ]; then

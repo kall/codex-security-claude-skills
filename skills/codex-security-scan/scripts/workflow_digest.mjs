@@ -22,8 +22,11 @@
 //   digest              --sdk-dist D --json '{"value": <임의 JSON>}'  → {"sha256"} (상류 workflowDigest)
 //   policy-snapshot     --sdk-dist D --repository R [--path P]       → 대상·인벤토리·스냅샷 digest
 //   policy-stage-parse  --sdk-dist D --json-file F                   → 상류 strict 파서로 검증한 4키 결과
+//   severity-read       --sdk-dist D --state-dir S --python P --scan-dir DIR
+//                       → 상류 readScanSeverityClassification(publish 가 쓰는 읽기 경로, digest 재확인 포함)
 //
-// U8은 심각도 재분류용 하위 명령을 여기에 더한다. 상류 모듈은 UPSTREAM_MODULES 허용 목록으로만 연다.
+// 상류 모듈은 UPSTREAM_MODULES 허용 목록으로만 연다. 심각도 재분류(U8)의 분류·저장 흐름은
+// ../../codex-security-classify-severity/scripts/classify_severity.mjs 가 이 관문을 import 해서 쓴다.
 
 import { createHash } from "node:crypto";
 import { readFileSync, realpathSync, statSync } from "node:fs";
@@ -37,6 +40,11 @@ export const UPSTREAM_MODULES = Object.freeze([
   "runtime.js",
   "targets.js",
   "codex-prompt.js",
+  // U8 심각도 재분류: 분류·체크포인트·결과 파일·읽기 경로를 상류 함수 그대로 쓴다.
+  "classify-severity.js",
+  "classify-scan-severity.js",
+  "saved-scan.js",
+  "contract.js",
 ]);
 
 // 부트스트랩 resolve_sdk()와 같은 표식. 이 파일이 없으면 npm dist가 아니다.
@@ -155,6 +163,48 @@ export async function policySnapshot(sdkDist, repository, path = ".") {
   };
 }
 
+/**
+ * 심각도 재분류가 상류 함수에 넘기는 환경. 신뢰 환경(`env -i <trusted_child_env>`)은 HOME 을 stateDir 로
+ * 바꾸므로, CODEX_SECURITY_STATE_DIR 를 빠뜨리면 상류가 `<HOME>/.codex/state/plugins/codex-security`
+ * (빈 워크벤치)를 쓴다. 결과 파일은 생기지만 publish 가 읽는 워크벤치에는 행이 없다(P6-KTD12).
+ * PYTHON 은 부트스트랩이 해석한 인터프리터로 고정한다(상류 resolvePluginPython 이 먼저 본다).
+ */
+export function severityEnvironment(stateDir, python) {
+  if (typeof stateDir !== "string" || !stateDir.startsWith("/")) {
+    throw new GatewayError(`--state-dir 는 절대 경로여야 한다(부트스트랩 stateDir): ${stateDir}`, { usage: true });
+  }
+  if (typeof python !== "string" || !python.startsWith("/")) {
+    throw new GatewayError(`--python 은 절대 경로여야 한다(부트스트랩 python.path): ${python}`, { usage: true });
+  }
+  return { ...process.env, CODEX_SECURITY_STATE_DIR: stateDir, PYTHON: python };
+}
+
+/**
+ * 상류 publish 와 같은 읽기 경로로 저장된 심각도 분류를 읽는다.
+ * contract.js loadContractWithScanDirectory(봉인 확인) → classify-scan-severity.js
+ * readScanSeverityClassification(SeverityStore.read: digest 가 같은 행만 채택, 개수 부족이면 incomplete →
+ * validateSeverityClassification: finding digest·occurrenceId·결정 일관성 재확인).
+ */
+export async function readSeverityClassification(sdkDist, { scanDir, stateDir, python, expectedScanId }) {
+  const environment = severityEnvironment(stateDir, python);
+  const contractModule = await loadUpstream(sdkDist, "contract.js");
+  const runtime = await loadUpstream(sdkDist, "runtime.js");
+  const scanSeverity = await loadUpstream(sdkDist, "classify-scan-severity.js");
+  const { contract, scanDirectory } = await contractModule.loadContractWithScanDirectory(scanDir, {
+    pluginRoot: await runtime.bundledPluginRoot(),
+    expectedScanId,
+  });
+  const scanId = contract.manifest.scan.id;
+  const classification = await scanSeverity.readScanSeverityClassification(
+    scanDirectory,
+    scanId,
+    contract.findings.findings,
+    undefined,
+    environment,
+  );
+  return { scanId, scanDirectory, contract, classification: classification ?? null };
+}
+
 // ---------------------------------------------------------------------------
 // CLI 공용부
 // ---------------------------------------------------------------------------
@@ -163,8 +213,15 @@ function camel(name) {
   return name.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
 }
 
-/** argv(하위 명령 뒤) → 인자 객체. --json / --json-file 로 JSON 객체를 먼저 받고 플래그가 덮어쓴다. */
-export function parseArgs(argv) {
+/**
+ * argv(하위 명령 뒤) → 인자 객체. --json / --json-file 로 JSON 객체를 먼저 받고 플래그가 덮어쓴다.
+ * options.booleans: 값 없이 쓰는 플래그(camelCase 이름) → true.
+ * options.repeatable: 여러 번 쓸 수 있는 플래그(camelCase 이름) → 문자열 배열(순서 유지).
+ * 두 목록에 없는 플래그는 기존과 같이 값 하나를 받고, 반복되면 마지막 값이 이긴다.
+ */
+export function parseArgs(argv, options = {}) {
+  const booleans = new Set(options.booleans ?? []);
+  const repeatable = new Set(options.repeatable ?? []);
   const flags = {};
   let base = {};
   for (let index = 0; index < argv.length; index += 1) {
@@ -173,6 +230,10 @@ export function parseArgs(argv) {
       throw new GatewayError(`알 수 없는 인자: ${token}`, { usage: true });
     }
     const name = token.slice(2);
+    if (booleans.has(camel(name))) {
+      flags[camel(name)] = true;
+      continue;
+    }
     const value = argv[index + 1];
     if (value === undefined) {
       throw new GatewayError(`${token} 에 값이 없다`, { usage: true });
@@ -182,6 +243,8 @@ export function parseArgs(argv) {
       base = parseJsonObject(value === "-" ? readFileSync(0, "utf8") : value, "--json");
     } else if (name === "json-file") {
       base = parseJsonObject(readFileSync(value, "utf8"), `--json-file ${value}`);
+    } else if (repeatable.has(camel(name))) {
+      (flags[camel(name)] ??= []).push(value);
     } else {
       flags[camel(name)] = value;
     }
@@ -229,7 +292,8 @@ export async function runCli(handlers, argv = process.argv.slice(2)) {
   }
   try {
     requireCleanNodeEnvironment();
-    const args = parseArgs(rest);
+    // 핸들러에 parseOptions({booleans, repeatable})가 붙어 있으면 그 규칙으로 파싱한다.
+    const args = parseArgs(rest, handlers[subcommand].parseOptions ?? {});
     const result = await handlers[subcommand](args);
     if (result && typeof result.raw === "string") {
       process.stdout.write(result.raw);
@@ -313,6 +377,18 @@ export const HANDLERS = {
       });
     }
     return { result: sp.parseSecurityPolicyStageResult(value) };
+  },
+
+  async "severity-read"(args) {
+    const { scanId, scanDirectory, classification } = await readSeverityClassification(
+      requireString(args, "sdkDist"),
+      {
+        scanDir: requireString(args, "scanDir"),
+        stateDir: requireString(args, "stateDir"),
+        python: requireString(args, "python"),
+      },
+    );
+    return { scanId, scanDir: scanDirectory, present: classification !== null, classification };
   },
 };
 
