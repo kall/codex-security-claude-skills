@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """codex-security-scan 스킬의 단일 부트스트랩 스크립트.
 
-네 가지를 한 번에 결정하고 그 결과를 JSON 한 덩어리로 stdout에 출력한다.
+다음을 한 번에 결정하고 그 결과를 JSON 한 덩어리로 stdout에 출력한다.
 
   1. 신뢰할 수 있는 Codex Security 번들 플러그인 루트 (+ pluginVersion)
   2. 플러그인을 실행할 Python 인터프리터 (3.10+; 3.10은 tomli 필요)
@@ -10,6 +10,10 @@
      상류 인벤토리 스크립트가 `rg` 를 PATH 에서만 해석하므로 PATH 통로를 만들어 준다.
      함께 내보내는 `trustedPathEnv` 는 대상 저장소 내부 항목을 제거한 PATH 다 —
      플러그인 스크립트를 자식 프로세스로 돌릴 때 원시 $PATH 대신 이 값을 쓴다.
+  5. 같은 신뢰 게이트를 통과한 Node(`node`)와, 그것으로 돌릴 SECURITY.md 헬퍼
+     (`scripts/launch_codex_security_mcp --helper …`)·SDK dist·CLI 의 가용성.
+     5번은 결정이 아니라 관측이다. 없어도 ok:false 를 내지 않고, 가용성과 사유를
+     필드로 싣는다(P6-KTD6·P6-KTD7).
 
 이 JSON이 이후 모든 단계(register-cli-scan, 산출물 작성, finalize)의 경로
 source-of-truth 다. 스킬 문서는 이 스크립트를 한 번 호출하고 그 결과만 사용한다.
@@ -87,6 +91,22 @@ SEARCH_SHIM_BASENAME = "search-shim"
 # 에서는 실행되지 않으므로(실측), 이 파이프라인의 위협면은 분모 조작이다.
 # PATH 만 정화하고 이 변수를 남기면 정화가 반쪽이 된다.
 RIPGREP_CONFIG_ENV = "RIPGREP_CONFIG_PATH"
+
+# Node 해석(P6-KTD6). 상류 런처(scripts/launch_codex_security_mcp)는 아래 환경변수를
+# 이 순서로 먼저 보고, 그다음 몇 개의 Codex 런타임 위치, 마지막으로 PATH 의 `node`
+# 를 쓴다. 우리는 환경변수 두 개와 PATH 만 본다 — 나머지 위치(Electron 리소스·
+# CODEX_CLI_PATH 형제·XDG 캐시 런타임)는 Codex 앱 설치본이고, 스킬이
+# CODEX_MCP_NODE_PATH 를 명시해서 넘기므로 런처가 그쪽을 볼 일이 없다.
+NODE_COMMAND = "node"
+NODE_ENV_CANDIDATES = ("CODEX_MCP_NODE_PATH", "CODEX_BROWSER_USE_NODE_PATH")
+NODE_VERSION_RE = re.compile(r"v\d+\.\d+\.\d+\S*")
+# 플러그인 루트 기준 헬퍼 경로. 런처는 `--helper` 를 받으면 ../mcp/helpers.mjs 를
+# 실행한다. 상류 소스 체크아웃(plugins/codex-security)에는 빌드된 mcp/ 가 없다.
+HELPER_LAUNCHER_RELATIVE = Path("scripts") / "launch_codex_security_mcp"
+HELPER_SCRIPT_RELATIVE = Path("mcp") / "helpers.mjs"
+# npm 패키지 레이아웃: <패키지>/_bundled_plugin 의 형제가 dist/ 와 bin/ 이다.
+SDK_DIST_MARKER = "finding-workflow.js"
+SDK_CLI_RELATIVE = Path("bin") / "codex-security.mjs"
 
 # 자식 환경은 **허용 목록**으로 짠다. 거부 목록은 구조가 틀렸다 — 위협면이
 # "우리가 부르는 서드파티 바이너리(git/npm/python/rg)가 읽는 임의의 환경변수"
@@ -359,6 +379,9 @@ SUCCESS_KEYS = (
     "trustedChildEnvShell",
     "shellQuoted",
     "searchCommand",
+    "node",
+    "securityMdHelper",
+    "sdk",
     "scanDir",
     "scansRoot",
     "stateDir",
@@ -1247,6 +1270,254 @@ def resolve_search_command(
     }
 
 
+# --------------------------------------------------------------------------
+# Node 해석과 SECURITY.md 헬퍼·SDK 가용성 (P6-KTD6·P6-KTD7)
+#
+# 상류 0.1.29(매니페스트 0.1.95)는 Python 리졸버(scripts/resolve_security_md.py)를
+# 지우고 Node 헬퍼로 바꿨다. 헬퍼를 돌릴 Node 도 `rg` 와 같은 규율로 해석한다 —
+# 대상 저장소가 PATH 에 `node_modules/.bin` 을 얹으면 저장소가 커밋한 `node` 가
+# 런처의 PATH 폴백으로 실행된다. 이 단계는 **실패하지 않는다.** 결과는 가용성과
+# 한국어 사유로 싣고, 건너뛸지는 소비자(스킬)가 정한다.
+# --------------------------------------------------------------------------
+def probe_node(executable: Path, child_env: dict[str, str], cwd: Path) -> tuple[str | None, str]:
+    """후보가 실제로 Node 인지 `--version` 으로 확인한다. (버전 또는 None, 사유)."""
+    try:
+        completed = subprocess.run(
+            [str(executable), "--version"],
+            capture_output=True,
+            text=True,
+            env=child_env,
+            cwd=str(cwd),
+            stdin=subprocess.DEVNULL,
+            timeout=10,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return None, "timeout(10s)"
+    except OSError as error:
+        return None, f"oserror: {error}"
+    except subprocess.SubprocessError as error:
+        return None, f"subprocess: {error}"
+    if completed.returncode != 0:
+        return None, f"exit {completed.returncode}"
+    first = completed.stdout.strip().splitlines()[0].strip() if completed.stdout.strip() else ""
+    if not NODE_VERSION_RE.fullmatch(first):
+        return None, "version-mismatch"
+    return first, "ok"
+
+
+def resolve_node(
+    target_repo: Path, environ: dict[str, str], state_dir: Path, probe_cwd: Path
+) -> tuple[dict | None, list[dict]]:
+    """(채택 결과 또는 None, attempts). 채택 결과는 {"path","source","version"}.
+
+    후보 순서는 상류 런처와 같다: CODEX_MCP_NODE_PATH → CODEX_BROWSER_USE_NODE_PATH
+    → 신뢰 PATH 의 `node`. 각 후보는 리터럴과 realpath 가 둘 다 대상 저장소 밖이고
+    실행 가능한 정규 파일이어야 한다. 게이트에서 거부한 기록은 `gate: True` 를 단다 —
+    불가 사유를 "Node 없음"과 "신뢰 게이트 거부"로 구분하는 근거다.
+    """
+    attempts: list[dict] = []
+    for name in NODE_ENV_CANDIDATES:
+        raw = environ.get(name) or ""
+        if not raw:
+            attempts.append({"source": name, "result": "skipped", "reason": "환경변수가 설정되지 않음"})
+            continue
+        if not env_value_safe(raw):
+            attempts.append(
+                {"source": name, "result": "rejected", "reason": "제어문자 또는 UTF-8 로 표현할 수 없는 값"}
+            )
+            continue
+        if not os.path.isabs(os.path.expanduser(raw)):
+            # 런처는 상대경로를 cwd 기준으로 해석한다. cwd 는 대상 저장소일 수 있다.
+            attempts.append(
+                {"source": name, "result": "rejected", "path": raw, "reason": "절대경로가 아님"}
+            )
+            continue
+        expanded = Path(os.path.abspath(os.path.expanduser(raw)))
+        canonical = real(expanded)
+        # within_target 에는 확장만 한 원본을 넘긴다(리터럴·realpath 를 둘 다 본다).
+        if within_target(target_repo, expanded):
+            attempts.append(
+                {
+                    "source": name,
+                    "result": "rejected",
+                    "gate": True,
+                    "path": str(expanded),
+                    "realpath": str(canonical),
+                    "reason": "대상 저장소 내부 경로(리터럴 또는 realpath)",
+                }
+            )
+            continue
+        if not is_regular_file(canonical) or not os.access(str(canonical), os.X_OK):
+            attempts.append(
+                {"source": name, "result": "rejected", "path": str(canonical), "reason": "실행 가능한 정규 파일이 아님"}
+            )
+            continue
+        child_env = probe_child_env(
+            environ,
+            target_repo,
+            os.pathsep.join(str(e) for e in trusted_path_entries(environ, target_repo)),
+            state_dir,
+        )
+        version, reason = probe_node(canonical, child_env, probe_cwd)
+        if version is None:
+            attempts.append(
+                {"source": name, "result": "rejected", "path": str(canonical), "reason": f"실행했지만 Node 로 동작하지 않음 ({reason})"}
+            )
+            continue
+        attempts.append({"source": name, "result": "accepted", "path": str(canonical)})
+        return {"path": str(canonical), "source": name, "version": version}, attempts
+
+    # PATH 폴백. 저장소 내부 PATH 항목의 `node` 는 trusted_path_entries 가 이미
+    # 걷어내지만, 무엇을 거부했는지 남겨 둔다(실행하지 않고 존재만 본다).
+    for entry in (environ.get("PATH") or "").split(os.pathsep):
+        if not entry or not os.path.isabs(entry):
+            continue
+        probe = Path(entry) / NODE_COMMAND
+        if not (probe.exists() or probe.is_symlink()):
+            continue
+        if within_target(target_repo, Path(entry)) or within_target(target_repo, probe):
+            attempts.append(
+                {
+                    "source": "PATH",
+                    "result": "rejected",
+                    "gate": True,
+                    "path": str(probe),
+                    "reason": "대상 저장소 내부 PATH 항목(리터럴 또는 realpath)",
+                }
+            )
+    resolved = resolve_trusted_executable(NODE_COMMAND, environ, target_repo, state_dir)
+    if resolved is None:
+        attempts.append(
+            {"source": "trusted-path", "result": "rejected", "reason": "신뢰할 수 있는 PATH 항목에서 node 실행 파일을 찾지 못함"}
+        )
+        return None, attempts
+    executable, child_env = resolved
+    if within_target(target_repo, executable):
+        attempts.append(
+            {
+                "source": "trusted-path",
+                "result": "rejected",
+                "gate": True,
+                "path": str(executable),
+                "reason": "채택 직전 재검사에서 대상 저장소 내부로 바뀜(TOCTOU 의심)",
+            }
+        )
+        return None, attempts
+    version, reason = probe_node(executable, child_env, probe_cwd)
+    if version is None:
+        attempts.append(
+            {"source": "trusted-path", "result": "rejected", "path": str(executable), "reason": f"실행했지만 Node 로 동작하지 않음 ({reason})"}
+        )
+        return None, attempts
+    attempts.append({"source": "trusted-path", "result": "accepted", "path": str(executable)})
+    return {"path": str(executable), "source": "trusted-path", "version": version}, attempts
+
+
+def owner_mode_problem(path: Path) -> str | None:
+    """untrusted_provenance() 의 단일 경로판. 타 사용자 소유·world-writable 이면 사유."""
+    allowed_uids = {0, os.getuid()} if hasattr(os, "getuid") else set()
+    try:
+        info = path.lstat()
+    except OSError as error:
+        return f"권한 확인 실패: {path} ({error})"
+    if allowed_uids and info.st_uid not in allowed_uids:
+        return f"신뢰할 수 없는 소유자(uid={info.st_uid}): {path}"
+    if info.st_mode & stat.S_IWOTH:
+        return f"누구나 쓰기 가능한 경로(mode={oct(stat.S_IMODE(info.st_mode))}): {path}"
+    return None
+
+
+def resolve_security_md_helper(
+    plugin_root: Path, target_repo: Path, node: dict | None, node_attempts: list[dict]
+) -> dict:
+    """{"available","launcher","node","reason"}. 실패하지 않는다.
+
+    사유는 세 갈래다: "헬퍼 파일 없음"(소스 체크아웃처럼 mcp/ 가 없음), "Node 없음",
+    "신뢰 게이트 거부"(Node 후보가 있었지만 전부 대상 저장소 안). 런처 경로는 파일이
+    있으면 Node 가 없어도 싣는다 — 진단에 쓴다.
+    """
+    launcher = plugin_root / HELPER_LAUNCHER_RELATIVE
+    helper = plugin_root / HELPER_SCRIPT_RELATIVE
+    result: dict = {"available": False, "launcher": None, "node": None, "reason": None}
+    missing: list[str] = []
+    for label, path, need_exec in (("런처", launcher, True), ("헬퍼", helper, False)):
+        if within_target(target_repo, path):
+            missing.append(f"{label}가 대상 저장소 내부로 해석됨: {path}")
+        elif not is_regular_file(path):
+            missing.append(f"{label} 정규 파일 없음: {path}")
+        elif need_exec and not os.access(str(path), os.X_OK):
+            missing.append(f"{label} 실행 권한 없음: {path}")
+    if missing:
+        result["reason"] = (
+            "헬퍼 파일 없음 — " + "; ".join(missing)
+            + " (상류 소스 체크아웃에는 빌드된 mcp/ 가 없다. npm 설치본을 쓰면 해결된다)"
+        )
+        return result
+    result["launcher"] = str(launcher)
+    if node is None:
+        gated = [a for a in node_attempts if a.get("gate")]
+        if gated:
+            result["reason"] = (
+                "신뢰 게이트 거부 — Node 후보가 대상 저장소 안에만 있음: "
+                + ", ".join(str(a.get("path")) for a in gated)
+            )
+        else:
+            result["reason"] = (
+                "Node 없음 — CODEX_MCP_NODE_PATH·CODEX_BROWSER_USE_NODE_PATH·신뢰 PATH 어디에서도 "
+                "실행 가능한 node 를 찾지 못함"
+            )
+        return result
+    result["node"] = node["path"]
+    result["available"] = True
+    return result
+
+
+def resolve_sdk(plugin_root: Path, target_repo: Path) -> dict:
+    """npm 패키지의 dist/ 와 CLI 스크립트. {"dist","cli","reason"}. 실패하지 않는다.
+
+    플러그인 루트와 같은 게이트를 적용한다: 리터럴·realpath 가 대상 저장소 밖이고,
+    심링크가 아닌 디렉터리·정규 파일이며, 타 사용자 소유·world-writable 이 아니다.
+    CLI(bin/codex-security.mjs)는 형제 dist/cli.js 를 import 하므로 dist 가 없으면
+    싣지 않는다.
+    """
+    package_root = plugin_root.parent
+    dist = package_root / "dist"
+    cli = package_root / SDK_CLI_RELATIVE
+    result: dict = {"dist": None, "cli": None, "reason": None}
+    try:
+        dist_info = dist.lstat()
+    except OSError:
+        dist_info = None
+    if within_target(target_repo, dist):
+        result["reason"] = f"SDK dist 가 대상 저장소 내부로 해석됨(신뢰 게이트 거부): {dist}"
+        return result
+    if dist_info is None or not stat.S_ISDIR(dist_info.st_mode):
+        result["reason"] = f"SDK dist 없음(npm 설치본이 아님): {dist}"
+        return result
+    if not is_regular_file(dist / SDK_DIST_MARKER):
+        result["reason"] = f"SDK dist 에 {SDK_DIST_MARKER} 가 없음: {dist}"
+        return result
+    problem = owner_mode_problem(dist)
+    if problem is not None:
+        result["reason"] = f"SDK dist 채택 거부 — {problem}"
+        return result
+    result["dist"] = str(dist)
+    if within_target(target_repo, cli):
+        result["reason"] = f"CLI 가 대상 저장소 내부로 해석됨(신뢰 게이트 거부): {cli}"
+    elif not is_regular_file(cli):
+        result["reason"] = f"CLI 스크립트 없음: {cli}"
+    elif not is_regular_file(dist / "cli.js"):
+        result["reason"] = f"CLI 가 import 하는 dist/cli.js 가 없음: {dist}"
+    else:
+        problem = owner_mode_problem(cli)
+        if problem is not None:
+            result["reason"] = f"CLI 채택 거부 — {problem}"
+        else:
+            result["cli"] = str(cli)
+    return result
+
+
 class ScanDirError(ValueError):
     def __init__(self, message: str, notes: list[str] | None = None):
         super().__init__(f"{message}\n{SCAN_DIR_GUIDANCE}")
@@ -1694,6 +1965,14 @@ def main(argv: list[str]) -> int:
         )
         return 1
 
+    # Node·헬퍼·SDK 가용성(P6-KTD6). 실패해도 멈추지 않는다 — 헬퍼 없이도 스캔은
+    # 성립하고(P6-KTD7), 판단은 소비자가 가용성 필드를 보고 한다. 프로브 cwd 는
+    # 신뢰 게이트를 통과한 플러그인 루트다(대상 저장소 밖이 보장된 디렉터리).
+    plugin_root_path = Path(plugin["pluginRoot"])
+    node, node_attempts = resolve_node(target_repo, environ, state_dir, plugin_root_path)
+    helper = resolve_security_md_helper(plugin_root_path, target_repo, node, node_attempts)
+    sdk = resolve_sdk(plugin_root_path, target_repo)
+
     # emit() 의 errors="replace" 는 **진단·메시지 필드의 최후 안전망**이다. 경로
     # 축에는 적용돼선 안 된다 — 치환하면 ok:true 페이로드에 존재하지 않는 경로가
     # 실려 나가고(실측: 저장소 경로에 비-UTF8 바이트 1개 → repoRoot 가 U+FFFD 로
@@ -1708,6 +1987,10 @@ def main(argv: list[str]) -> int:
         ("scansRoot", scan["scansRoot"]),
         ("pythonPath", None if python is None else python["path"]),
         ("searchPathEnv", None if search is None else search["pathEnv"]),
+        ("nodePath", None if node is None else node["path"]),
+        ("securityMdLauncher", helper["launcher"]),
+        ("sdkDist", sdk["dist"]),
+        ("sdkCli", sdk["cli"]),
     ):
         if _value is None or env_value_safe(_value):
             continue
@@ -1784,6 +2067,14 @@ def main(argv: list[str]) -> int:
                     "version": search["version"],
                 }
             ),
+            # SECURITY.md 헬퍼·SDK·CLI 를 돌릴 Node. 신뢰 게이트를 통과한 realpath 다.
+            # 없으면 null 이고 사유는 securityMdHelper.reason 에 있다.
+            "node": node,
+            # 헬퍼 가용성. available 이 거짓이면 스킬은 정책 해결을 건너뛰고
+            # reason 을 scan.scope.limitations 와 최종 보고에 남긴다(P6-KTD7).
+            "securityMdHelper": helper,
+            # npm 패키지의 dist/(상류 JS 함수)와 CLI 스크립트. 소스 체크아웃이면 null.
+            "sdk": sdk,
             # 셸 명령에 보간되는 값은 **전부** 인용된 형태를 함께 낸다. 한 축만
             # 인용하면 계약이 반쪽이다 — `trustedChildEnv` 를 인용한 뒤에도 같은
             # 명령줄의 `PATH="<pathEnv>"`·`mkdir -p "<scanDir>/…"` 로 `$()` 가
@@ -1807,6 +2098,12 @@ def main(argv: list[str]) -> int:
                 "searchPathEnv": (
                     None if search is None else shlex.quote(search["pathEnv"])
                 ),
+                "nodePath": None if node is None else shlex.quote(node["path"]),
+                "securityMdLauncher": (
+                    None if helper["launcher"] is None else shlex.quote(helper["launcher"])
+                ),
+                "sdkDist": None if sdk["dist"] is None else shlex.quote(sdk["dist"]),
+                "sdkCli": None if sdk["cli"] is None else shlex.quote(sdk["cli"]),
             },
             "scanDir": scan["scanDir"],
             "scansRoot": scan["scansRoot"],
@@ -1827,6 +2124,7 @@ def main(argv: list[str]) -> int:
                     else ([] if search is None else search.get("notes", []))
                 ),
                 "searchError": None if search_error is None else str(search_error),
+                "nodeAttempts": node_attempts,
                 "scanDirNotes": scan.get("notes", []),
             },
         }

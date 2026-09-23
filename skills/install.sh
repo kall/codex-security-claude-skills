@@ -33,7 +33,8 @@ usage() {
   --link    (기본) 심볼릭 링크로 설치한다. 저장소 수정이 즉시 반영된다 (개발용).
   --copy    실제 복사본으로 설치한다 (배포용).
   --force   대상 경로가 이미 있을 때 덮어쓴다.
-  --check   설치 후 실행 환경을 프로브한다(번들 플러그인·Python·검색 명령·게이트 사본).
+  --check   설치 후 실행 환경을 프로브한다(번들 플러그인·Python·검색 명령·Node·
+            SECURITY.md 헬퍼·게이트 사본).
             종료코드 0=정상 / 2=부분 정상(ripgrep 미확보, 전체 스캔 불가) / 1=실패.
             플러그인이 없으면 설치 명령을 안내한다. 자동 설치는 하지 않는다.
   --check-only  설치하지 않고 프로브만 수행한다.
@@ -138,6 +139,8 @@ install_one() {
 #   2. 신뢰 가능한 codex-security 번들 플러그인 (없으면 설치 명령 안내 — 자동 설치는 하지 않음)
 #   3. 검색 명령(ripgrep) — 저장소 전체 스캔·deep-lite 의 전제. 미확보는 exit 2(부분 정상)
 #   4. 플러그인 사본의 워킹트리 게이트 처리(하드 실패 / 경고) — 같은 버전에서도 다르다
+#   5. 신뢰 Node 와 SECURITY.md 헬퍼 가용성(P6-KTD6). 불가여도 종료코드는 바꾸지 않는다 —
+#      전체 스캔은 정책 해결을 건너뛰고 계속하기 때문이다(P6-KTD7). 사유만 보고한다.
 # 자동 설치를 하지 않는 이유: 전역 npm 환경 변경은 사용자 결정이다.
 # ---------------------------------------------------------------------------
 run_check() {
@@ -220,6 +223,22 @@ else:
     print("             ripgrep 을 설치하세요(apt/brew/cargo install ripgrep).")
     if detail:
         print(f"             {detail.splitlines()[0]}")
+
+# Node 와 SECURITY.md 헬퍼(P6-KTD6). 불가여도 전체 스캔은 정책 없이 진행하므로
+# 종료코드를 바꾸지 않는다(P6-KTD7). 원인만 알린다.
+node = data.get("node") or {}
+helper = data.get("securityMdHelper") or {}
+if node:
+    print(f"  Node     : {node.get('path')} ({node.get('version')}, 출처: {node.get('source')})")
+else:
+    print("  Node     : 신뢰할 수 있는 node 없음")
+if helper.get("available"):
+    print("  정책 헬퍼: 사용 가능 — 전체 스캔이 SECURITY.md 정책을 해결합니다")
+else:
+    print("  정책 헬퍼: 사용 불가 — 전체 스캔은 SECURITY.md 정책 해결을 건너뛰고 계속합니다")
+    reason = helper.get("reason")
+    if reason:
+        print(f"             {reason}")
 
 # 같은 pluginVersion 에서도 워킹트리 게이트 처리가 다르다 — 심볼 존재로 판별한다.
 db = plugin_root / "scripts" / "workbench_db.py"

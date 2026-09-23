@@ -9,10 +9,13 @@
 #   3. `pathEnv` 는 그 자체로 완결된 PATH 다 — 앞에 덧붙이지 않고 교체해서 쓴다.
 #   4. 확보 실패 시 --require-search 는 exit 1 + stage=searchCommand 로 멈춘다.
 #   5. 같은 상태 디렉터리로 반복 호출해도 성공하고 shim 디렉터리가 누적되지 않는다.
+#   6. SECURITY.md 헬퍼를 돌릴 Node 도 같은 게이트로 해석하고, 헬퍼·Node 가 없어도
+#      부트스트랩은 성공한다(H14, P6-KTD6·P6-KTD7).
 #
 # 사용법: bash repro-u1-search-command.sh
 #   PYTHON=<경로>                          Python 인터프리터 지정
 #   CODEX_SECURITY_BOOTSTRAP=<경로>        검증 대상 bootstrap.py 지정
+#   CODEX_SECURITY_NODE=<경로>             H14 가 신뢰 Node 로 쓸 실행 파일 (기본: PATH 의 node)
 set -u -o pipefail
 
 WORK="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
@@ -1033,6 +1036,7 @@ root = pathlib.Path(sys.argv[1])
 quoted_axes = (
     "repo_root", "plugin_dir", "scan_dir", "python_command", "python",
     "search_path_env", "trusted_path_env", "trusted_child_env", "pathEnv", "root",
+    "node", "security_md_launcher",
 )
 # 여는 큰따옴표 **바로 뒤**만 보면 자리표시자가 더 긴 이중인용 문자열 중간에
 # 오는 형태(`"… <scan_dir>/x"`)를 놓친다. 자리표시자 앞의 큰따옴표 개수가
@@ -1069,6 +1073,280 @@ EOF
 expect_exit 0 "$?" "H13e SKILL.md 명령형이 인용본을 이중인용하지 않음"
 fi
 rm -f "$RUN/H13_PWNED"
+
+# ---------------------------------------------------------------------------
+# H14. SECURITY.md 헬퍼와 Node 신뢰 해석 (P6-KTD6·P6-KTD7).
+#
+# 0.1.29(매니페스트 0.1.95)에서 상류가 Python 리졸버를 지우고 Node 헬퍼
+# (`scripts/launch_codex_security_mcp --helper resolve-security-md`)로 바꿨다.
+# 런처는 CODEX_MCP_NODE_PATH → CODEX_BROWSER_USE_NODE_PATH → … → PATH 의 `node`
+# 순으로 Node 를 고른다. 대상 저장소가 PATH 에 `node_modules/.bin` 을 얹으면
+# 저장소가 커밋한 `node` 가 실행될 수 있다. 그래서 부트스트랩이 `rg` 와 같은
+# 게이트로 Node 를 해석하고, 스킬은 그 경로를 CODEX_MCP_NODE_PATH 로 준다.
+# 헬퍼나 Node 가 없어도 부트스트랩은 성공해야 한다(스캔은 정책 없이 계속한다).
+# ---------------------------------------------------------------------------
+step "H14. SECURITY.md 헬퍼·Node 신뢰 해석"
+NODE_BIN="${CODEX_SECURITY_NODE:-$(command -v node || true)}"
+if [ -z "$NODE_BIN" ] || [ ! -x "$NODE_BIN" ]; then
+  skip "H14: 신뢰할 수 있는 Node 를 찾지 못했습니다(CODEX_SECURITY_NODE=<경로> 로 지정) — 헬퍼 축은 검증되지 않았습니다"
+elif [ ! -f "$PLUGIN/mcp/helpers.mjs" ] || [ ! -f "$PLUGIN/scripts/launch_codex_security_mcp" ]; then
+  skip "H14: 이 플러그인 사본에 헬퍼가 없습니다($PLUGIN) — npm 0.1.29 이상 설치본으로 다시 실행하세요"
+else
+NODE_REAL="$(cd "$(dirname "$NODE_BIN")" && pwd -P)/$(basename "$NODE_BIN")"
+NODE_REAL="$(PY -c 'import os,sys;print(os.path.realpath(sys.argv[1]))' "$NODE_REAL")"
+NT="$RUN/node-target"
+NT_STATE="$RUN/node-state"
+mkdir -p "$NT" "$NT_STATE"
+# 신뢰 PATH 항목: node 심링크만 둔다(리터럴·realpath 둘 다 저장소 밖).
+NODE_DIR="$RUN/trusted-node-bin"
+mkdir -p "$NODE_DIR"
+ln -s "$NODE_REAL" "$NODE_DIR/node"
+# Node 가 없는 PATH 항목. trustedPathEnv 가 비지 않게 존재하는 디렉터리를 둔다.
+EMPTY_BIN="$RUN/empty-bin"
+mkdir -p "$EMPTY_BIN"
+
+# nboot <출력파일> <PATH> [추가 env KEY=VAL ...] -- [추가 인자] — 격리 환경의 부트스트랩.
+nboot() {
+  local out="$1" path_value="$2"; shift 2
+  local envs=()
+  while [ "$#" -gt 0 ] && [ "$1" != "--" ]; do envs+=("$1"); shift; done
+  [ "${1:-}" = "--" ] && shift
+  env -i HOME="$HOME" CODEX_SECURITY_PLUGIN_ROOT="${NBOOT_PLUGIN:-$PLUGIN}" PATH="$path_value" \
+    CODEX_SECURITY_STATE_DIR="$NT_STATE" PYTHONDONTWRITEBYTECODE=1 ${envs[@]+"${envs[@]}"} \
+    "$PYTHON_BIN" "$BOOTSTRAP" --target-repo "${NBOOT_TARGET:-$NT}" --no-scan-dir --skip-python "$@" \
+    >"$out" 2>"$out.err"
+}
+
+# H14a. 헬퍼 파일과 신뢰 Node 가 있으면 가용성이 참이고 경로가 실린다.
+nboot "$RUN/h14a.json" "$NODE_DIR:$EMPTY_BIN"
+expect_exit 0 "$?" "H14a 신뢰 Node 로 부트스트랩"
+PY - "$RUN/h14a.json" "$PLUGIN" "$NODE_REAL" <<'EOF'
+import json, os, pathlib, shlex, sys
+d = json.loads(pathlib.Path(sys.argv[1]).read_text())
+plugin, node_real = os.path.realpath(sys.argv[2]), sys.argv[3]
+h = d.get("securityMdHelper") or {}
+n = d.get("node") or {}
+q = d.get("shellQuoted") or {}
+problems = []
+if h.get("available") is not True:
+    problems.append(f"securityMdHelper.available 가 참이 아닙니다: {h}")
+want_launcher = os.path.join(plugin, "scripts", "launch_codex_security_mcp")
+if h.get("launcher") != want_launcher:
+    problems.append(f"launcher 경로가 다릅니다: {h.get('launcher')!r} != {want_launcher!r}")
+if h.get("node") != node_real or n.get("path") != node_real:
+    problems.append(f"Node 경로가 다릅니다: helper={h.get('node')!r} node={n.get('path')!r} 기대={node_real!r}")
+if n.get("source") != "trusted-path":
+    problems.append(f"node.source 가 trusted-path 가 아닙니다: {n.get('source')!r}")
+if h.get("reason") is not None:
+    problems.append(f"가용인데 reason 이 있습니다: {h.get('reason')!r}")
+for key, raw in (("nodePath", n.get("path")), ("securityMdLauncher", h.get("launcher"))):
+    if key not in q:
+        problems.append(f"shellQuoted.{key} 가 없습니다")
+    elif q[key] != shlex.quote(str(raw)):
+        problems.append(f"shellQuoted.{key} 가 shlex.quote 결과와 다릅니다: {q[key]!r}")
+for p in problems:
+    print(f"FAIL H14a: {p}")
+raise SystemExit(1 if problems else 0)
+EOF
+expect_exit 0 "$?" "H14a 가용성 필드·Node·런처 경로·인용본"
+
+# H14a-2. SDK dist·CLI 필드. npm 설치본이면 둘 다 실린다.
+PKG_ROOT="$(cd "$PLUGIN/.." && pwd -P)"
+if [ -f "$PKG_ROOT/dist/finding-workflow.js" ] && [ -f "$PKG_ROOT/bin/codex-security.mjs" ]; then
+  PY - "$RUN/h14a.json" "$PKG_ROOT" <<'EOF'
+import json, os, pathlib, shlex, sys
+d = json.loads(pathlib.Path(sys.argv[1]).read_text())
+root = sys.argv[2]
+s = d.get("sdk") or {}
+q = d.get("shellQuoted") or {}
+problems = []
+if s.get("dist") != os.path.join(root, "dist"):
+    problems.append(f"sdk.dist 가 다릅니다: {s.get('dist')!r}")
+if s.get("cli") != os.path.join(root, "bin", "codex-security.mjs"):
+    problems.append(f"sdk.cli 가 다릅니다: {s.get('cli')!r}")
+if s.get("reason") is not None:
+    problems.append(f"가용인데 sdk.reason 이 있습니다: {s.get('reason')!r}")
+for key, raw in (("sdkDist", s.get("dist")), ("sdkCli", s.get("cli"))):
+    if q.get(key) != (None if raw is None else shlex.quote(raw)):
+        problems.append(f"shellQuoted.{key} 가 인용본이 아닙니다: {q.get(key)!r}")
+for p in problems:
+    print(f"FAIL H14a-2: {p}")
+raise SystemExit(1 if problems else 0)
+EOF
+  expect_exit 0 "$?" "H14a-2 sdk.dist·sdk.cli 가 npm 패키지 경로로 실림"
+else
+  skip "H14a-2: 이 플러그인은 npm 패키지 레이아웃이 아닙니다($PKG_ROOT) — sdk 축은 검증되지 않았습니다"
+fi
+
+# H14b. 헬퍼 파일이 없는 플러그인 사본(상류 소스 체크아웃 형상)이면 불가 + "헬퍼 파일 없음".
+#       sdk 도 null 이어야 한다(형제 dist/ 가 없다).
+NOHELPER="$RUN/src-checkout/plugins/codex-security"
+mkdir -p "$NOHELPER/.codex-plugin" "$NOHELPER/scripts"
+cp "$PLUGIN/.codex-plugin/plugin.json" "$NOHELPER/.codex-plugin/plugin.json"
+cp "$PLUGIN/scripts/launch_codex_security_mcp" "$NOHELPER/scripts/"
+NBOOT_PLUGIN="$NOHELPER" nboot "$RUN/h14b.json" "$NODE_DIR:$EMPTY_BIN"
+expect_exit 0 "$?" "H14b 헬퍼 없는 사본으로도 부트스트랩 성공"
+H14B="$(jget "$RUN/h14b.json" '(d.get("securityMdHelper") or {}).get("available") is False and str((d.get("securityMdHelper") or {}).get("reason") or "").startswith("헬퍼 파일 없음") and (d.get("sdk") or {}).get("dist") is None and bool((d.get("sdk") or {}).get("reason"))')"
+if [ "$H14B" = "True" ]; then
+  ok "H14b: 불가·사유 '헬퍼 파일 없음'·sdk.dist=null"
+else
+  bad "H14b: $(jget "$RUN/h14b.json" '[d.get("securityMdHelper"), d.get("sdk")]')"
+fi
+
+# H14c. PATH 의 `node` 가 대상 저장소 안이면 거부하고 다음 후보를 쓴다.
+mkdir -p "$NT/node_modules/.bin"
+NODE_EVIL_MARK="$RUN/node-evil-ran"
+cat >"$NT/node_modules/.bin/node" <<EOF
+#!/bin/sh
+touch "$NODE_EVIL_MARK"
+echo v99.0.0
+EOF
+chmod 755 "$NT/node_modules/.bin/node"
+nboot "$RUN/h14c.json" "$NT/node_modules/.bin:$NODE_DIR:$EMPTY_BIN"
+expect_exit 0 "$?" "H14c 저장소 node 가 PATH 앞에 있어도 부트스트랩"
+if [ -e "$NODE_EVIL_MARK" ]; then
+  bad "H14c: 대상 저장소의 node 가 실행됐습니다 (신뢰 게이트 우회)"
+else
+  ok "H14c: 대상 저장소의 node 가 실행되지 않음"
+fi
+H14C_PATH="$(jget "$RUN/h14c.json" '(d.get("node") or {}).get("path")')"
+H14C_REJ="$(jget "$RUN/h14c.json" 'any(a.get("result") == "rejected" and "node_modules/.bin/node" in str(a.get("path")) for a in (d.get("diagnostics") or {}).get("nodeAttempts") or [])')"
+if [ "$H14C_PATH" = "$NODE_REAL" ] && [ "$H14C_REJ" = "True" ]; then
+  ok "H14c: 저장소 node 는 거부 기록, 다음 후보($NODE_REAL) 채택"
+else
+  bad "H14c: node.path=$H14C_PATH 거부기록=$H14C_REJ (기대: $NODE_REAL / True)"
+fi
+
+# H14d. 환경변수가 가리키는 Node 의 realpath 가 저장소 안이면 거부한다.
+#       링크는 저장소 **밖**, 대상은 저장소 **안** — realpath 축이다.
+ln -s "$NT/node_modules/.bin/node" "$RUN/outside-node-link"
+nboot "$RUN/h14d.json" "$NODE_DIR:$EMPTY_BIN" CODEX_MCP_NODE_PATH="$RUN/outside-node-link"
+expect_exit 0 "$?" "H14d 저장소를 가리키는 CODEX_MCP_NODE_PATH 로 부트스트랩"
+H14D="$(jget "$RUN/h14d.json" '(d.get("node") or {}).get("source") == "trusted-path" and any(a.get("source") == "CODEX_MCP_NODE_PATH" and a.get("result") == "rejected" for a in (d.get("diagnostics") or {}).get("nodeAttempts") or [])')"
+if [ "$H14D" = "True" ] && [ ! -e "$NODE_EVIL_MARK" ]; then
+  ok "H14d: CODEX_MCP_NODE_PATH(realpath 저장소 내부) 거부, PATH 후보 채택, 미실행"
+else
+  bad "H14d: $(jget "$RUN/h14d.json" '[d.get("node"), (d.get("diagnostics") or {}).get("nodeAttempts")]')"
+fi
+# 그 후보뿐이면 가용성은 거짓이고 사유는 "신뢰 게이트 거부"다.
+nboot "$RUN/h14d2.json" "$EMPTY_BIN" CODEX_MCP_NODE_PATH="$RUN/outside-node-link"
+expect_exit 0 "$?" "H14d-2 거부된 후보뿐이어도 부트스트랩 성공"
+H14D2="$(jget "$RUN/h14d2.json" 'd.get("node") is None and (d.get("securityMdHelper") or {}).get("available") is False and str((d.get("securityMdHelper") or {}).get("reason") or "").startswith("신뢰 게이트 거부")')"
+if [ "$H14D2" = "True" ]; then
+  ok "H14d-2: 불가·사유 '신뢰 게이트 거부'"
+else
+  bad "H14d-2: $(jget "$RUN/h14d2.json" 'd.get("securityMdHelper")')"
+fi
+
+# H14e. 신뢰 Node 가 하나도 없으면 가용성 거짓·"Node 없음", 부트스트랩은 ok:true.
+nboot "$RUN/h14e.json" "$EMPTY_BIN"
+expect_exit 0 "$?" "H14e Node 없는 환경에서 부트스트랩 성공"
+H14E="$(jget "$RUN/h14e.json" 'd.get("ok") is True and d.get("node") is None and (d.get("securityMdHelper") or {}).get("available") is False and str((d.get("securityMdHelper") or {}).get("reason") or "").startswith("Node 없음") and (d.get("shellQuoted") or {}).get("nodePath", "<키 없음>") is None')"
+if [ "$H14E" = "True" ]; then
+  ok "H14e: ok:true·불가·사유 'Node 없음'·shellQuoted.nodePath=null"
+else
+  bad "H14e: $(jget "$RUN/h14e.json" '[d.get("ok"), d.get("node"), d.get("securityMdHelper")]')"
+fi
+
+# H14f. 문서화한 호출 형태(env -i <trusted_child_env> CODEX_MCP_NODE_PATH=<node> <launcher>)
+#       는 호출 환경의 NODE_OPTIONS 를 헬퍼에 넘기지 않는다. 없는 파일을 --require 로
+#       주면 Node 가 기동 단계에서 죽으므로, 성공 = 전달되지 않음이다.
+printf '# Security\n\nReport issues privately.\n' >"$NT/SECURITY.md"
+NODE_OPTS_EVIL="--require $RUN/nonexistent-preload.js"
+NODE_OPTIONS="$NODE_OPTS_EVIL" nboot "$RUN/h14f.json" "$NODE_DIR:$EMPTY_BIN" NODE_OPTIONS="$NODE_OPTS_EVIL"
+expect_exit 0 "$?" "H14f NODE_OPTIONS 가 있는 환경에서 부트스트랩"
+H14F_TCE="$(jget "$RUN/h14f.json" 'd.get("trustedChildEnvShell") or ""')"
+H14F_NODE="$(jget "$RUN/h14f.json" '(d.get("shellQuoted") or {}).get("nodePath") or ""')"
+H14F_LAUNCHER="$(jget "$RUN/h14f.json" '(d.get("shellQuoted") or {}).get("securityMdLauncher") or ""')"
+H14F_REPO="$(jget "$RUN/h14f.json" '(d.get("shellQuoted") or {}).get("repoRoot") or ""')"
+if [ -z "$H14F_NODE" ] || [ -z "$H14F_LAUNCHER" ] || [ -z "$H14F_TCE" ]; then
+  bad "H14f: 인용본(nodePath/securityMdLauncher/trustedChildEnvShell)이 없어 문서 형태를 재현할 수 없습니다"
+else
+  NODE_OPTIONS="$NODE_OPTS_EVIL" bash -c "env -i $H14F_TCE CODEX_MCP_NODE_PATH=$H14F_NODE $H14F_LAUNCHER --helper resolve-security-md --repo $H14F_REPO --scope $H14F_REPO --out -" \
+    >"$RUN/h14f.out" 2>"$RUN/h14f.helper.err"
+  H14F_RC=$?
+  if [ "$H14F_RC" = "0" ] && grep -q 'Report issues privately' "$RUN/h14f.out"; then
+    ok "H14f: 문서 형태 호출이 exit 0·정책 본문 출력 (NODE_OPTIONS 미전달)"
+  else
+    bad "H14f: 문서 형태 호출 exit $H14F_RC — $(head -c 300 "$RUN/h14f.helper.err")"
+  fi
+  # 대조군: env -i 없이 부르면 NODE_OPTIONS 가 전달되어 실패한다. 실패할 수 없는
+  # 대조군은 H14f 의 비공허성을 지키지 못한다.
+  NODE_OPTIONS="$NODE_OPTS_EVIL" bash -c "CODEX_MCP_NODE_PATH=$H14F_NODE $H14F_LAUNCHER --helper resolve-security-md --repo $H14F_REPO --scope $H14F_REPO --out -" \
+    >/dev/null 2>&1
+  H14F_CTRL=$?
+  if [ "$H14F_CTRL" != "0" ]; then
+    ok "H14f 대조군: env -i 없이 부르면 NODE_OPTIONS 가 발동함 (exit $H14F_CTRL)"
+  else
+    bad "H14f 대조군: env -i 없이도 성공했습니다 — H14f 의 근거를 재확인하세요"
+  fi
+fi
+
+# H14g. 1 MiB 를 넘는 SECURITY.md 는 헬퍼가 exit 2 로 끝난다. 스킬은 이 종료코드로
+#       건너뛰기 분기를 탄다(중단하면 저장소가 자기 스캔을 막을 수 있다).
+BIG="$RUN/big-target"
+mkdir -p "$BIG"
+PY -c 'import sys; open(sys.argv[1], "w").write("# Security\n" + "a" * (1024 * 1024 + 16))' "$BIG/SECURITY.md"
+NBOOT_TARGET="$BIG" nboot "$RUN/h14g.json" "$NODE_DIR:$EMPTY_BIN"
+expect_exit 0 "$?" "H14g 거대 SECURITY.md 저장소로 부트스트랩"
+H14G_TCE="$(jget "$RUN/h14g.json" 'd.get("trustedChildEnvShell") or ""')"
+H14G_NODE="$(jget "$RUN/h14g.json" '(d.get("shellQuoted") or {}).get("nodePath") or ""')"
+H14G_LAUNCHER="$(jget "$RUN/h14g.json" '(d.get("shellQuoted") or {}).get("securityMdLauncher") or ""')"
+H14G_REPO="$(jget "$RUN/h14g.json" '(d.get("shellQuoted") or {}).get("repoRoot") or ""')"
+if [ -z "$H14G_NODE" ] || [ -z "$H14G_LAUNCHER" ]; then
+  bad "H14g: 인용본이 없어 헬퍼를 실행할 수 없습니다"
+else
+  bash -c "env -i $H14G_TCE CODEX_MCP_NODE_PATH=$H14G_NODE $H14G_LAUNCHER --helper resolve-security-md --repo $H14G_REPO --scope $H14G_REPO --out -" \
+    >"$RUN/h14g.out" 2>"$RUN/h14g.helper.err"
+  H14G_RC=$?
+  if [ "$H14G_RC" = "2" ] && grep -q '1 MiB' "$RUN/h14g.helper.err"; then
+    ok "H14g: 1 MiB 초과 SECURITY.md → 헬퍼 exit 2 + 크기 한도 오류 (스킬이 건너뛰기 분기로 감지 가능)"
+  else
+    bad "H14g: 헬퍼 exit $H14G_RC (기대 2) — $(head -c 300 "$RUN/h14g.helper.err")"
+  fi
+fi
+
+# H14h. 헬퍼 경로에 셸 메타문자가 들어도 인용본이 명령 치환을 막는다.
+#       플러그인 루트는 운영자가 정하지만(CODEX_SECURITY_PLUGIN_ROOT), 경로 축은
+#       전부 인용 계약 대상이다(H13 과 같은 근거).
+META_PLUGIN="$RUN/pl\$(touch $RUN/H14_PWNED)x/_bundled_plugin"
+mkdir -p "$META_PLUGIN/.codex-plugin" "$META_PLUGIN/scripts" "$META_PLUGIN/mcp"
+cp "$PLUGIN/.codex-plugin/plugin.json" "$META_PLUGIN/.codex-plugin/plugin.json"
+cp "$PLUGIN/scripts/launch_codex_security_mcp" "$META_PLUGIN/scripts/"
+cp "$PLUGIN"/mcp/helpers.mjs* "$META_PLUGIN/mcp/"
+NBOOT_PLUGIN="$META_PLUGIN" nboot "$RUN/h14h.json" "$NODE_DIR:$EMPTY_BIN"
+expect_exit 0 "$?" "H14h 메타문자 담긴 플러그인 경로로 부트스트랩"
+H14H_RAW="$(jget "$RUN/h14h.json" '(d.get("securityMdHelper") or {}).get("launcher") or ""')"
+H14H_TCE="$(jget "$RUN/h14h.json" 'd.get("trustedChildEnvShell") or ""')"
+H14H_NODE="$(jget "$RUN/h14h.json" '(d.get("shellQuoted") or {}).get("nodePath") or ""')"
+H14H_LAUNCHER="$(jget "$RUN/h14h.json" '(d.get("shellQuoted") or {}).get("securityMdLauncher") or ""')"
+H14H_REPO="$(jget "$RUN/h14h.json" '(d.get("shellQuoted") or {}).get("repoRoot") or ""')"
+case "$H14H_RAW" in
+  *'$(touch '*)
+    rm -f "$RUN/H14_PWNED"
+    bash -c "env -i $H14H_TCE CODEX_MCP_NODE_PATH=$H14H_NODE $H14H_LAUNCHER --helper resolve-security-md --repo $H14H_REPO --scope $H14H_REPO --out -" \
+      >"$RUN/h14h.out" 2>"$RUN/h14h.helper.err"
+    H14H_RC=$?
+    if [ -e "$RUN/H14_PWNED" ]; then
+      bad "H14h: 인용본 런처 경로를 보간했는데 명령 치환이 실행됐습니다"
+    elif [ "$H14H_RC" = "0" ] && grep -q 'Report issues privately' "$RUN/h14h.out"; then
+      ok "H14h: 인용본 보간에서 명령 치환 없음·헬퍼 정상 실행"
+    else
+      bad "H14h: 명령 치환은 없지만 헬퍼가 exit $H14H_RC — $(head -c 300 "$RUN/h14h.helper.err")"
+    fi
+    # 대조군: 원본을 이중인용으로 보간하면 실제로 실행된다.
+    rm -f "$RUN/H14_PWNED"
+    bash -c "ls \"$H14H_RAW\"" >/dev/null 2>&1
+    if [ -e "$RUN/H14_PWNED" ]; then
+      ok "H14h 대조군: 이중인용 원본은 명령 치환이 일어남"
+    else
+      bad "H14h 대조군: 이중인용 원본이 위험하지 않게 됐습니다 — H14h 의 근거를 재확인하세요"
+    fi
+    rm -f "$RUN/H14_PWNED" ;;
+  *)
+    bad "H14h: 주입 페이로드가 launcher 경로에 실리지 않았습니다 — 이 블록이 공허합니다 ($H14H_RAW)" ;;
+esac
+fi
 
 # ---------------------------------------------------------------------------
 # H10. 정화 PATH 가 비면 멈춘다 — PATH="" 로 자식을 띄우면 git 조차 못 찾는다.
