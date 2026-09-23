@@ -30,7 +30,8 @@
 
 import { createHash } from "node:crypto";
 import { readFileSync, realpathSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { lstat } from "node:fs/promises";
+import { isAbsolute, join, relative, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 // 이 관문이 여는 상류 dist 모듈. 늘릴 때는 여기에 추가한다.
@@ -56,6 +57,43 @@ export class GatewayError extends Error {
     this.name = "GatewayError";
     this.details = details;
   }
+}
+
+// ---------------------------------------------------------------------------
+// 공용 상수·유틸 — policy_draft.mjs·classify_severity.mjs 가 함께 쓴다
+// ---------------------------------------------------------------------------
+// 우리 계약: 조립된 서브에이전트 프롬프트 상한. scan-match·policy·severity 가 같은 값을 쓴다 — 부모가 한 번의
+// Agent 호출로 프롬프트 전문을 내보내야 하므로 scan-match 실행 한도(P6-KTD5)와 같은 근거를 쓴다.
+export const MAX_PROMPT_CHARACTERS = 80_000;
+
+/** shlex.quote 와 같은 규칙. 부모가 셸 명령에 경로를 보간할 때 이 값을 **맨몸으로** 쓴다. */
+export function shellQuote(value) {
+  if (/^[A-Za-z0-9@%+=:,./_-]+$/.test(value)) return value;
+  return `'${value.replaceAll("'", "'\"'\"'")}'`;
+}
+
+export function isInside(root, candidate) {
+  const rel = relative(root, candidate);
+  return rel === "" || (!rel.startsWith(`..${sep}`) && rel !== ".." && !isAbsolute(rel));
+}
+
+export async function requirePrivateDirectory(path, label) {
+  const metadata = await lstat(path).catch(() => null);
+  if (metadata === null || !metadata.isDirectory() || metadata.isSymbolicLink()) {
+    throw new GatewayError(`${label} 가 실제 디렉터리가 아니다: ${path}`);
+  }
+  if ((metadata.mode & 0o077) !== 0) {
+    throw new GatewayError(`${label} 권한이 0700 이 아니다: ${path}`);
+  }
+  if (process.geteuid && metadata.uid !== process.geteuid()) {
+    throw new GatewayError(`${label} 가 현재 사용자 소유가 아니다: ${path}`);
+  }
+}
+
+export function stripSingleFence(text) {
+  // 서브에이전트가 JSON 을 코드 펜스 하나로 감싼 경우만 벗긴다(그 밖의 산문이 있으면 그대로 두어 상류 파서가 거부한다).
+  const match = /^\s*```(?:json)?[ \t]*\n([\s\S]*?)\n```\s*$/u.exec(text);
+  return match ? match[1] : text;
 }
 
 /** P6-KTD6 심층 방어: 환경 교체 없이 실행됐으면 거부한다. */

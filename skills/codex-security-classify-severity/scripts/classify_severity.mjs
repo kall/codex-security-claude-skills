@@ -46,17 +46,22 @@ import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { constants as fsConstants } from "node:fs";
 import { chmod, lstat, mkdir, open, readFile, readdir, realpath, rename, rm } from "node:fs/promises";
-import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
   GatewayError,
+  MAX_PROMPT_CHARACTERS,
+  isInside,
   loadUpstream,
   readSeverityClassification,
+  requirePrivateDirectory,
   requireString,
   resolveSdkDist,
   runCli,
   severityEnvironment,
+  shellQuote,
+  stripSingleFence,
 } from "../../codex-security-scan/scripts/workflow_digest.mjs";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
@@ -65,9 +70,7 @@ const SAVED_ASSESSMENTS_SCRIPT = join(SCRIPT_DIR, "saved_assessments.py");
 // ---------------------------------------------------------------------------
 // 상수
 // ---------------------------------------------------------------------------
-// 우리 계약: 조립된 서브에이전트 프롬프트 상한. scan-match·policy 와 같은 값 — 부모가 한 번의 Agent 호출로
-// 프롬프트 전문을 내보내야 하므로 scan-match 실행 한도(P6-KTD5)와 같은 근거를 쓴다.
-const MAX_PROMPT_CHARACTERS = 80_000;
+// 조립된 서브에이전트 프롬프트 상한 MAX_PROMPT_CHARACTERS 는 workflow_digest.mjs 공용 값(P6-KTD5 근거)을 쓴다.
 // 우리 계약(P6-KTD13): 검증 실패는 1회 재판정 후 중단한다 → finding 당 답 최대 2개.
 const MAX_ATTEMPTS = 2;
 // 서브에이전트 반환 파일 상한(비정상 반환 방어).
@@ -218,26 +221,9 @@ function parseUpstreamPrompt(input) {
   return { instructions, dataLine, data, findingId: data.finding.findingId };
 }
 
-function stripSingleFence(text) {
-  // 서브에이전트가 JSON 을 코드 펜스 하나로 감싼 경우만 벗긴다(그 밖의 산문이 있으면 그대로 두어 상류가 거부).
-  const match = /^\s*```(?:json)?[ \t]*\n([\s\S]*?)\n```\s*$/u.exec(text);
-  return match ? match[1] : text;
-}
-
 // ---------------------------------------------------------------------------
 // 공용 유틸
 // ---------------------------------------------------------------------------
-/** shlex.quote 와 같은 규칙. 부모가 셸 명령에 경로를 보간할 때 이 값을 **맨몸으로** 쓴다. */
-function shellQuote(value) {
-  if (/^[A-Za-z0-9@%+=:,./_-]+$/.test(value)) return value;
-  return `'${value.replaceAll("'", "'\"'\"'")}'`;
-}
-
-function isInside(root, candidate) {
-  const rel = relative(root, candidate);
-  return rel === "" || (!rel.startsWith(`..${sep}`) && rel !== ".." && !isAbsolute(rel));
-}
-
 async function writePrivate(path, content) {
   const file = await open(path, "wx", 0o600);
   try {
@@ -259,17 +245,6 @@ async function readNoFollow(path, limit) {
     return await handle.readFile({ encoding: "utf8" });
   } finally {
     await handle.close();
-  }
-}
-
-async function requirePrivateDirectory(path, label) {
-  const metadata = await lstat(path).catch(() => null);
-  if (metadata === null || !metadata.isDirectory() || metadata.isSymbolicLink()) {
-    throw new GatewayError(`${label} 가 실제 디렉터리가 아니다: ${path}`);
-  }
-  if ((metadata.mode & 0o077) !== 0) throw new GatewayError(`${label} 권한이 0700 이 아니다: ${path}`);
-  if (process.geteuid && metadata.uid !== process.geteuid()) {
-    throw new GatewayError(`${label} 가 현재 사용자 소유가 아니다: ${path}`);
   }
 }
 
@@ -648,6 +623,37 @@ async function handlePrompt(args) {
 }
 
 // ---------------------------------------------------------------------------
+// apply / inherit 공용 — 저장 후 자기 확인과 결과 투영
+// ---------------------------------------------------------------------------
+/** 자기 확인: publish 가 쓰는 상류 읽기 경로로 다시 읽는다(digest 재확인 포함). */
+async function verifyPublishable(sdkDist, readOptions, expectedCount) {
+  let publishReadable = false;
+  let readError = null;
+  try {
+    const read = await readSeverityClassification(sdkDist, readOptions);
+    publishReadable = read.classification !== null && read.classification.assessments.length === expectedCount;
+    if (!publishReadable) readError = "읽기 경로가 선택 finding 수만큼 평가를 돌려주지 않았다.";
+  } catch (error) {
+    readError = upstreamText(error);
+  }
+  return { publishReadable, readError };
+}
+
+function projectAssessment(assessment, extra = {}) {
+  return {
+    findingId: assessment.findingId,
+    decision: assessment.decision,
+    level: assessment.level,
+    rubricLabel: assessment.rubricLabel,
+    confidence: assessment.confidence,
+    reviewTrigger: assessment.reviewTrigger,
+    rationale: assessment.rationale,
+    source: assessment.source,
+    ...extra,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // apply
 // ---------------------------------------------------------------------------
 async function handleApply(args) {
@@ -810,22 +816,11 @@ async function handleApply(args) {
     throw error;
   }
 
-  // 자기 확인: publish 가 쓰는 상류 읽기 경로로 다시 읽는다(digest 재확인 포함).
-  let publishReadable = false;
-  let readError = null;
-  try {
-    const read = await readSeverityClassification(session.sdkDist, {
-      scanDir: session.scanDir,
-      stateDir: session.stateDir,
-      python: session.python,
-      expectedScanId: session.scanId,
-    });
-    publishReadable =
-      read.classification !== null && read.classification.assessments.length === session.selection.length;
-    if (!publishReadable) readError = "읽기 경로가 선택 finding 수만큼 평가를 돌려주지 않았다.";
-  } catch (error) {
-    readError = upstreamText(error);
-  }
+  const { publishReadable, readError } = await verifyPublishable(
+    session.sdkDist,
+    { scanDir: session.scanDir, stateDir: session.stateDir, python: session.python, expectedScanId: session.scanId },
+    session.selection.length,
+  );
   const pending = new Set(session.items.map((item) => item.findingId));
   await rm(workDir, { recursive: true, force: true });
   return {
@@ -836,17 +831,9 @@ async function handleApply(args) {
     assessedAt: result.assessedAt,
     rubricSha256: result.rubricSha256,
     knowledgeBaseSha256: result.knowledgeBaseSha256,
-    assessments: result.assessments.map((assessment) => ({
-      findingId: assessment.findingId,
-      decision: assessment.decision,
-      level: assessment.level,
-      rubricLabel: assessment.rubricLabel,
-      confidence: assessment.confidence,
-      reviewTrigger: assessment.reviewTrigger,
-      rationale: assessment.rationale,
-      source: assessment.source,
-      reused: !pending.has(assessment.findingId),
-    })),
+    assessments: result.assessments.map((assessment) =>
+      projectAssessment(assessment, { reused: !pending.has(assessment.findingId) }),
+    ),
     subagentJudgements: session.items.length,
     publishReadable,
     readError,
@@ -909,21 +896,11 @@ async function handleInherit(args) {
   } catch (error) {
     throw new GatewayError(`상류 CLI 출력이 JSON 이 아니다: ${error.message}`, { stdout: stdout.slice(0, 400) });
   }
-  let publishReadable = false;
-  let readError = null;
-  try {
-    const read = await readSeverityClassification(sdkDist, {
-      scanDir: scan.scanDir,
-      stateDir,
-      python,
-      expectedScanId: scan.scanId,
-    });
-    publishReadable =
-      read.classification !== null && read.classification.assessments.length === result.assessments.length;
-    if (!publishReadable) readError = "읽기 경로가 선택 finding 수만큼 평가를 돌려주지 않았다.";
-  } catch (error) {
-    readError = upstreamText(error);
-  }
+  const { publishReadable, readError } = await verifyPublishable(
+    sdkDist,
+    { scanDir: scan.scanDir, stateDir, python, expectedScanId: scan.scanId },
+    result.assessments.length,
+  );
   return {
     status: "saved",
     delegatedTo: "codex-security classify-severity (upstream CLI, no model call)",
@@ -933,16 +910,7 @@ async function handleInherit(args) {
     assessedAt: result.assessedAt,
     rubricSha256: result.rubricSha256,
     knowledgeBaseSha256: result.knowledgeBaseSha256,
-    assessments: result.assessments.map((assessment) => ({
-      findingId: assessment.findingId,
-      decision: assessment.decision,
-      level: assessment.level,
-      rubricLabel: assessment.rubricLabel,
-      confidence: assessment.confidence,
-      reviewTrigger: assessment.reviewTrigger,
-      rationale: assessment.rationale,
-      source: assessment.source,
-    })),
+    assessments: result.assessments.map((assessment) => projectAssessment(assessment)),
     publishReadable,
     readError,
   };

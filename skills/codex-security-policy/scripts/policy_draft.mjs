@@ -39,16 +39,21 @@ import {
   stat,
 } from "node:fs/promises";
 import { userInfo } from "node:os";
-import { basename, dirname, isAbsolute, join, posix, relative, resolve, sep } from "node:path";
+import { basename, dirname, join, posix, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 
 import {
   GatewayError,
+  MAX_PROMPT_CHARACTERS,
+  isInside,
   loadUpstream,
   policySnapshot,
+  requirePrivateDirectory,
   requireString,
   resolveSdkDist,
   runCli,
+  shellQuote,
+  stripSingleFence,
 } from "../../codex-security-scan/scripts/workflow_digest.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -73,8 +78,7 @@ const REQUIRED_PLUGIN_FILES = [
   "skills/define-security-policy/SKILL.md",
   "mcp/helpers.mjs",
 ];
-// 부모가 한 번의 Agent 호출로 프롬프트 전문을 내보내야 하므로 scan-match 실행 한도(P6-KTD5)와 같은 값을 쓴다.
-const MAX_PROMPT_CHARACTERS = 80_000;
+// 프롬프트 상한 MAX_PROMPT_CHARACTERS 는 workflow_digest.mjs 공용 값(scan-match 실행 한도 P6-KTD5 근거)을 쓴다.
 // 우리 계약: 저장 전 검사·형식 오류로 거부된 응답의 단계당 최대 시도 수.
 const MAX_STAGE_ATTEMPTS = 3;
 // 매니페스트 model 필드. OpenAI 모델이 아니라 Claude Code 서브에이전트가 만들었음을 그대로 적는다.
@@ -247,17 +251,6 @@ function jsonForPrompt(value) {
     .replaceAll(" ", "\\u2029");
 }
 
-/** shlex.quote 와 같은 규칙. 부모가 셸 명령에 경로를 보간할 때 이 값을 **맨몸으로** 쓴다. */
-function shellQuote(value) {
-  if (/^[A-Za-z0-9@%+=:,./_-]+$/.test(value)) return value;
-  return `'${value.replaceAll("'", "'\"'\"'")}'`;
-}
-
-function isInside(root, candidate) {
-  const rel = relative(root, candidate);
-  return rel === "" || (!rel.startsWith(`..${sep}`) && rel !== ".." && !isAbsolute(rel));
-}
-
 async function nearestCanonical(path) {
   // 없는 경로는 가장 가까운 기존 조상의 realpath 에 나머지를 붙인다.
   let cursor = resolve(path);
@@ -311,19 +304,6 @@ async function readJsonFile(path, label) {
     return JSON.parse(text);
   } catch (error) {
     throw new GatewayError(`${label} 가 JSON 이 아니다: ${path} (${error.message})`);
-  }
-}
-
-async function requirePrivateDirectory(path, label) {
-  const metadata = await lstat(path).catch(() => null);
-  if (metadata === null || !metadata.isDirectory() || metadata.isSymbolicLink()) {
-    throw new GatewayError(`${label} 가 실제 디렉터리가 아니다: ${path}`);
-  }
-  if ((metadata.mode & 0o077) !== 0) {
-    throw new GatewayError(`${label} 권한이 0700 이 아니다: ${path}`);
-  }
-  if (process.geteuid && metadata.uid !== process.geteuid()) {
-    throw new GatewayError(`${label} 가 현재 사용자 소유가 아니다: ${path}`);
   }
 }
 
@@ -875,12 +855,6 @@ async function handlePrompt(args) {
     throw new GatewayError(`${stage} 단계가 ${MAX_STAGE_ATTEMPTS}회 거부됐다 — 재시도 한도를 넘어 중단한다.`);
   }
   return { raw: await buildPrompt(session, workDir, stage) };
-}
-
-function stripSingleFence(text) {
-  // 서브에이전트가 JSON 을 코드 펜스 하나로 감싼 경우만 벗긴다(그 밖의 산문이 있으면 그대로 두어 실패시킨다).
-  const match = /^\s*```(?:json)?[ \t]*\n([\s\S]*?)\n```\s*$/u.exec(text);
-  return match ? match[1] : text;
 }
 
 async function recordRejection(workDir, stage, status, kinds) {

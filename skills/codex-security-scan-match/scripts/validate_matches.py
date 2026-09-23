@@ -827,6 +827,8 @@ def command_catalogue(args: argparse.Namespace) -> int:
 
 def _concern_report(concerns: list[dict], state: dict) -> list[dict]:
     """우려를 신뢰 식별자로 보강한다. issueId 는 입력에 있는 findingId 여야 한다."""
+    if not concerns:
+        return []
     rows = state["before"] + state["after"]
     before_ids = {row["occurrenceId"] for row in state["before"]}
     groups = group_findings(rows, state["known"])
