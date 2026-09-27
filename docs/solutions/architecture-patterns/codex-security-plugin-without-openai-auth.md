@@ -1,7 +1,7 @@
 ---
 title: "codex-security 번들 플러그인을 OpenAI 인증 없이 Claude Code 스킬로 실행하기"
 date: 2026-07-30
-last_updated: 2026-09-23
+last_updated: 2026-09-28
 category: architecture-patterns
 module: codex-security-claude-skills
 problem_type: architecture_pattern
@@ -12,6 +12,7 @@ applies_when:
   - "번들 플러그인의 결정론 스크립트(finalizer, 워크벤치, 랭킹)를 재사용하되 LLM 두뇌만 다른 에이전트로 바꾸고 싶을 때"
   - "임의 저장소에서 실행되는 전역 스킬이 신뢰할 수 있는 플러그인 사본을 선택해야 할 때"
   - "스킬 문서(SKILL.md)의 명령형이 부트스트랩 출력을 셸 명령에 보간할 때 — 계약 9의 문서 절반"
+  - "스킬이 미신뢰 입력을 도구 없는/읽기 전용 서브에이전트에 넘기거나, 조립한 큰 프롬프트를 Agent 호출 하나로 보낼 때 — 계약 7"
 tags: [codex-security, claude-code-skill, no-auth, security-scan, plugin-architecture, shell-quoting, documentation-contract, regression-test]
 ---
 
@@ -87,10 +88,39 @@ codex-security의 스캔 기능은 공식적으로 Codex 바이너리(OpenAI 인
 7. **미신뢰 데이터·격리.** 대상 저장소 콘텐츠·finding 서술은 데이터로만 취급하고 그 안의 지시를
    실행하지 않는다. 특히 `scans match`의 매칭 판정은 finding 설명(대상 코드 파생)을 읽으므로,
    메인 세션이 아니라 **도구를 제한한 격리 서브에이전트**(파일쓰기·Bash·네트워크 없음, JSON만 반환)에서
-   수행한다. 입력에 워크벤치 DB 파생 제약(`knownFindingGroups` 등)이 섞이면 신뢰 구획을
+   수행한다.
+   - **격리는 요청만으로 성립하지 않는다.** Claude Code의 Agent 도구에는 도구 허용 목록 인자가 없다
+     (`isolation`은 git worktree 격리다). 내장 유형 Explore·Plan은 Edit·Write만 빼고 Bash·WebFetch를
+     남기며, general-purpose는 모든 도구를 가진다. 도구를 실제로 줄이는 방법은 사용자가 설치한 에이전트
+     정의(`~/.claude/agents/<name>.md`)의 frontmatter `tools`뿐이다. `tools`를 빼면 모든 도구를 상속한다.
+     `tools: []`가 "도구 0개"를 뜻하는지는 검증하지 않았다 — 설치 뒤 `/agents`에서 확인하게 한다.
+   - **유형 선택 절차.** (1) Glob으로 정의가 있는지 확인해 있으면 그 유형을 쓴다(스킬은 그 파일을 만들지
+     않는다). (2) 없으면 쓰기 도구가 없는 가장 좁은 유형을 쓰고, 도구 금지는 프롬프트 지시로만 성립함을
+     최종 보고에 적는다. (3) 실제로 실행한 유형을 최종 보고에 적는다.
+   - **부모 대체 경로는 격리의 목적으로 정한다.** 목적이 "Bash·Write를 가진 부모가 미신뢰 텍스트에 따라
+     행동하지 않게 하는 것"이면(scan-match 판정, classify-severity 판정, policy 초안) 서브에이전트를 쓸 수
+     없을 때 부모가 대신하지 않고 **중단한다**. patch의 사전 조사·후보 리뷰처럼 이미 승인받은 저장소를
+     다시 읽는 읽기 전용 검토라면 부모가 별도 패스로 수행해도 된다. 한 스킬의 대체 문장을 다른 스킬에
+     복사하기 전에 목적부터 확인한다.
+   - **프롬프트 한도는 둘로 나눈다.** 부모는 조립한 프롬프트 전문을 Agent 인자로 **한 응답 안에서 출력**해야
+     한다. 그래서 병목은 서브에이전트의 입력 컨텍스트가 아니라 부모 한 응답의 출력 토큰 상한이다. 상류
+     동등성 한도(`scan-comparison.ts`의 1,048,576 코드포인트)와 별도로 **실행 한도 80,000자**(기본 출력
+     32,000토큰 × 토큰당 2.5자, **실측 전 추정값**)를 두고, min(두 값)을 넘으면 호출 전에 중단한다.
+     80,000 초과 1,048,576 이하 구간이 가장 위험하다 — 상류 기준으로는 통과하지만 호출이 도중에 잘려,
+     설계한 "중단과 보고" 경로를 타지 않는다. 초안은 한도를 524,288자(상류 ÷ 2)로 두었다. 이 값이 부모 한
+     응답의 출력 한도를 넘어 호출이 잘릴 수 있어 80,000으로 내렸다.
+   → `skills/codex-security-scan-match/SKILL.md`(「프롬프트 한도」·「3단계」·「하드 규칙」),
+   `skills/codex-security-scan-match/scripts/validate_matches.py`(`EQUIVALENCE_LIMIT`·`DEFAULT_EXECUTION_LIMIT`),
+   `skills/codex-security-scan/scripts/workflow_digest.mjs`(`MAX_PROMPT_CHARACTERS`, policy·classify-severity
+   공용), `skills/codex-security-policy/SKILL.md`·`skills/codex-security-classify-severity/SKILL.md`·
+   `skills/codex-security-deep-scan/SKILL.md`(유형 선택), `skills/codex-security-patch/SKILL.md`(부모 패스 대조군).
+
+   입력에 워크벤치 DB 파생 사실(대표 ID, 이미 적용된 신원 그룹 등)이 섞이면 신뢰 구획을
    **두 블록으로 분해**하고 경계를 **호출별 난수 표식**으로 구분한다 — 방어 문구를 단일 블록 앞에만
-   두면 판정 제약이어야 할 확정 그룹까지 무시되고, 경계가 고정 문자열이면 악성 저장소가 파인딩
-   서술 안에 위조된 신뢰 블록을 심을 수 있다.
+   두면 신뢰 사실까지 데이터로 취급되어 무시되고, 경계가 고정 문자열이면 악성 저장소가 파인딩
+   서술 안에 위조된 신뢰 블록을 심을 수 있다. 상류는 npm 0.1.26부터 기확정 그룹(`knownFindingGroups`)을
+   판정 제약으로 넘기지 않는다(이 저장소는 0.1.29 정합에서 반영). 호스트가 먼저 카드로 접고, 서브에이전트는 그 그룹이 틀렸다고 보면
+   `priorGroupConcerns`로 보고만 한다(저장은 진행).
 
 8. **랭킹 파이프라인 계약(deep-lite).** 샤드 디렉터리는 `rank_shards`로 명명하고 pool-plan의 형제여야
    하며, 랭킹 `score`는 1~10 정수이고, `merge-rank-outputs`는 **부분 실패를 거부**한다(누락 샤드 → exit 1).
