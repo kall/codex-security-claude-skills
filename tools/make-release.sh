@@ -145,8 +145,10 @@ bash skills/install.sh --copy --force --check
 
 ## 검증된 조합
 
-- 번들 플러그인: \`@openai/codex-security@0.1.29\` (플러그인 매니페스트 \`0.1.95\`)
-  — npm 0.1.26~0.1.29 는 모두 매니페스트 \`0.1.95\` 라서 버전 경고로 구분되지 않는다. npm 0.1.29 를 설치한다.
+- 번들 플러그인: \`@openai/codex-security@0.1.32\` (플러그인 매니페스트 \`0.1.95\`)
+  — npm 0.1.26~0.1.32 는 모두 매니페스트 \`0.1.95\` 라서 버전 경고로 구분되지 않는다. npm 0.1.32 를 설치한다.
+  릴리즈 시점에 npm 0.1.32 는 npm 레지스트리에 없었다(태그 소스 빌드로 검증). 배포 전에는 0.1.31 을 설치한다
+  (자기채점 스크립트 통과 확인).
 - Python 3.10+ / git / Node 22+(플러그인 npm 설치, SECURITY.md 정책 해결, codex-security-policy·
   codex-security-classify-severity)
 - Linux · macOS (Windows 는 WSL)

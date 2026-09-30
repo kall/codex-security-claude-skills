@@ -32,7 +32,7 @@ npm 0.1.28부터 `references/artifact-storage.md`를 읽고 따르라고 지시�
 1. `artifact-storage.md` 스스로 "Explicit user instructions still take precedence"라고 쓴다. 사용자가
    설치해 호출한 이 스킬의 지시가 그 명시 지시다.
 2. 터미널 정본 경로(셸로 쓴 draft → `finalize_scan_contract.py` → 선택적 워크벤치 `complete-scan`)는
-   이 저장소의 고유 계약이다. npm 0.1.29에서도 finalizer와 `complete-scan`이 이 경로를 받아들인다
+   이 저장소의 고유 계약이다. npm 0.1.32에서도 finalizer와 `complete-scan`이 이 경로를 받아들인다
    (`repro-u3.sh`·`repro-u4.sh` 실측).
 
 "MCP 지시는 무시한다"는 위 문장만으로는 부족하다. 그 정책은 자기가 "older terminal file-authoring
@@ -98,17 +98,21 @@ fallbacks"보다 우선한다고 쓰기 때문이다. 그래서 상류 문서가
    - **`trustedPathEnv`는 대상 저장소 내부 항목을 제거한 PATH다.** 플러그인 스크립트를
      자식 프로세스로 돌릴 때 원시 `$PATH`를 물려주지 말고 이 값을 쓴다 — 상류 스크립트들이
      `git`·`rg`를 PATH에서 해석해 `cwd=대상 저장소`로 실행하기 때문이다(P5-KTD2).
+     npm 0.1.32부터 플러그인 스크립트는 `CODEX_SECURITY_GIT`이 있으면 그 Git을 쓰고, 없으면 PATH에서
+     대상 저장소 밖의 Git을 고른다(상류 `50b0e186`). 이 변수는 `env -i`로 구성한 자식 환경에 들어가지
+     않고, `workbench_glue.py`도 상속값을 지운다(`repro-u7` I18). 상류 SDK도 사용자 값을 쓰지 않는다.
    - **시작 고지**: 선택된 플러그인의 절대 경로와 `pluginVersion`을 사용자에게 알린다.
-     `pluginVersion`이 이 번역 지침 작성 기준(**매니페스트 0.1.95**, npm 0.1.29)과 다르면 "플러그인 버전이
+     `pluginVersion`이 이 번역 지침 작성 기준(**매니페스트 0.1.95**, npm 0.1.32)과 다르면 "플러그인 버전이
      매핑 기준과 다름 — 워크플로 지시가 바뀌었을 수 있음"을 경고한다. 이 값은 매니페스트
-     버전이며 npm 패키지 버전과 다른 축이다(npm 0.1.29 = 매니페스트 0.1.95).
-   - **표기 규약**: 이 저장소의 문서는 두 축을 **항상 이름으로 구분해** 쓴다 — `npm 0.1.29`,
+     버전이며 npm 패키지 버전과 다른 축이다(npm 0.1.32 = 매니페스트 0.1.95).
+   - **표기 규약**: 이 저장소의 문서는 두 축을 **항상 이름으로 구분해** 쓴다 — `npm 0.1.32`,
      `매니페스트 0.1.95`. 축 없이 "플러그인 0.1.x"로 쓰지 않는다. 두 축의 숫자 범위가 겹쳐서
      (npm 0.1.20과 매니페스트 0.1.20이 둘 다 존재) 축을 생략하면 어느 쪽인지 알 수 없다.
-   - **경고로 구분되지 않는 구간(P6-KTD1)**: npm 0.1.26~0.1.29는 모두 매니페스트 0.1.95다. 그래서
-     이 경고는 네 버전을 구분하지 못한다. npm 0.1.26에는 Node 헬퍼(`securityMdHelper`)가 없어서
+   - **경고로 구분되지 않는 구간(P6-KTD1)**: npm 0.1.26~0.1.32는 모두 매니페스트 0.1.95다. 그래서
+     이 경고는 일곱 버전을 구분하지 못한다. npm 0.1.26에는 Node 헬퍼(`securityMdHelper`)가 없어서
      3번 정책 해결이 고지와 함께 건너뛰어진다(`securityMdHelper.available: false`). 헬퍼는
-     npm 0.1.27부터 있다. 검증된 조합인 npm 0.1.29 설치를 권장한다.
+     npm 0.1.27부터 있다. 검증된 조합인 npm 0.1.32 설치를 권장한다. npm에 0.1.32가 아직 없으면
+     0.1.31을 쓴다(자기채점 스크립트 통과를 확인했다. 0.1.32 전용 동작은 해당 절에 적었고 0.1.31에서는 검사하지 않는다).
    - 검색 명령 해석 결과(`searchCommand.source`)도 함께 고지한다 — `trusted-executable`이면
      PATH의 ripgrep, `claude-shim`이면 Claude Code 바이너리를 `rg`로 노출한 심링크다.
    - `ok: false`이면 `stage`·`error`의 한국어 안내를 그대로 사용자에게 전하고 **중단**한다
@@ -450,6 +454,8 @@ draft — R6 금지 필드 없음), `findings.json`, `coverage.json`을 쓰고, 
 1. `check-running` — 같은 저장소에 `running` 행이 있으면 advisory 경고(차단 아님).
 2. `register` — **scan-dir이 비어 있어야** 등록된다. 등록 후에 `artifacts/…` 하위 구조를 만든다.
    반환된 `scanId`·`targetId`를 이후 단계에 쓴다. scoped-path면 `--paths <경로…>`, `--mode`도 전달.
+   diff 스캔은 `--mode diff --diff-target refs|working_tree --base <base> [--head <head>]`를 준다
+   (정본: codex-security-diff-scan SKILL.md 0단계 2항).
 3. `contract --scan-id <id>` — draft가 사전 일치시켜야 하는 좌표 필드를 얻는다(R3). complete-scan은
    봉인 매니페스트에 binding을 주입하지 않고 **검증만** 하므로, 아래 값을 canonical JSON에 반영하지
    않으면 complete가 반드시 실패한다("scan.target.targetId: must match the workbench target" 등):
@@ -515,7 +521,7 @@ draft — R6 금지 필드 없음), `findings.json`, `coverage.json`을 쓰고, 
 - 커버리지 상태(`complete`/`partial`)와 미리뷰 파일 수. **근거는 `coverage_reconcile.py`의 요약
   (`completenessAfter`·`unreviewedCount`·`deferredCount`)이며 SARIF가 아니다**(P5-KTD8 · P5-R14).
   상류 SARIF는 npm 0.1.25부터 종결 상태만 반영해 부분 커버리지 스캔도 '성공'으로 표시하고, `deferred`가
-  비면 경고조차 남기지 않는다(npm 0.1.29에서도 같다. `repro-u4.sh` F). **SARIF의 성공 표시를 근거로 완전 커버리지를 주장하지 않는다.**
+  비면 경고조차 남기지 않는다(npm 0.1.32에서도 같다. `repro-u4.sh` F). **SARIF의 성공 표시를 근거로 완전 커버리지를 주장하지 않는다.**
   정산 요약의 `partialWithoutDeferred`가 참이면 그 사실을 보고에 명시한다.
 - 0단계 경량 확인에서 **degraded path로 격하됐다면** 그 사실.
 - 실행·테스트 상태는 이 응답에서 직접 말한다. npm 0.1.29부터 `report.md`는 `Runtime or test status`

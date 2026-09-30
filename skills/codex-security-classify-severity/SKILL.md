@@ -12,7 +12,7 @@ description: >-
 
 npm 0.1.29 CLI의 `codex-security classify-severity --rubric`은 finding마다 OpenAI 모델을 한 번 호출한다.
 구독 사용자는 이 명령을 쓸 수 없다. 이 스킬은 **모델 호출 자리만** 도구 없는 격리 서브에이전트로 바꾸고,
-나머지는 모두 상류 코드로 실행한다. 기준 실측 버전은 **npm 0.1.29(매니페스트 0.1.95)**다.
+나머지는 모두 상류 코드로 실행한다. 기준 실측 버전은 **npm 0.1.32(매니페스트 0.1.95)**다.
 
 - **스캔 산출물은 바꾸지 않는다.** 봉인된 `scan-manifest.json`·`findings.json`·`coverage.json`은 그대로다.
   상류와 같이 `severity-classification.json` 한 파일만 스캔 디렉터리에 원자적으로 쓴다.
@@ -32,7 +32,9 @@ npm 0.1.29 CLI의 `codex-security classify-severity --rubric`은 finding마다 O
   조회·Codex 실행 파일 해석을 모두 건너뛴다. 출처(태그 `npm-v0.1.29` = 커밋
   `6620a380f86c26d6c6428a660b2a90c3b5a1fa45`): `sdk/typescript/src/classify-severity.ts` 36행·186–204행,
   `sdk/typescript/src/scan-comparison.ts` 158행·543·568·579행·636–650행,
-  `sdk/typescript/src/classify-scan-severity.ts` 101–153행.
+  `sdk/typescript/src/classify-scan-severity.ts` 101–153행. 태그 `npm-v0.1.32`(커밋 `7c19cce7`)까지
+  `classify-severity.ts`·`classify-scan-severity.ts`는 바뀌지 않았다. `scan-comparison.ts`는 60행에 타입 한 줄이
+  늘어 위 행 번호가 1씩 밀렸고 내용은 같다.
 - **상류가 하는 일**(재구현 없음): 스캔 해석과 봉인 확인, finding 선택(`selectClassificationFindings`),
   루브릭·지식 베이스 읽기(`prepareKnowledgeBase`), 세 digest(`workflowDigest`), 저장 평가 재사용 규칙,
   프롬프트 조립, 7키 strict 스키마와 결정 일관성 검사, 워크벤치 `begin`/`save`(`SeverityStore`),
@@ -68,7 +70,7 @@ python3 <codex-security-scan 스킬 dir>/scripts/bootstrap.py --target-repo <현
 | 조건 | 사용자 안내(한국어) |
 | --- | --- |
 | `ok: false` | `stage`·`error`를 그대로 전한다 |
-| `sdk.dist: null` | `sdk.reason`을 전한다. 상류 함수가 든 `dist/`가 없다 — `npm install -g @openai/codex-security`(권장 0.1.29) 설치본을 쓰라고 안내 |
+| `sdk.dist: null` | `sdk.reason`을 전한다. 상류 함수가 든 `dist/`가 없다 — `npm install -g @openai/codex-security` 설치본(npm 0.1.26 이상)을 쓰라고 안내 |
 | `node: null` | "신뢰할 수 있는 Node 없음". 대상 저장소 밖의 Node를 PATH에 두라고 안내 |
 | `python: null` | "플러그인 Python 3.10+ 없음" |
 | 루브릭이 없는데 `sdk.cli: null` | 루브릭 없는 분류는 상류 CLI에 위임하므로 진행할 수 없다. 위와 같은 설치 안내 |
@@ -104,7 +106,7 @@ env -i <trusted_child_env> <node> <classify_script> <하위 명령> --sdk-dist <
 - 출력은 JSON 1개다(`prompt`만 원문 텍스트). exit 0 = 성공, 2 = 거부·실패(`error`와 상류 원문
   `upstreamError`가 실림), 1 = 사용법 오류.
 
-**시작 고지**: 플러그인 경로와 `pluginVersion`(기준 0.1.95, npm 0.1.29 — 다르면 "플러그인 버전이 기준과
+**시작 고지**: 플러그인 경로와 `pluginVersion`(기준 0.1.95, npm 0.1.32 — 다르면 "플러그인 버전이 기준과
 다름 — 상류 계약이 바뀌었을 수 있음" 경고), 스캔 입력, 루브릭 유무, 그리고 **"스캔 산출물과 저장소 파일은
 바꾸지 않고 `severity-classification.json`과 워크벤치 평가만 쓴다"**를 알린다.
 

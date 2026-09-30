@@ -5,7 +5,8 @@
   - `sdk/typescript/src/finding-catalogue.ts` — groupFindings / findingCatalogue / compactFinding
   - `sdk/typescript/src/scan-comparison.ts` — matchScanFindingsInternal / reconcileComparison /
     validateComparison / validateComparisonInput / unionFindingGroups
-  (upstream tag npm-v0.1.29, commit 6620a380f86c26d6c6428a660b2a90c3b5a1fa45)
+  (upstream tag npm-v0.1.29, commit 6620a380f86c26d6c6428a660b2a90c3b5a1fa45.
+   npm-v0.1.32 = 7c19cce7 에서 재대조: 조정 로직 변경 없음)
 판정 규칙(서브에이전트 프롬프트 문장)은 SKILL.md 가, 검증·조정 규칙은 이 코드가 소유한다(P5-KTD4).
 
 흐름(상류 matchScanFindingsInternal 과 같은 순서, P6-KTD3):

@@ -123,7 +123,8 @@ tarball을 교체하지 말고 새 버전을 올린다 — 사용자가 체크�
 업스트림이 번들 플러그인을 갱신하면 스킬 동작이 바뀔 수 있다. 순서:
 
 1. **고정한 상류 영문 리터럴을 새 상류 태그와 다시 대조한다.** 아래 네 곳은 상류 원문을 복사 시점 커밋
-   (현재 태그 `npm-v0.1.29` = `6620a380f86c26d6c6428a660b2a90c3b5a1fa45`)과 함께 고정했다. 상류 저장소에서
+   (태그 `npm-v0.1.29` = `6620a380f86c26d6c6428a660b2a90c3b5a1fa45`)과 함께 고정했다. 마지막 재대조는
+   태그 `npm-v0.1.32` = `7c19cce7224af29628cd10c218444d5c0e8fdd1c`이고 네 원문 모두 같았다. 상류 저장소에서
    `git diff npm-v<이전> npm-v<새 버전> -- <원본 파일>`로 원본을 보고, 바뀌었으면 리터럴과 복사 시점 커밋을
    함께 갱신한다. 회귀 스크립트만으로는 전부 잡히지 않는다.
 
@@ -140,3 +141,29 @@ tarball을 교체하지 말고 새 버전을 올린다 — 사용자가 체크�
 3. 변화가 있으면 해당 SKILL.md와 매뉴얼(특히 3.4절 표)을 갱신. 스캔 스킬의 버전 경고 기준
    (매니페스트 축)과 각 스킬의 "기준 실측 버전"(npm 축)을 함께 올린다.
 4. 새 버전으로 재배포하고 릴리즈 노트에 검증된 조합을 갱신.
+
+### 7.1 상류 태그가 npm에 아직 없을 때
+
+상류가 `npm-v<버전>` 태그를 만든 뒤에도 npm 레지스트리 배포는 늦을 수 있다(0.1.32가 그랬다). 그때는 태그
+소스로 패키지를 빌드해 격리 경로에 설치하고 검증한다. 전역 설치본은 건드리지 않는다.
+
+```bash
+B=$(mktemp -d) && git -C <상류 체크아웃> archive npm-v<버전> | tar -x -C "$B"
+# 네이티브 바이너리(plugins/codex-security/native/prebuilt)는 git에 없다. 직전 npm 배포본에서 가져온다.
+# 두 태그 사이의 native/ 변경이 대상 플랫폼과 무관한지 먼저 git diff --stat 으로 확인한다.
+(cd "$B" && npm pack @openai/codex-security@<직전 버전> && tar xzf openai-codex-security-*.tgz &&
+  mkdir -p plugins/codex-security/native/prebuilt &&
+  cp -a package/_bundled_plugin/mcp/native/. plugins/codex-security/native/prebuilt/)
+npx -y pnpm@<package.json의 packageManager 버전> --dir "$B/sdk/typescript" install --frozen-lockfile
+npx -y pnpm@<같은 버전> --dir "$B/plugins/codex-security/mcp-app" install --frozen-lockfile
+(cd "$B/sdk/typescript" && npx -y pnpm@<같은 버전> pack --pack-destination "$B/dist")
+npm install -g --prefix /tmp/cs-prefix "$B"/dist/openai-codex-security-<버전>.tgz
+P=/tmp/cs-prefix/lib/node_modules/@openai/codex-security/_bundled_plugin
+# 자기채점 스크립트는 경로 변수로 이 사본을 가리킨다.
+CODEX_SECURITY_PLUGIN_DIR=$P CODEX_SECURITY_PLUGIN_ROOT=$P NPM_CONFIG_PREFIX=/tmp/cs-prefix \
+  PATH=/tmp/cs-prefix/bin:$PATH bash docs/verification/scripts/repro-u4.sh
+```
+
+빌드한 tarball의 파일 목록을 직전 npm 배포본과 비교해 빠진 파일이 없는지 본다. 릴리즈 노트와 README에는
+"태그 소스 빌드로 검증했고 npm 배포 전에는 직전 버전을 설치한다"를 적고, 직전 npm 배포본으로도 자기채점
+스크립트를 돌려 통과를 확인한다.

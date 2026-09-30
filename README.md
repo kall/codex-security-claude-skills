@@ -18,7 +18,7 @@ is installed at runtime.
 Download the release tarball and install it. Or just paste this into a Claude Code session:
 
 ```
-Install https://github.com/kall/codex-security-claude-skills/releases/tag/v0.1.29
+Install https://github.com/kall/codex-security-claude-skills/releases/tag/v0.1.32
 ```
 
 ```bash
@@ -70,8 +70,11 @@ Node 22+ is needed for the plugin's npm install, the scan's SECURITY.md policy r
 (upstream Node helper), `codex-security-policy` and `codex-security-classify-severity`, and for
 querying the official CLI's history. Linux/macOS (Windows via WSL).
 
-Verified combination: `@openai/codex-security@0.1.29` (plugin manifest `0.1.95`). npm 0.1.26 through
-0.1.29 all report manifest `0.1.95`, so the version warning cannot tell them apart. Install npm 0.1.29.
+Verified combination: `@openai/codex-security@0.1.32` (plugin manifest `0.1.95`). npm 0.1.26 through
+0.1.32 all report manifest `0.1.95`, so the version warning cannot tell them apart. Install npm 0.1.32.
+At release time npm 0.1.32 was tagged upstream but not yet on the npm registry. We verified a package
+built from the `npm-v0.1.32` tag, and the self-check scripts also pass with npm 0.1.31 (checks for
+0.1.32-only behavior print NOTE there and are not run). Until 0.1.32 is published, install 0.1.31.
 
 ## Development
 

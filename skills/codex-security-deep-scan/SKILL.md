@@ -53,9 +53,10 @@ SKILL.md의 prompt-only 절이 정본이다. 이 스킬이 후속 단계에서 �
 전체 스캔 인벤토리 호출과 형태를 맞춘 방어 조치다. **샤드 디렉터리는 반드시 `rank_shards`로
 명명하고 pool-plan 파일의 형제**로 둔다.
 
-**랭킹 입력 규칙(npm 0.1.29 기준).**
+**랭킹 입력 규칙(npm 0.1.32 기준).**
 - 랭킹 입력의 확장자 필터는 `rank_preview.TEXT_CODE_EXTENSIONS`다. npm 0.1.27~0.1.29에서 `.cjs`·
-  `.cts`·`.mts`·`.tf`가 추가돼 이 파일들도 랭킹 대상이 된다. 커버리지 분모인 `in_scope_files.txt`는
+  `.cts`·`.mts`·`.tf`가, npm 0.1.31에서 `.m`(Objective-C)이, npm 0.1.32에서 `.sol`(Solidity)·`.svelte`가
+  추가돼 이 파일들도 랭킹 대상이 된다. 커버리지 분모인 `in_scope_files.txt`는
   확장자 필터가 없는 `rg --files` 목록이라 이 변화와 무관하다.
 - 랭킹 미리보기는 **모든 파일에서 앞 64 KiB만** 읽는다. 0.1.25는 직접 요청한 스코프에만 이 제한을
   두었다. 64 KiB 뒤의 코드는 랭킹 점수에 반영되지 않는다. 선택된 파일은 리뷰 팬아웃에서 전체를 읽는다.
@@ -133,9 +134,9 @@ deep-security-scan의 중앙화 tail 패턴)로 수행한다.
   finalizer는 기대 `coverage.mode`가 `deep_repository`인 unsealed draft에서 이 값을 무조건
   `repository`로 덮어쓴다. 다른 값을 써도 봉인 결과는 같지만, 이 덮어쓰기에 기대지 않는다.
 
-## 공식 deep과의 차이 (npm 0.1.29 기준)
+## 공식 deep과의 차이 (npm 0.1.32 기준)
 
-공식 Deep의 부모 스캔 coverage는 npm 0.1.29에서 **설정값과 결과 요약만** 남는다. 코디네이터가
+공식 Deep의 부모 스캔 coverage는 npm 0.1.29~0.1.32에서 **설정값과 결과 요약만** 남는다. 코디네이터가
 설정한 경로를 `includePaths`·`excludePaths`에 복사하고, 집계 결과로 `completeness`를 정한다. 성공하면
 `complete`이고 `surfaces`·`explicitExclusions`·`deferred`는 빈 배열이며 `openQuestions`는 없다.
 시간 제한 안에 리뷰가 하나도 끝나지 않았을 때만 `partial`과 `deferred` 설명을 쓴다. 리포트는 설정한

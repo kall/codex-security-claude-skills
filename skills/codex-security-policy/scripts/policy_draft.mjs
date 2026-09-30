@@ -97,6 +97,7 @@ const OWNER_ANSWERS_NAME = "owner-answers.json";
 //   threat_model 지시 874–884행, policy 지시 885–897행.
 // 복사 시점: 태그 npm-v0.1.29 = 커밋 6620a380f86c26d6c6428a660b2a90c3b5a1fa45
 //   (npm @openai/codex-security 0.1.29 = 플러그인 매니페스트 0.1.95).
+// 재대조: 태그 npm-v0.1.32 = 커밋 7c19cce7224af29628cd10c218444d5c0e8fdd1c — security-policy.ts 변경 없음.
 // TypeScript 원본은 npm 번들에 없다. 대신 컴파일된 dist/security-policy.js 에 같은 문자열이 남아
 // 있으므로 회귀 스크립트(repro-u8-policy-severity.sh P7)가 `upstream-literals` 조각을 설치된 dist 와
 // 문자 단위로 대조한다. 다음 상류 정합 작업은 위 함수를 다시 대조한다.

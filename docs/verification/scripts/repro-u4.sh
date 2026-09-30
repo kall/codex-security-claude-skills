@@ -537,9 +537,11 @@ EOF
 fi
 
 # ---------------------------------------------------------------------------
-# I. diff 인벤토리·diff 랭킹 입력 (npm 0.1.27~0.1.29, 상류 be7807de·fa5fe21c·46dce4a2)
+# I. diff 인벤토리·diff 랭킹 입력 (npm 0.1.27~0.1.32, 상류 be7807de·fa5fe21c·46dce4a2·
+#    cce82310·ce7f75c1·6f8b3545)
 #
-#   새 확장자(.cjs .cts .mts .tf)는 rank_preview.TEXT_CODE_EXTENSIONS 에 들어갔다.
+#   새 확장자(.cjs .cts .mts .tf, 0.1.31 의 .m, 0.1.32 의 .sol .svelte)는
+#   rank_preview.TEXT_CODE_EXTENSIONS 에 들어갔다.
 #   이 집합은 diff 인벤토리와 랭킹 입력만 쓴다. 전체 인벤토리는 확장자 필터가
 #   없는 `rg --files` 라 0.1.25 에서도 이 파일들을 포함했다.
 #   diff 인벤토리는 .github/workflows/* 를 제외 규칙에서 빼서 유지한다.
@@ -641,6 +643,33 @@ EOF
   LC_ALL=C sort "$RUN/diff2.rank.jsonl.paths" 2>/dev/null > "$RUN/diff2.rank.actual"
   compare_set "I8" "$RUN/diff2.expected" "$RUN/diff2.rank.actual" \
     ".github/workflows/ci.yml 만 바꾼 diff 의 랭킹 입력에 그 파일이 들어감"
+
+  # 커밋 3: npm 0.1.31~0.1.32 에서 추가된 확장자 .m(상류 cce82310)·.sol(ce7f75c1)·
+  # .svelte(6f8b3545). .txt 는 목록에 없는 음성 대조군이다.
+  # 이 세 확장자는 npm 0.1.32 사본에서만 단언한다. 매니페스트가 0.1.95 로 같아 버전으로
+  # 가를 수 없으므로, 같은 릴리즈에 들어온 상류 함수 committed_diff_snapshot_digest
+  # (8c78e655)의 존재로 0.1.32 사본을 알아본다.
+  printf '@implementation A\n@end\n' > "$DREPO/src/d.m"
+  printf 'contract C {}\n' > "$DREPO/src/e.sol"
+  printf '<script>let f = 1;</script>\n' > "$DREPO/src/f.svelte"
+  printf 'notes\n' > "$DREPO/notes.txt"
+  dgit add -A >/dev/null && dgit commit -qm exts2 >/dev/null
+  DHEAD3="$(dgit rev-parse HEAD)"
+  if grep -q "def committed_diff_snapshot_digest" "$PLUGIN/scripts/workbench_target.py" 2>/dev/null; then
+    printf '%s\n' src/d.m src/e.sol src/f.svelte | LC_ALL=C sort > "$RUN/diff3.expected"
+    diff_inventory "$DHEAD" "$DHEAD3" "$RUN/diff3.inv"
+    expect_exit 0 "$?" "I9 diff 인벤토리 생성 (0.1.31~0.1.32 확장자 커밋)"
+    LC_ALL=C sort "$RUN/diff3.inv" 2>/dev/null > "$RUN/diff3.inv.actual"
+    compare_set "I10" "$RUN/diff3.expected" "$RUN/diff3.inv.actual" \
+      "diff 인벤토리에 .m·.sol·.svelte 가 들어가고 .txt 는 빠짐"
+    diff_rank_input "$DHEAD" "$DHEAD3" "$RUN/diff3.rank.jsonl"
+    expect_exit 0 "$?" "I11 diff 랭킹 입력 생성 (0.1.31~0.1.32 확장자 커밋)"
+    LC_ALL=C sort "$RUN/diff3.rank.jsonl.paths" 2>/dev/null > "$RUN/diff3.rank.actual"
+    compare_set "I12" "$RUN/diff3.expected" "$RUN/diff3.rank.actual" \
+      "diff 랭킹 입력이 diff 인벤토리와 같은 기대 집합"
+  else
+    printf 'NOTE I9~I12: 이 플러그인 사본은 npm 0.1.32 이전이라 .m·.sol·.svelte 단언 대상이 아닙니다\n'
+  fi
 fi
 
 # ---------------------------------------------------------------------------

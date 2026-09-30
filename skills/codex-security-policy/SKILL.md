@@ -12,7 +12,7 @@ description: >-
 
 npm 0.1.29 CLI의 `codex-security policy`는 OpenAI 모델을 세 번 호출해 SECURITY.md 초안을 만든다.
 구독 사용자는 이 명령을 쓸 수 없다. 이 스킬은 모델 호출 세 번을 **읽기 전용 격리 서브에이전트**로
-바꾸고, 나머지 호스트 동작은 상류 코드로 재현한다. 기준 실측 버전은 **npm 0.1.29(매니페스트 0.1.95)**다.
+바꾸고, 나머지 호스트 동작은 상류 코드로 재현한다. 기준 실측 버전은 **npm 0.1.32(매니페스트 0.1.95)**다.
 
 - **초안만 만든다(P6-KTD9).** CLI `policy`와 같다. 상류 plugin `define-security-policy/SKILL.md`
   4절(승인 후 저장소 편집)은 CLI에 없는 단계라 이 스킬 범위 밖이다(후속 작업으로 연기). 사용자가
@@ -35,7 +35,8 @@ npm 0.1.29 CLI의 `codex-security policy`는 OpenAI 모델을 세 번 호출해 
   상류 소스 체크아웃에는 `dist/`가 없으므로 이 스킬을 쓸 수 없다.
 - **단계 프롬프트는 영문 리터럴로 고정한다(P6-KTD10).** 원문은 `sdk/typescript/src/security-policy.ts`
   `runSecurityPolicyStages()`(791–897행)이고, 태그 `npm-v0.1.29` = 커밋
-  `6620a380f86c26d6c6428a660b2a90c3b5a1fa45`에서 복사했다. 리터럴의 정본은 `scripts/policy_draft.mjs`의
+  `6620a380f86c26d6c6428a660b2a90c3b5a1fa45`에서 복사했다. 태그 `npm-v0.1.32`(커밋 `7c19cce7`)까지 이 파일은
+  바뀌지 않았다. 리터럴의 정본은 `scripts/policy_draft.mjs`의
   `UPSTREAM_*` 표다. 이 문서에 옮겨 적지 않는다 — 두 곳에 두면 한쪽만 낡는다. TS 원본은 npm 번들에
   없지만 컴파일된 `dist/security-policy.js`에 같은 문자열이 남아 있다. 그래서 회귀 스크립트
   `repro-u8-policy-severity.sh`가 P7에서 리터럴 조각을 설치된 dist와 대조하고, P11에서 상류
@@ -70,7 +71,7 @@ Git worktree 루트**로 명시한다.
 | 조건 | 사용자 안내(한국어) |
 | --- | --- |
 | `ok: false` | `stage`·`error`를 그대로 전한다 |
-| `securityMdHelper.available: false` | `securityMdHelper.reason`을 전한다. "헬퍼 파일 없음"이면 상류 소스 체크아웃이다 — `npm install -g @openai/codex-security`(npm 0.1.27 이상, 권장 0.1.29) 설치본을 쓰라고 안내 |
+| `securityMdHelper.available: false` | `securityMdHelper.reason`을 전한다. "헬퍼 파일 없음"이면 상류 소스 체크아웃이다 — `npm install -g @openai/codex-security`(npm 0.1.27 이상, 권장 0.1.32) 설치본을 쓰라고 안내 |
 | `sdk.dist: null` | `sdk.reason`을 전한다. 상류 함수가 든 `dist/`가 없다 — 위와 같은 설치 안내 |
 | `node: null` | "신뢰할 수 있는 Node 없음"과 `securityMdHelper.reason` |
 
@@ -102,7 +103,7 @@ env -i <trusted_child_env> <node> <policy_script> <하위 명령> …
 - 출력은 JSON 1개다(`prompt`만 원문 텍스트). exit 0 = 성공, 2 = 거부·실패(`error`와 상류 원문
   `upstreamError`가 실림), 1 = 사용법 오류.
 
-**시작 고지**: 플러그인 경로와 `pluginVersion`(기준 0.1.95, npm 0.1.29 — 다르면 "플러그인 버전이
+**시작 고지**: 플러그인 경로와 `pluginVersion`(기준 0.1.95, npm 0.1.32 — 다르면 "플러그인 버전이
 기준과 다름 — 상류 계약이 바뀌었을 수 있음" 경고), 대상 저장소, 컴포넌트, 그리고 **"이 스킬은
 저장소 파일을 바꾸지 않는다"**를 알린다.
 

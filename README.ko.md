@@ -17,7 +17,7 @@ LLM 두뇌 역할은 Claude Code 세션 자신이 맡고, 검증·ID 파생·봉
 릴리즈 tarball을 받아 설치한다. 아니면 Claude Code 세션에 이 문구를 그대로 복사/붙여넣기해도 된다:
 
 ```
-https://github.com/kall/codex-security-claude-skills/releases/tag/v0.1.29 이거 설치해줘
+https://github.com/kall/codex-security-claude-skills/releases/tag/v0.1.32 이거 설치해줘
 ```
 
 ```bash
@@ -67,8 +67,11 @@ Node 22+는 플러그인 npm 설치, 스캔의 SECURITY.md 정책 해결(상류 
 `codex-security-policy`·`codex-security-classify-severity`, 공식 CLI 이력 조회에 필요하다.
 Linux·macOS(Windows는 WSL).
 
-검증된 조합: `@openai/codex-security@0.1.29` (플러그인 매니페스트 `0.1.95`). npm 0.1.26~0.1.29는 모두
-매니페스트 `0.1.95`라서 버전 경고로 구분되지 않는다. npm 0.1.29를 설치한다.
+검증된 조합: `@openai/codex-security@0.1.32` (플러그인 매니페스트 `0.1.95`). npm 0.1.26~0.1.32는 모두
+매니페스트 `0.1.95`라서 버전 경고로 구분되지 않는다. npm 0.1.32를 설치한다.
+릴리즈 시점에 npm 0.1.32는 상류에 태그만 있고 npm 레지스트리에는 없었다. `npm-v0.1.32` 태그로 빌드한
+패키지로 검증했고, 자기채점 스크립트는 npm 0.1.31에서도 통과한다(0.1.32 전용 동작 검사는 NOTE를 내고 돌지 않는다).
+0.1.32가 배포되기 전에는 0.1.31을 설치한다.
 
 ## 개발
 
