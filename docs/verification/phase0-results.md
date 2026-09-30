@@ -1270,3 +1270,41 @@ npm 0.1.26~0.1.29는 모두 매니페스트 0.1.95다. npm 0.1.26에는 Python �
 | `repro-u3.sh` 요약 | S5 `exit=0`, S6 `exit=0`, S9 `exit=1`, S9b `exit=0` — 기대값과 일치 | — |
 
 자기채점 5종의 FAIL·SKIP은 0건이다. 새 단언 가운데 변경을 붙잡는 것(repro-u4 H·I·J, repro-u8의 신뢰 게이트 순서·저장 전 경로 검사)은 0.1.25 사본 또는 수정 전 코드에서 실패함을 확인했다.
+
+## 부록 — npm 0.1.32(매니페스트 0.1.95) 재실측 (2026-09-30)
+
+기준선을 npm 0.1.29에서 상류 태그 `npm-v0.1.32`(커밋 `7c19cce7224af29628cd10c218444d5c0e8fdd1c`)로 올리면서 재실측한 결과다. 위 본문과 이전 부록은 시점 고정 기록이라 고치지 않는다.
+
+### 실측 대상 패키지
+
+실측 시점에 npm 레지스트리의 최신은 0.1.31이었다(0.1.32 미배포). 그래서 태그 `npm-v0.1.32` 소스로 패키지를 빌드했다. 네이티브 바이너리(`plugins/codex-security/native/prebuilt`)는 git에 없어서 npm 0.1.31 배포본의 것을 썼다. 0.1.31~0.1.32 사이의 `native/` 변경은 Windows 전용이다. 빌드한 tarball의 파일 목록(524개)은 npm 0.1.31 배포본과 같다. 격리 경로(`npm install -g --prefix`)에 설치하고 경로 변수로 가리켰다. 절차는 [releasing.md](../releasing.md) 7.1절에 적었다.
+
+### 회귀 없음 (정합 작업 전)
+
+수정 전 스킬로 자기채점 5종과 `repro-u3.sh`를 0.1.32 빌드에서 돌렸고 모두 exit 0이었다. 기존 단언이 이번 상류 변경을 붙잡지 않았다는 뜻이다.
+
+### 새로 관측한 계약 변화와 기존 결함
+
+1. **diff 스캔 등록이 항상 실패했다(기존 결함, 상류 npm 0.1.22부터).** `workbench_glue.py register --mode diff`는 레시피 `mode`에 `diff`를 실었다. 상류 `parse_scan_recipe`는 `mode`로 `standard`·`deep`만 받는다. 결과는 `Scan launch recipe mode must be standard or deep.`로 exit 1이다. 이 검사는 npm 0.1.20 태그에 없고 0.1.22 태그부터 있다. 상류는 diff를 `target.kind`(`refs`/`working_tree`)와 base/head로 받고 거기서 `mode=diff`를 유도한다. 자기채점 스크립트가 diff 등록을 한 번도 돌리지 않아 드러나지 않았다. 글루를 고치고 `repro-u7` I17(상류 거부 대조군 I17e 포함)로 고정했다.
+2. **커밋 diff digest를 워크벤치가 종결 시점에 계산한다(npm 0.1.32, `8c78e655`).** `workbench_completion_binding`이 commit·range diff에도 `snapshotDigest`를 넣는다. 식은 `sha256("codex-security-diff/v1\0<kind>\0<base>\0<head>")`다. 봉인한 매니페스트는 기록된 값을 유지하므로 우리 경로(봉인 뒤 `complete`)는 0.1.31·0.1.32 모두 통과한다. `snapshotDigest`를 뺀 미봉인 초안을 넘기면 0.1.32 워크벤치가 채운 값이 글루 계산값과 같았다(I17c).
+3. **플러그인 스크립트의 Git 선택(npm 0.1.32, `50b0e186`).** `workbench_target.git_command`가 `CODEX_SECURITY_GIT`(절대 경로, 보호 저장소 밖)을 쓰고, 없으면 PATH에서 보호 저장소 밖의 Git을 고른다. 찾지 못하면 exit 127을 흉내 낸 빈 결과를 돌려준다. 상류 SDK는 사용자 값을 지우고 자기가 고른 값을 넣는다(`environmentWithGit`). 글루는 상속값을 지우도록 바꿨다(I18).
+4. **`no_change` 패치에도 검증 근거가 필요하다(npm 0.1.32, `9abe68ce`).** `runSkill()`의 결과 JSON 지시와 `runFindingPatches`의 판정이 바뀌었다. 우리가 고정한 검증 지시 머리말 두 줄은 `dist/cli.js`에서 그대로 찾았다.
+5. **인벤토리 확장자.** `rank_preview.TEXT_CODE_EXTENSIONS`에 `.m`(npm 0.1.31, `cce82310`), `.sol`(`ce7f75c1`)·`.svelte`(`6f8b3545`, 둘 다 npm 0.1.32)가 추가됐다. `repro-u4` I9~I12로 고정했다.
+6. **scan 출력 디렉터리를 0700으로 만든다(npm 0.1.32, `2aab4e90`).** 부트스트랩은 이미 0700으로 만들므로 영향이 없다.
+7. **인증 없이 동작하는 CLI 명령.** 0.1.29 부록 2번의 다섯 명령(`init`, `scan import --json`, 루브릭 없는 `classify-severity`, `policy --dry-run --headless`, `publish scan --dry-run`)이 0.1.32 빌드에서도 빈 `HOME`·`CODEX_HOME`·`CODEX_SECURITY_STATE_DIR`로 성공했다. `scan import --json`은 Codex Security findings 스키마를 요구한다(봉인된 `findings.json`으로 확인). `policy --dry-run` 출력의 기본 모델은 `gpt-6-sol`·`xhigh`다(상류 `b43d3dcd`).
+8. **고정 리터럴 재대조.** `scan-comparison.ts`의 `comparisonPrompt()`, `security-policy.ts`, `classify-severity.ts`는 0.1.29~0.1.32 사이에 바뀌지 않았다(`scan-comparison.ts`는 타입 한 줄만 추가). `finding-catalogue.ts`와 `prompt-files.ts`도 그대로다. 상류 plugin 스킬 문서는 `deep-security-scan/SKILL.md`(MCP `structuredContent` 반환)와 `references/scan-contract.md`(위 2번)만 바뀌었다.
+
+### 정합 작업 뒤 재검증 (2026-09-30)
+
+| 스크립트 | 0.1.32 빌드 | npm 0.1.31 배포본 |
+| --- | --- | --- |
+| `repro-u1-search-command.sh` | exit 0, OK 73 | exit 0, OK 73 |
+| `repro-u4.sh` | exit 0, OK 53 | exit 0, OK 49 (I9~I12 NOTE) |
+| `repro-u5-match-validator.sh` | exit 0, OK 707 | exit 0, OK 707 |
+| `repro-u7-coverage-recovery.sh` | exit 0, OK 63 | exit 0, OK 62 (I17c NOTE) |
+| `repro-u8-policy-severity.sh` | exit 0, OK 258 | exit 0, OK 258 |
+| `repro-u3.sh` 요약 | S5 0, S6 0, S9 1, S9b 0 — 기대값과 일치 | 같음 |
+
+FAIL·SKIP은 0건이다. 새 단언 I17·I18은 수정 전 글루에서 실패함을 확인했다(대조군 FAIL 6건, 상류 거부를 재는 I17e만 통과).
+npm 0.1.31의 NOTE 항목(I9~I12, I17c)은 0.1.32 전용 동작이라 검사하지 않았다. `.m`은 0.1.31에도 있지만 I9~I12가 0.1.32 사본에서만
+돌기 때문에 0.1.31에서는 확인하지 않았다.
