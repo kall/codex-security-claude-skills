@@ -13,6 +13,9 @@
 #      JSON 키를 인용하기 때문이다.
 #   4. recover 는 상류가 거부한 것(gate)과 상류를 실행조차 못한 것(infra)을
 #      구분해 안내한다. 둘 다 exit 0 + ok:false 로 다른 선택지로 넘어갈 수 있다.
+#   5. diff 스캔은 워크벤치에 등록·종결된다(I17). 글루는 diff 를 레시피 mode 가
+#      아니라 target.kind 로 보내고, contract 의 snapshotDigest 는 상류 식과 같다.
+#   6. 글루 자식 환경은 상속된 CODEX_SECURITY_GIT 을 넘기지 않는다(I18).
 #
 # 사용법: bash repro-u7-coverage-recovery.sh
 #   PYTHON=<경로>                        Python 인터프리터 지정
@@ -1216,6 +1219,226 @@ raise SystemExit(1 if problems else 0)
 EOF
   expect_exit 0 "$?" "I10 게이트 분류와 안내 문구의 짝"
 fi
+
+# ---------------------------------------------------------------------------
+# I17. diff 스캔의 워크벤치 등록·종결 (glue register --mode diff).
+#
+# 회귀 이력: 글루가 diff 를 레시피 mode 로 보냈는데 상류는 mode 로
+# standard·deep 만 받는다(npm 0.1.22부터, "Scan launch recipe mode must be standard or deep.").
+# 그래서 diff 스캔은 이력 등록이 항상 실패했다. diff 는 target.kind(refs/working_tree)로
+# 보내야 한다. contract 의 diffTarget.snapshotDigest 는 상류 식과 같아야 한다 —
+# npm 0.1.32(상류 8c78e655)부터 워크벤치가 커밋 diff digest 를 종결 시점에 직접 계산한다.
+# ---------------------------------------------------------------------------
+step "I17. diff 스캔 등록·종결 (refs·working_tree)"
+if [ -z "$PLUGIN" ] || [ ! -f "$PLUGIN/scripts/workbench_db.py" ]; then
+  skip "I17: 플러그인을 찾지 못해 diff 스캔 등록·종결을 검증할 수 없습니다"
+elif ! command -v git >/dev/null 2>&1; then
+  skip "I17: git 을 쓸 수 없어 diff 스캔 등록·종결을 검증할 수 없습니다"
+else
+  DREPO="$RUN/diff-repo"
+  DGIT_HOME="$RUN/diff-git-home"
+  mkdir -p "$DREPO" "$DGIT_HOME"
+  # 사용자 전역·시스템 git 설정(commit.gpgsign, core.hooksPath 등)이 픽스처를 흔들지 않게 한다.
+  dgit() { HOME="$DGIT_HOME" GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null \
+    git -C "$DREPO" -c user.email=u7@example.com -c user.name=u7 -c commit.gpgsign=false "$@"; }
+  I17_FIXTURE=ok
+  {
+    dgit -c init.defaultBranch=main init -q . &&
+      printf 'print(1)\n' >"$DREPO/a.py" && dgit add -A && dgit commit -qm one &&
+      printf 'print(2)\n' >"$DREPO/b.py" && dgit add -A && dgit commit -qm two
+  } >"$RUN/i17-fixture.log" 2>&1 || I17_FIXTURE=failed
+  DBASE="$(dgit rev-parse HEAD~1 2>/dev/null)"
+  if [ "$I17_FIXTURE" != ok ] || [ -z "$DBASE" ]; then
+    bad "I17: 픽스처 git 저장소를 만들지 못했습니다(아래 로그)"
+    sed 's/^/     /' "$RUN/i17-fixture.log"
+  fi
+  # contract 출력만으로 git_diff 미봉인 초안 3종을 쓴다. omit-digest 면 snapshotDigest 를 뺀다.
+  cat >"$RUN/diff_draft.py" <<'EOF'
+import json, sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+scan_dir = Path(sys.argv[1])
+c = json.loads(Path(sys.argv[2]).read_text())["contract"]
+omit_digest = len(sys.argv) > 3 and sys.argv[3] == "omit-digest"
+d = c["diffTarget"]
+target = {
+    "kind": c["target"]["allowedKinds"][0],
+    "targetId": c["target"]["targetId"],
+    "displayName": c["target"]["displayName"],
+    "baseRevision": d["baseRevision"],
+    "headRevision": d["headRevision"],
+}
+if not omit_digest:
+    target["snapshotDigest"] = d["snapshotDigest"]
+mode = {"commit": "commit", "range": "branch_diff", "working_tree": "working_tree"}[d["kind"]]
+now = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+scope = {"includePaths": ["."], "excludePaths": c["scope"]["requiredExcludePaths"] or []}
+documents = {
+    "scan-manifest.json": {"documentType": "codex-security.scan-manifest", "schemaVersion": "1.0",
+        "scan": {"id": c["scanId"], "status": "completed", "startedAt": now, "completedAt": now,
+                 "producer": c["producer"], "target": target, "scope": scope,
+                 "findingsRef": "findings.json", "coverageRef": "coverage.json"}},
+    "findings.json": {"documentType": "codex-security.findings", "schemaVersion": "1.0",
+                      "scanId": c["scanId"], "findings": []},
+    "coverage.json": {"documentType": "codex-security.coverage", "schemaVersion": "1.0",
+        "scanId": c["scanId"], "mode": mode, "completeness": "complete",
+        "inventoryStrategy": "repository", **scope, "explicitExclusions": [], "deferred": [],
+        "surfaces": [{"id": "surface_changed_files", "label": "Changed files",
+                      "disposition": "no_issue_found", "receiptRefs": []}]},
+}
+for name, payload in documents.items():
+    (scan_dir / name).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+EOF
+  # diff_case <라벨> <seal|unsealed|unsealed-omit> <glue register 인자…>
+  # 등록 → contract → 초안 → (seal 이면 finalize) → complete. 결과 JSON 은 $RUN/<라벨>.*.json.
+  diff_case() {
+    local label="$1" seal="$2"; shift 2
+    local dir="$RUN/$label"
+    local scan_dir="$dir/scan" state="$dir/state"
+    mkdir -p "$scan_dir" "$state"
+    chmod 700 "$dir" "$scan_dir" "$state"
+    PY - "$dir/boot.json" "$PLUGIN" "$state" "$DREPO" "$PYTHON_BIN" "$scan_dir" <<'EOF'
+import json, pathlib, sys
+out, plugin, state, repo, python, scan_dir = sys.argv[1:7]
+manifest = json.loads((pathlib.Path(plugin) / ".codex-plugin" / "plugin.json").read_text())
+pathlib.Path(out).write_text(json.dumps({
+    "ok": True, "pluginRoot": plugin, "pluginVersion": manifest["version"],
+    "stateDir": state, "scanDir": scan_dir, "repoRoot": repo,
+    "python": {"path": python, "version": "probe"},
+}, indent=2))
+EOF
+    PY "$GLUE" --bootstrap "$dir/boot.json" register "$@" >"$dir/register.json" 2>"$dir/register.err" || return 1
+    local sid
+    sid="$(PY -c 'import json,sys; print(json.load(open(sys.argv[1]))["scanId"])' "$dir/register.json")" || return 1
+    PY "$GLUE" --bootstrap "$dir/boot.json" contract --scan-id "$sid" >"$dir/contract.json" 2>"$dir/contract.err" || return 1
+    case "$seal" in
+      unsealed-omit) PY "$RUN/diff_draft.py" "$scan_dir" "$dir/contract.json" omit-digest || return 1 ;;
+      *) PY "$RUN/diff_draft.py" "$scan_dir" "$dir/contract.json" || return 1 ;;
+    esac
+    if [ "$seal" = seal ]; then
+      PY -I -B "$PLUGIN/scripts/finalize_scan_contract.py" --scan-dir "$scan_dir" --source-root "$DREPO" \
+        >"$dir/finalize.out" 2>"$dir/finalize.err" || return 1
+    fi
+    PY "$GLUE" --bootstrap "$dir/boot.json" complete --scan-id "$sid" >"$dir/complete.json" 2>"$dir/complete.err" || return 1
+  }
+  # check_case <라벨> <기대 contract kind> <digest 기대: formula|content>
+  check_case() {
+    PY - "$RUN/$1" "$2" "$3" <<'EOF'
+import hashlib, json, pathlib, sys
+d, kind, expect = pathlib.Path(sys.argv[1]), sys.argv[2], sys.argv[3]
+problems = []
+contract = json.loads((d / "contract.json").read_text())["contract"]
+diff = contract.get("diffTarget") or {}
+if contract.get("mode") != "diff":
+    problems.append(f"contract.mode={contract.get('mode')!r} (diff 기대)")
+if diff.get("kind") != kind:
+    problems.append(f"diffTarget.kind={diff.get('kind')!r} ({kind} 기대)")
+if expect == "formula":
+    digest = hashlib.sha256(
+        f"codex-security-diff/v1\0{kind}\0{diff.get('baseRevision')}\0{diff.get('headRevision')}".encode()
+    ).hexdigest()
+    wanted = f"codex-security-snapshot/v1:sha256:{digest}"
+else:
+    raw = json.loads((d / "contract.json").read_text())["raw"]
+    wanted = (raw.get("scan") or raw)["contract"]["diffTarget"].get("contentDigest")
+if not wanted or diff.get("snapshotDigest") != wanted:
+    problems.append(f"diffTarget.snapshotDigest={diff.get('snapshotDigest')!r} (기대 {wanted!r})")
+complete = json.loads((d / "complete.json").read_text())
+if complete.get("ok") is not True or complete.get("status") != "complete":
+    problems.append(f"complete 결과가 성공이 아닙니다: {json.dumps(complete)[:300]}")
+target = json.loads((d / "scan" / "scan-manifest.json").read_text())["scan"]["target"]
+if target.get("kind") != "git_diff" or target.get("snapshotDigest") != wanted:
+    problems.append(f"봉인 매니페스트 target 이 기대와 다릅니다: {target}")
+for p in problems:
+    print(f"FAIL {d.name}: {p}")
+raise SystemExit(1 if problems else 0)
+EOF
+  }
+
+  if diff_case i17-refs seal --mode diff --diff-target refs --base "$DBASE"; then
+    check_case i17-refs range formula
+    expect_exit 0 "$?" "I17a refs diff 등록·봉인·종결 + 손으로 쓴 식과 같은 digest(상류 대조는 I17c)"
+  else
+    bad "I17a: refs diff 수명주기가 중간에 실패했습니다"
+    cat "$RUN/i17-refs"/*.err "$RUN/i17-refs"/*.json 2>/dev/null | sed 's/^/     /' | head -20; echo
+  fi
+
+  printf 'print(3)\n' >>"$DREPO/b.py"
+  if diff_case i17-worktree seal --mode diff --diff-target working_tree --base HEAD; then
+    check_case i17-worktree working_tree content
+    expect_exit 0 "$?" "I17b working_tree diff 등록·봉인·종결 + contentDigest"
+  else
+    bad "I17b: working_tree diff 수명주기가 중간에 실패했습니다"
+    cat "$RUN/i17-worktree"/*.err "$RUN/i17-worktree"/*.json 2>/dev/null | sed 's/^/     /' | head -20; echo
+  fi
+  dgit checkout -q -- b.py
+
+  # 상류 식 대조: snapshotDigest 를 뺀 미봉인 초안을 넘기면 워크벤치가 종결 시점에 값을 채운다
+  # (npm 0.1.32부터). 그 값이 glue 가 계산한 값과 같아야 한다. 그 전 사본은 채우지 않으므로 대상이 아니다.
+  if grep -q "def committed_diff_snapshot_digest" "$PLUGIN/scripts/workbench_target.py" 2>/dev/null; then
+    if diff_case i17-parity unsealed-omit --mode diff --diff-target refs --base "$DBASE"; then
+      check_case i17-parity range formula
+      expect_exit 0 "$?" "I17c 상류가 채운 커밋 diff digest == glue 계산값"
+    else
+      bad "I17c: 미봉인 refs diff 종결이 실패했습니다"
+      cat "$RUN/i17-parity"/*.err "$RUN/i17-parity"/*.json 2>/dev/null | sed 's/^/     /' | head -20; echo
+    fi
+  else
+    printf 'NOTE I17c: 이 플러그인 사본은 npm 0.1.32 이전이라 종결 시점 digest 계산이 없습니다(검사 대상 아님)\n'
+  fi
+
+  # 대조군: 예전 글루처럼 레시피 mode 에 diff 를 실으면 상류가 거부한다(npm 0.1.22부터).
+  # 상류가 나중에 mode=diff 를 받기 시작하면 이 단언이 알려 준다.
+  I17E_DIR="$RUN/i17-mode-diff"
+  mkdir -p "$I17E_DIR"
+  chmod 700 "$I17E_DIR"
+  PY -c 'import json,sys; print(json.dumps({"repository": sys.argv[1], "mode": "diff", "config": {}, "target": {"kind": "repository", "paths": []}}))' "$DREPO" >"$RUN/i17e.recipe"
+  CODEX_SECURITY_STATE_DIR="$RUN/i17-refs/state" PY -I -B "$PLUGIN/scripts/workbench_db.py" register-cli-scan \
+    --scan-dir "$I17E_DIR" --repository "$DREPO" --recipe-json "$(cat "$RUN/i17e.recipe")" \
+    >"$RUN/i17e.out" 2>&1
+  I17E_CODE=$?
+  if [ "$I17E_CODE" != 0 ] && grep -q "Scan launch recipe mode must be standard or deep" "$RUN/i17e.out"; then
+    ok "I17e: 레시피 mode=diff 는 상류가 거부(글루가 target.kind 로 보내야 하는 이유)"
+  else
+    bad "I17e: 레시피 mode=diff 거부가 기대와 다릅니다(exit $I17E_CODE) — 상류 계약이 바뀌었을 수 있습니다"
+    sed 's/^/     /' "$RUN/i17e.out" | head -10
+  fi
+
+  # 인자 오류는 상류를 부르기 전에 글루가 끊는다.
+  PY "$GLUE" --bootstrap "$RUN/i17-refs/boot.json" register --mode diff >"$RUN/i17-usage.json" 2>&1
+  I17D_CODE=$?
+  if [ "$I17D_CODE" = 1 ] && grep -q -- "--diff-target" "$RUN/i17-usage.json"; then
+    ok "I17d: --diff-target 없는 --mode diff 는 글루가 거부"
+  else
+    bad "I17d: --mode diff 인자 누락 거부가 기대와 다릅니다(exit $I17D_CODE)"
+    sed 's/^/     /' "$RUN/i17-usage.json"
+  fi
+  PY "$GLUE" --bootstrap "$RUN/i17-refs/boot.json" register --mode standard --head HEAD >"$RUN/i17-usage2.json" 2>&1
+  I17F_CODE=$?
+  if [ "$I17F_CODE" = 1 ] && grep -q -- "--mode diff 에서만" "$RUN/i17-usage2.json"; then
+    ok "I17f: diff 전용 인자(--head)를 다른 모드에 주면 글루가 거부"
+  else
+    bad "I17f: 비-diff 모드의 --head 거부가 기대와 다릅니다(exit $I17F_CODE)"
+    sed 's/^/     /' "$RUN/i17-usage2.json"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+# I18. 글루 자식 환경은 상속된 CODEX_SECURITY_GIT 을 넘기지 않는다.
+#     npm 0.1.32부터 플러그인 스크립트는 이 값이 있으면 그 Git 을 쓴다. 상류 SDK 는
+#     사용자 값을 자기가 고른 Git 으로 덮어쓰므로, 우리도 상속값을 쓰지 않는다.
+# ---------------------------------------------------------------------------
+step "I18. 글루 자식 환경의 CODEX_SECURITY_GIT 제거"
+CODEX_SECURITY_GIT=/nonexistent/git PY - "$GLUE" <<'EOF'
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("workbench_glue", sys.argv[1])
+glue = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(glue)
+env = glue.child_env("/tmp/state")
+raise SystemExit(1 if any(k.upper() == "CODEX_SECURITY_GIT" for k in env) else 0)
+EOF
+expect_exit 0 "$?" "I18 상속된 CODEX_SECURITY_GIT 제거"
 
 printf '\n=== 결과 ===\n'
 if [ "$SKIPPED" -gt 0 ]; then

@@ -31,10 +31,34 @@ SKILL.md의 prompt-only 절이 정본이다. 이 스킬이 읽는 `skills/threat
 ## 0단계 — 부트스트랩·등록·contract (Phase 1·2 준수)
 
 1. `bootstrap.py --target-repo <저장소 루트>`로 pluginRoot·python·scanDir을 얻는다(Phase 1 0단계).
-2. **워크벤치 등록(Phase 2)**: `workbench_glue.py register`의 recipe에 `mode`는 diff에 맞게,
-   `target.kind`를 `refs`/`working_tree`로, base/head를 **문자열로** 채운다(R10). 이어서
-   `contract`로 좌표(targetId/revision/coverage.mode 기대값)를 확정하고 `feedback`를 주입한다.
-   순서·finalize-first·complete 실패 3선택지 분기는 Phase 2 SKILL.md와 동일하다.
+2. **워크벤치 등록(Phase 2)**: `workbench_glue.py register`에 diff 대상을 인자로 준다(R10).
+   ```bash
+   # refs (커밋/브랜치)
+   python3 <codex-security-scan 스킬 dir>/scripts/workbench_glue.py --bootstrap <bootstrap JSON 파일> register --mode diff --diff-target refs --base <base> --head <head>
+   # working-tree (head 는 현재 HEAD 여야 한다 — 생략하면 HEAD)
+   python3 <codex-security-scan 스킬 dir>/scripts/workbench_glue.py --bootstrap <bootstrap JSON 파일> register --mode diff --diff-target working_tree --base <base>
+   ```
+   글루는 레시피 `mode`를 `standard`로 두고 `target.kind`(`refs`/`working_tree`)와 base/head를 **문자열로**
+   싣는다. 상류가 레시피 `mode`로 `standard`·`deep`만 받고, target 종류에서 diff 모드를 유도하기
+   때문이다. 이 글루 수정 전에는 diff 등록이 `Scan launch recipe mode must be standard or deep.`로
+   항상 실패했다(npm 0.1.22부터, `repro-u7` I17·I17e). 이어서 `contract`로 좌표를 확정하고 `feedback`를
+   주입한다. 순서·finalize-first·complete 실패 3선택지 분기는 Phase 2 SKILL.md와 동일하다.
+
+   **contract → draft `scan.target` 매핑(diff).** `contract.diffTarget`은 글루가 get-scan에서 옮긴 값이다.
+
+   | contract 필드 | draft 반영 위치 |
+   | --- | --- |
+   | `target.allowedKinds[0]`(=`git_diff`) | `scan.target.kind` |
+   | `target.targetId`·`target.displayName` | 같은 이름으로 그대로 복사 |
+   | `diffTarget.baseRevision`·`diffTarget.headRevision` | `scan.target.baseRevision`·`headRevision`(해석된 커밋 SHA) |
+   | `diffTarget.snapshotDigest` | `scan.target.snapshotDigest` |
+   | `diffTarget.kind` | `coverage.mode` — `range` → `branch_diff`, `commit` → `commit`, `working_tree` → `working_tree` |
+
+   `snapshotDigest`는 글루가 상류 규칙으로 계산한다. working_tree는 등록 시점 `contentDigest`다. 커밋 diff는
+   `sha256("codex-security-diff/v1\0<kind>\0<base>\0<head>")`이고, 상류 `workbench_target.committed_diff_snapshot_digest()`와
+   같다. npm 0.1.32부터 워크벤치가 커밋 diff digest를 종결 시점에 직접 계산한다(상류 `8c78e655`). 이미
+   봉인한 매니페스트는 기록된 값을 유지하므로 우리 경로(봉인 뒤 `complete`)는 두 버전에서 모두 통과한다.
+   같은 값을 쓰면 공식 CLI가 만든 같은 diff 스캔과 digest가 일치한다(`repro-u7` I17c).
 3. **시작 고지 강화(R11)**: working-tree 스캔은 **등록 시점의 워킹트리 다이제스트가 기준**이므로
    스캔 중 파일 저장 한 번으로 complete-scan이 실패한다. "스캔이 끝날 때까지 저장소를 건드리지
    마세요(짧은 diff일수록 빨리 끝납니다)"를 refs 스캔보다 강하게 안내한다.
@@ -84,10 +108,10 @@ SKILL.md의 prompt-only 절이 정본이다. 이 스킬이 읽는 `skills/threat
    저장소가 커밋한 `./node_modules/.bin/git`이 실행된다(실측). 전체 스캔과 같은 이유이며 정본
    서술은 Phase 1 SKILL.md 2단계에 있다(P5-KTD2).
 
-   **diff 인벤토리에 들어가는 파일(npm 0.1.29 기준).** diff 인벤토리와 diff 랭킹 입력은 같은 규칙을
+   **diff 인벤토리에 들어가는 파일(npm 0.1.32 기준).** diff 인벤토리와 diff 랭킹 입력은 같은 규칙을
    쓴다(`repro-u4.sh` I 블록).
    - 확장자는 `rank_preview.TEXT_CODE_EXTENSIONS`로 거른다. npm 0.1.27~0.1.29에서 `.cjs`·`.cts`·
-     `.mts`·`.tf`가 추가됐다. 이 확장자 목록은 diff 인벤토리와 랭킹 입력(diff·저장소 모두)에만 쓰인다. 전체 스캔
+     `.mts`·`.tf`가, npm 0.1.31에서 `.m`이, npm 0.1.32에서 `.sol`·`.svelte`가 추가됐다. 이 확장자 목록은 diff 인벤토리와 랭킹 입력(diff·저장소 모두)에만 쓰인다. 전체 스캔
      인벤토리는 확장자 필터가 없는 `rg --files`라 0.1.25에서도 이 파일들을 포함했다.
    - `.github/workflows/*` 변경은 제외 규칙(`path_is_diff_excluded`)에서 빠져 인벤토리에 남는다.
      `.github`의 다른 파일(예: `dependabot.yml`)은 여전히 제외된다.

@@ -14,6 +14,7 @@ SKILL.md 가 R6 분기(재시도/실패기록/보류)를 수행하게 한다.
   - 항상 bootstrap 이 해석한 플러그인의 `scripts/workbench_db.py` 를 `python -I -B` 로 실행.
   - `CODEX_SECURITY_STATE_DIR` 를 정확한 대문자 이름으로 주입(R13).
   - `OPENAI_API_KEY` / `CODEX_API_KEY` 는 자식 환경에서 제거(무인증).
+  - 상속된 `CODEX_SECURITY_GIT` 도 제거한다(상류 SDK 도 사용자 값을 쓰지 않는다).
   - `--claim-token` 은 어떤 명령에도 노출하지 않는다(R4, CLI 등록 스캔 경로).
 
 입력: bootstrap.py 가 출력한 JSON(`--bootstrap <파일|->`)에서 pluginRoot/python/
@@ -27,6 +28,7 @@ stateDir/scanDir/repoRoot 를 읽는다.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import subprocess
@@ -34,7 +36,10 @@ import sys
 from pathlib import Path
 
 STATE_DIR_ENV = "CODEX_SECURITY_STATE_DIR"
-STRIP_ENV = ("OPENAI_API_KEY", "CODEX_API_KEY")
+# CODEX_SECURITY_GIT: npm 0.1.32부터 플러그인 스크립트는 이 값이 있으면 그 Git 을 쓰고, 없으면
+# PATH 에서 대상 저장소 밖의 Git 을 찾는다. 상류 SDK 는 사용자 값을 버리고 자기가 고른 Git 으로
+# 덮어쓴다(runtime.ts environmentWithGit). 우리는 고르지 않으므로 상속값을 지워 PATH 탐색에 맡긴다.
+STRIP_ENV = ("OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_SECURITY_GIT")
 FEEDBACK_RELATIVE = Path("artifacts") / "01_context" / "false_positive_feedback.json"
 MODES = ("standard", "diff", "deep")
 
@@ -214,6 +219,30 @@ def workbench_json(boot: dict, args: list[str]) -> dict:
 # 서브커맨드
 # --------------------------------------------------------------------------
 def cmd_register(boot: dict, args: argparse.Namespace) -> int:
+    paths = args.paths or []
+    recipe = {
+        "repository": boot["repoRoot"],
+        "mode": args.mode,
+        "config": {},
+        "target": {"kind": "repository", "paths": paths},
+    }
+    if args.mode == "diff":
+        # 상류 레시피의 mode 는 standard·deep 만 받는다(npm 0.1.22부터. 0.1.25·0.1.32 실측:
+        # "Scan launch recipe mode must be standard or deep."). diff 는 mode 가 아니라
+        # target.kind(refs/working_tree)로 표현하고, 상류가 거기서 mode=diff 를 유도한다.
+        if not args.diff_target or not args.base:
+            raise GlueError("register --mode diff 에는 --diff-target 과 --base 가 필요합니다.")
+        if paths:
+            raise GlueError("diff 스캔은 --paths 를 받지 않습니다(상류: scoped 레시피만 경로를 가진다).")
+        recipe["mode"] = "standard"
+        recipe["target"] = {
+            "kind": args.diff_target,
+            "paths": [],
+            "base": args.base,
+            "head": args.head or "HEAD",
+        }
+    elif args.diff_target or args.base or args.head:
+        raise GlueError("--diff-target·--base·--head 는 --mode diff 에서만 씁니다.")
     scan_dir = Path(boot.get("scanDir") or "")
     if not scan_dir or not scan_dir.is_dir():
         # bootstrap 출력 계약 위반이다 — load_bootstrap 의 키 누락과 같은 등급.
@@ -224,13 +253,6 @@ def cmd_register(boot: dict, args: argparse.Namespace) -> int:
             f"scan-dir 가 비어 있지 않습니다({len(existing)}개 항목): {scan_dir}. "
             "register 는 스캔 작업 전에, 빈 디렉터리에서 호출해야 합니다."
         )
-    paths = args.paths or []
-    recipe = {
-        "repository": boot["repoRoot"],
-        "mode": args.mode,
-        "config": {},
-        "target": {"kind": "repository", "paths": paths},
-    }
     result = workbench_json(
         boot,
         [
@@ -283,7 +305,42 @@ def cmd_contract(boot: dict, args: argparse.Namespace) -> int:
         "mode": node.get("mode"),
         "scanId": node.get("scanId") or args.scan_id,
     }
+    diff_target = contract.get("diffTarget")
+    if isinstance(diff_target, dict):
+        fields["diffTarget"] = diff_snapshot_fields(diff_target)
     return emit({"ok": True, "contract": fields, "raw": scan}, True)
+
+
+def committed_diff_snapshot_digest(kind: str, base_revision: str, head_revision: str) -> str:
+    """상류 `workbench_target.committed_diff_snapshot_digest()`와 같은 식.
+
+    출처: 태그 npm-v0.1.32 = 커밋 7c19cce7224af29628cd10c218444d5c0e8fdd1c 의
+    `plugins/codex-security/scripts/workbench_target.py`(상류 8c78e655에서 도입). 그 전에도
+    `workbench_saved_results.py`가 같은 식을 인라인으로 썼다. `repro-u7` I17이 상류 봉인 결과와 대조한다.
+    """
+    digest = hashlib.sha256(
+        f"codex-security-diff/v1\0{kind}\0{base_revision}\0{head_revision}".encode()
+    ).hexdigest()
+    return f"codex-security-snapshot/v1:sha256:{digest}"
+
+
+def diff_snapshot_fields(diff_target: dict) -> dict:
+    """get-scan 의 diffTarget 을 draft 의 `scan.target` 좌표로 옮긴다.
+
+    snapshotDigest 는 상류 `diff_snapshot_digest()` 규칙을 따른다 — working_tree 는 등록 시점
+    contentDigest, commit·range 는 base/head 에서 유도한 값이다.
+    """
+    kind = diff_target.get("kind")
+    base = diff_target.get("baseRevision")
+    head = diff_target.get("headRevision")
+    fields = {"kind": kind, "baseRevision": base, "headRevision": head}
+    if kind == "working_tree":
+        fields["snapshotDigest"] = diff_target.get("contentDigest")
+    elif kind in ("commit", "range") and isinstance(base, str) and isinstance(head, str):
+        fields["snapshotDigest"] = committed_diff_snapshot_digest(kind, base, head)
+    else:
+        fields["snapshotDigest"] = None
+    return fields
 
 
 def cmd_feedback(boot: dict, args: argparse.Namespace) -> int:
@@ -517,6 +574,11 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("register", help="register-cli-scan (빈 scan-dir)")
     p.add_argument("--mode", choices=MODES, default="standard")
     p.add_argument("--paths", nargs="*", default=[], help="scoped-path 스캔의 대상 경로들")
+    p.add_argument("--diff-target", choices=("refs", "working_tree"), default=None,
+                   help="--mode diff 의 대상 종류(refs=커밋·브랜치, working_tree=로컬 패치)")
+    p.add_argument("--base", default=None, help="--mode diff 의 base 리비전")
+    p.add_argument("--head", default=None,
+                   help="--mode diff 의 head 리비전(기본 HEAD. working_tree 는 현재 HEAD 여야 한다)")
     p.set_defaults(func=cmd_register)
 
     p = sub.add_parser("contract", help="get-scan → draft 반영 필드")
