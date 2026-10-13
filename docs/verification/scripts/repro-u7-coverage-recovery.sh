@@ -1224,7 +1224,7 @@ fi
 # I17. diff 스캔의 워크벤치 등록·종결 (glue register --mode diff).
 #
 # 회귀 이력: 글루가 diff 를 레시피 mode 로 보냈는데 상류는 mode 로
-# standard·deep 만 받는다(npm 0.1.22부터, "Scan launch recipe mode must be standard or deep.").
+# standard·deep 만 받는다(상류 최초 태그부터, "Scan launch recipe mode must be standard or deep.").
 # 그래서 diff 스캔은 이력 등록이 항상 실패했다. diff 는 target.kind(refs/working_tree)로
 # 보내야 한다. contract 의 diffTarget.snapshotDigest 는 상류 식과 같아야 한다 —
 # npm 0.1.32(상류 8c78e655)부터 워크벤치가 커밋 diff digest 를 종결 시점에 직접 계산한다.
@@ -1388,7 +1388,7 @@ EOF
     printf 'NOTE I17c: 이 플러그인 사본은 npm 0.1.32 이전이라 종결 시점 digest 계산이 없습니다(검사 대상 아님)\n'
   fi
 
-  # 대조군: 예전 글루처럼 레시피 mode 에 diff 를 실으면 상류가 거부한다(npm 0.1.22부터).
+  # 대조군: 예전 글루처럼 레시피 mode 에 diff 를 실으면 상류가 거부한다(상류 최초 태그부터).
   # 상류가 나중에 mode=diff 를 받기 시작하면 이 단언이 알려 준다.
   I17E_DIR="$RUN/i17-mode-diff"
   mkdir -p "$I17E_DIR"

@@ -227,7 +227,7 @@ def cmd_register(boot: dict, args: argparse.Namespace) -> int:
         "target": {"kind": "repository", "paths": paths},
     }
     if args.mode == "diff":
-        # 상류 레시피의 mode 는 standard·deep 만 받는다(npm 0.1.22부터. 0.1.25·0.1.32 실측:
+        # 상류 레시피의 mode 는 standard·deep 만 받는다(상류 최초 태그부터. 0.1.25·0.1.32 실측:
         # "Scan launch recipe mode must be standard or deep."). diff 는 mode 가 아니라
         # target.kind(refs/working_tree)로 표현하고, 상류가 거기서 mode=diff 를 유도한다.
         if not args.diff_target or not args.base:

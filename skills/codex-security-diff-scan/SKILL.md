@@ -41,7 +41,7 @@ SKILL.md의 prompt-only 절이 정본이다. 이 스킬이 읽는 `skills/threat
    글루는 레시피 `mode`를 `standard`로 두고 `target.kind`(`refs`/`working_tree`)와 base/head를 **문자열로**
    싣는다. 상류가 레시피 `mode`로 `standard`·`deep`만 받고, target 종류에서 diff 모드를 유도하기
    때문이다. 이 글루 수정 전에는 diff 등록이 `Scan launch recipe mode must be standard or deep.`로
-   항상 실패했다(npm 0.1.22부터, `repro-u7` I17·I17e). 이어서 `contract`로 좌표를 확정하고 `feedback`를
+   항상 실패했다(글루를 처음 만든 때부터, `repro-u7` I17·I17e). 이어서 `contract`로 좌표를 확정하고 `feedback`를
    주입한다. 순서·finalize-first·complete 실패 3선택지 분기는 Phase 2 SKILL.md와 동일하다.
 
    **contract → draft `scan.target` 매핑(diff).** `contract.diffTarget`은 글루가 get-scan에서 옮긴 값이다.
