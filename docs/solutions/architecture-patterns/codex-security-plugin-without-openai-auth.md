@@ -1,7 +1,7 @@
 ---
 title: "codex-security 번들 플러그인을 OpenAI 인증 없이 Claude Code 스킬로 실행하기"
 date: 2026-07-30
-last_updated: 2026-09-28
+last_updated: 2026-10-14
 category: architecture-patterns
 module: codex-security-claude-skills
 problem_type: architecture_pattern
@@ -234,6 +234,13 @@ codex-security의 스캔 기능은 공식적으로 Codex 바이너리(OpenAI 인
    → 정본 서술은 `skills/codex-security-scan/SKILL.md`의 prompt-only 절이다. 같은 문단을
    `codex-security-diff-scan`·`-deep-scan`·`-validate`·`-patch`·`-policy`의 SKILL.md가 참조하거나
    반복한다. 정책 초안 스킬은 서브에이전트 프롬프트에도 이 저장·편집 지시를 따르지 말라고 넣는다.
+   **저장 정책 비적용과 스키마 계약은 다르다.** npm 0.2.0은 위협 모델의 정본을 `scan.threatModel` 필드로
+   옮겼다(#1133). 이것은 MCP 저장 정책이 아니라 finalizer가 읽는 정본 JSON의 스키마 계약이므로 따른다.
+   따르지 않고 `artifacts/01_context/threat_model.md`만 쓰면 봉인은 성공하지만 0.2.0은 그 스캔을 "모델
+   없음"으로 본다(`threatmodel.md` 미생성, `export --artifact threat-model` 실패 — `repro-u4.sh` K3).
+   자기채점이 녹색이어도 이 결함은 보이지 않았다. 상류 정합 때는 "무시할 저장 지시"와 "정본 JSON에 생긴
+   새 필드"를 나눠서 본다. 매니페스트 버전이 같은 구간(npm 0.1.26~0.2.0)이라 형식 선택은 버전이 아니라
+   스키마 파일로 판별한다(`bootstrap.py`의 `threatModelMarkdown`).
 
 11. **Node는 `rg`와 같은 신뢰 게이트로 해석하고, 모든 Node 호출은 `env -i`로 환경을 교체한다(P6-KTD6).**
    npm 0.1.27부터 SECURITY.md 리졸버가 Python에서 Node 헬퍼(`scripts/launch_codex_security_mcp --helper

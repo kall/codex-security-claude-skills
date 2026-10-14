@@ -31,15 +31,24 @@ SKILL.md의 prompt-only 절이 정본이다. 이 스킬이 후속 단계에서 �
    `rg`를 타지 않는다(아래 「랭킹 파이프라인」 — `make-repo-rank-input`은 `rglob`을 쓴다).
    `rg`를 쓰는 `make-repo-scope-input`은 deep-lite 파이프라인에 없다.
    확보 실패 시 `bootstrap.py`가 exit 1 + `stage=searchCommand`로 멈추므로 스캔을 시작하지 않는다.
+   Phase 1 0단계의 **후보 정규화 확인**도 적용한다 — `candidateNormalizer.available`이 `false`면 중단한다.
 4. **플러그인 스크립트 호출 시 PATH를 교체한다.** 랭킹 파이프라인을 포함해 대상 저장소를 `cwd`로
    실행하는 모든 상류 스크립트는 `PATH=<search_path_env>`로 호출한다 —
    `<search_path_env>` = `shellQuoted.searchPathEnv`(인용본이므로 `"…"`로 다시 감싸지
    않는다). **앞에 덧붙이지 말고 교체한다.** 원시 `$PATH`를
    물려주면 대상 저장소가 커밋한 `./node_modules/.bin/git`·`rg`가 사용자 권한으로 실행된다
    (Phase 1 SKILL.md 0단계에 근거와 실측 재현이 있다).
-5. **워크벤치 등록(Phase 2)**: `workbench_glue.py register --mode deep` → `contract` → `feedback`. recipe
-   `mode`는 `"deep"`. coverage.mode 기대값은 **contract 조회 결과가 권위**(R10). deep 전용 DB
-   서브커맨드는 쓰지 않는다(KTD4 — 일반 스캔 수명주기에 태움).
+5. **워크벤치 등록(Phase 2)**: `workbench_glue.py register`(표준 모드 — `--mode deep`을 주지 않는다) →
+   `contract` → `feedback`. coverage.mode 기대값은 **contract 조회 결과가 권위**이고 표준 등록이면
+   `repository`다(R10). deep 전용 DB 서브커맨드는 쓰지 않는다(KTD4 — 일반 스캔 수명주기에 태움).
+   - **왜 표준 모드인가.** 상류는 레시피 `mode=deep` 스캔을 종결하기 전에 공식 deep 코디네이터가 만드는
+     실행 기록(`deep_scan_runs` 행, `succeeded` + manifest)을 요구한다(`deep_scan_workbench.py`, npm
+     0.1.29~0.2.0). deep-lite는 그 기록을 만들지 않으므로 `--mode deep`으로 등록하면 `complete`가
+     `Deep Scan discovery orchestration must finish and persist its manifest before the parent scan can be
+     completed.`로 항상 거부되고 행은 `running`으로 남는다(2026-10-14 스모크 테스트 실측). 글루는 이제
+     `register --mode deep`을 상태 DB에 행을 만들기 전에 거부한다(`repro-u7` I17g).
+   - 그래서 이력(`scans list`)에는 deep-lite 스캔이 **standard 스캔으로** 보인다. deep-lite는 원래 표준
+     스캔과 같은 coverage 형식을 쓰므로(아래 「공식 deep과의 차이」) 결과 의미는 바뀌지 않는다.
 
 ## 랭킹 파이프라인 (R6 — 실측 계약: docs/verification/phase4-deep-lite-pipeline.md)
 
@@ -53,10 +62,11 @@ SKILL.md의 prompt-only 절이 정본이다. 이 스킬이 후속 단계에서 �
 전체 스캔 인벤토리 호출과 형태를 맞춘 방어 조치다. **샤드 디렉터리는 반드시 `rank_shards`로
 명명하고 pool-plan 파일의 형제**로 둔다.
 
-**랭킹 입력 규칙(npm 0.1.32 기준).**
+**랭킹 입력 규칙(npm 0.2.0 기준).**
 - 랭킹 입력의 확장자 필터는 `rank_preview.TEXT_CODE_EXTENSIONS`다. npm 0.1.27~0.1.29에서 `.cjs`·
-  `.cts`·`.mts`·`.tf`가, npm 0.1.31에서 `.m`(Objective-C)이, npm 0.1.32에서 `.sol`(Solidity)·`.svelte`가
-  추가돼 이 파일들도 랭킹 대상이 된다. 커버리지 분모인 `in_scope_files.txt`는
+  `.cts`·`.mts`·`.tf`가, npm 0.1.31에서 `.m`(Objective-C)이, npm 0.1.32에서 `.sol`(Solidity)·`.svelte`가,
+  npm 0.2.0에서 `.hh`·`.hxx`(C++ 헤더)·`.ejs`·`.erb`·`.phtml`(템플릿)·`.vy`(Vyper)가 추가돼 이 파일들도
+  랭킹 대상이 된다. 커버리지 분모인 `in_scope_files.txt`는
   확장자 필터가 없는 `rg --files` 목록이라 이 변화와 무관하다.
 - 랭킹 미리보기는 **모든 파일에서 앞 64 KiB만** 읽는다. 0.1.25는 직접 요청한 스코프에만 이 제한을
   두었다. 64 KiB 뒤의 코드는 랭킹 점수에 반영되지 않는다. 선택된 파일은 리뷰 팬아웃에서 전체를 읽는다.
@@ -112,7 +122,8 @@ Agent 도구에는 도구 허용 목록 인자가 없고, 내장 유형(Explore 
 - **워커 분포 요약(R12)**: 워커별 리뷰 파일 수와 반환 후보 수를 **표로** 남겨, 조용히 "후보 없음"을
   반환하는 워커를 감지한다.
 
-패스 완료 후 모든 raw 후보를 `normalize_candidates.py`로 **단일 원장**에 병합한다(Phase 1과 동일).
+패스 완료 후 모든 raw 후보를 Phase 1 2단계 5번의 정규화 명령(`candidateNormalizer.kind`로 고름 —
+npm 0.1.32 이하 `normalize_candidates.py`, npm 0.2.0 Node 헬퍼)으로 **단일 원장**에 병합한다.
 
 ## 후속 단계 (R10 — Phase 1·2 계약 그대로)
 
@@ -124,19 +135,19 @@ validation(compact 1회) → attack-path(compact 1회) → canonical JSON(순서
   처리한다. deep-lite는 랭킹으로 대상을 좁히므로 인벤토리가 정당하게 빌 수 있다 — 그 경우에만
   `--allow-empty-inventory`를 붙인다. 랭킹이 실패해서 빈 것과 구분되지 않으면 붙이지 말고
   랭킹 단계의 종료 상태를 먼저 확인한다.
-- **자동 종결된 스캔의 복구**: deep 모드는 상류가 스캔을 자동으로 `failed`로 종결시킬 수 있다.
-  그 경우 `workbench_glue.py recover --scan-id <id>`로 보존 체크포인트 재발행을 시도할 수
-  있다(exit 0 + `ok:false`면 대상이 아니다 — Phase 1 SKILL.md 6단계의 판정 규칙이 정본).
+- **자동 종결된 스캔의 복구**: 봉인 뒤 `complete-scan`이 계약 오류로 실패하면 상류가 스캔을 자동으로
+  `failed`로 종결시킬 수 있다. 그 경우 `workbench_glue.py recover --scan-id <id>`로 보존 체크포인트
+  재발행을 시도할 수 있다(exit 0 + `ok:false`면 대상이 아니다 — Phase 1 SKILL.md 6단계의 판정 규칙이 정본).
 위협 모델은 저장소 전체 범위에서 1회, validation·attack-path도 각 1회의 중앙화 tail(플러그인
-deep-security-scan의 중앙화 tail 패턴)로 수행한다.
+deep-security-scan의 중앙화 tail 패턴)로 수행한다. 위협 모델은 Phase 1 5단계 "정본 위협 모델" 표대로
+`scan.threatModel`에 싣는다(`threatModelMarkdown`이 `false`면 생략).
 
-- **`inventoryStrategy`**: draft의 `coverage.inventoryStrategy`는 `repository`로 쓴다. npm 0.1.29
-  finalizer는 기대 `coverage.mode`가 `deep_repository`인 unsealed draft에서 이 값을 무조건
-  `repository`로 덮어쓴다. 다른 값을 써도 봉인 결과는 같지만, 이 덮어쓰기에 기대지 않는다.
+- **`coverage.mode`·`inventoryStrategy`**: 표준 등록이므로 draft의 `coverage.mode`는 `repository`,
+  `coverage.inventoryStrategy`는 `repository`로 쓴다. `deep_repository`는 상류 공식 deep 전용이다.
 
-## 공식 deep과의 차이 (npm 0.1.32 기준)
+## 공식 deep과의 차이 (npm 0.2.0 기준)
 
-공식 Deep의 부모 스캔 coverage는 npm 0.1.29~0.1.32에서 **설정값과 결과 요약만** 남는다. 코디네이터가
+공식 Deep의 부모 스캔 coverage는 npm 0.1.29~0.2.0에서 **설정값과 결과 요약만** 남는다. 코디네이터가
 설정한 경로를 `includePaths`·`excludePaths`에 복사하고, 집계 결과로 `completeness`를 정한다. 성공하면
 `complete`이고 `surfaces`·`explicitExclusions`·`deferred`는 빈 배열이며 `openQuestions`는 없다.
 시간 제한 안에 리뷰가 하나도 끝나지 않았을 때만 `partial`과 `deferred` 설명을 쓴다. 리포트는 설정한

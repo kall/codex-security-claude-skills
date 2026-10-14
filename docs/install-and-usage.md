@@ -29,7 +29,7 @@ bash "$PKG/skills/install.sh" --copy --check
 ```
 
 `--check`가 실행 환경을 프로브해 번들 플러그인 경로·버전·검색 명령(ripgrep)·Node·SECURITY.md
-헬퍼·게이트 사본과 Python을 보고한다. 종료코드는 **0=정상 / 2=부분 정상(ripgrep 미확보 — 저장소 전체 스캔 불가) /
+헬퍼·게이트 사본과 Python을 보고한다. 종료코드는 **0=정상 / 2=부분 정상(ripgrep 미확보 또는 후보 정규화 불가 — 저장소 전체 스캔 불가, 또는 상류 `skills add`가 스킬을 덮어씀) /
 1=실패** 세 값이다 — exit 2를 통과로 보지 않는다.
 플러그인이 없으면 설치할 명령을 안내한다(**자동 설치는 하지 않는다** — 전역 npm 환경 변경은
 사용자 결정이다):
@@ -77,7 +77,7 @@ bash "$PKG/skills/install.sh" --check-only
 claude --version     # Claude Code (구독 로그인 완료 상태)
 python3 --version    # 3.10 이상 (3.10 이면 tomli 도 필요: pip install tomli)
 git --version        # 필수
-node --version       # 22 이상 — 플러그인 npm 설치, SECURITY.md 정책 해결, 5.9·5.10절 스킬에 필요
+node --version       # 22 이상 — 플러그인 npm 설치, 스캔 후보 정규화(npm 0.2.0), SECURITY.md 정책 해결, 5.9·5.10절 스킬에 필요
 ```
 
 | 항목 | 요구 | 없을 때 |
@@ -85,10 +85,16 @@ node --version       # 22 이상 — 플러그인 npm 설치, SECURITY.md 정책
 | Claude Code | 구독 로그인 세션 | OpenAI 키는 불필요하며 설정해도 쓰이지 않는다 |
 | Python | 3.10+ (3.10은 `tomli`) | 설치 후 `PYTHON=<경로>`로 지정 가능 |
 | git | 필수 | 대상 해석·diff·인벤토리 폴백에 사용 |
-| Node.js | 22+ | 플러그인을 3.1절 (c)·(d) 방법으로 확보하면 설치에는 불필요하다. 다만 Node가 없으면 전체 스캔이 SECURITY.md 정책 해결을 고지와 함께 건너뛰고, `codex-security-policy`·`codex-security-classify-severity`는 쓸 수 없다 |
+| Node.js | 22+ | 플러그인을 3.1절 (c)·(d) 방법으로 확보하면 설치에는 불필요하다. 다만 Node가 없으면 전체 스캔이 SECURITY.md 정책 해결을 고지와 함께 건너뛰고, `codex-security-policy`·`codex-security-classify-severity`는 쓸 수 없다. **npm 0.2.0에서는 스캔 3종(전체·diff·deep)도 시작하지 않는다** — 후보 정규화가 Python 스크립트에서 Node 헬퍼로 옮겨졌기 때문이다 |
 | ripgrep (`rg`) | 저장소 전체 스캔·deep-lite 는 **필수** | 인벤토리를 상류 스크립트에 위임하므로 확보하지 못하면 스캔이 시작되지 않는다. Claude Code 세션이면 내장 ripgrep을 `rg` 심링크로 노출해 자동 충족된다(3.3절 프로브가 확인). validate·patch·verify-fix·scan-match·policy·classify-severity는 불필요 |
 
 **OS**: Linux / macOS 기준(bash). Windows는 WSL 사용을 권한다.
+
+> **npm 0.2.0부터 스캔도 npm 설치본이 필요하다.** 0.2.0은 후보 정규화 스크립트
+> (`scripts/normalize_candidates.py`)를 지우고 빌드된 Node 헬퍼(`mcp/helpers.mjs`)로 옮겼다. 상류 저장소
+> 체크아웃(`plugins/codex-security`)에는 빌드된 `mcp/`가 없으므로 0.2.0 체크아웃으로는 전체·diff·deep 스캔을
+> 할 수 없다. 3.1절 (a)·(b) 방법(npm 설치본)을 쓴다. npm 0.1.32 이하 체크아웃은 Python 스크립트가 있어 지금처럼
+> 동작한다.
 
 > **버전 매니저(mise/asdf/pyenv)를 쓰는 PC라면**: `python3`가 PATH에 없을 수 있다. 이 문서의
 > `python3 …` 명령을 `mise exec -- python3 …` 처럼 감싸거나, `PYTHON="$(mise which python3)"`를
@@ -185,6 +191,15 @@ import하므로, 같은 스킬 루트에 같은 버전으로 설치돼 있어야
 복사 모드로 설치했다면 저장소 clone은 지워도 되지만, 3.1절 (c) 자동 탐색과 8절 재검증
 스크립트는 저장소가 있어야 쓸 수 있다.
 
+> **상류 `codex-security skills add`와 충돌한다(npm 0.2.0).** 상류 CLI의 `skills add`는 CLI 명령마다
+> `codex-security-<명령>` 스킬을 만든다. 그리고 `~/.claude/skills/<이름>`을 **강제로 지우고**
+> `~/.agents/skills/<이름>`을 가리키는 심링크로 바꾼다(`incur`의 `install`, 2026-10-14 코드 확인과 임시 HOME 실측).
+> 이 저장소의 스킬 6개(`codex-security-scan`·`-policy`·`-patch`·`-validate`·`-verify-fix`·`-classify-severity`)와
+> 이름이 겹친다. 바뀐 스킬의 SKILL.md는 `requires_bin: codex-security`를 가진 CLI 안내뿐이라 로그인 없이는
+> 동작하지 않는다. 링크 설치본이면 링크만 지워지고 저장소 원본은 남는다. 복사 설치본은 지워진다.
+> 이 명령을 실행하지 않는다. 실행했다면 `--check`가 덮어쓰인 스킬을 이름으로 알리고 exit 2를 낸다.
+> `--force`(복사본이면 `--copy --force`)로 다시 설치한다.
+
 ### 3.3 설치 확인
 
 Claude Code를 재시작하고 스킬 목록에 9종이 보이는지, 그리고 부트스트랩이 플러그인을 찾는지
@@ -197,8 +212,8 @@ python3 "${CLAUDE_SKILLS_DIR:-$HOME/.claude/skills}"/codex-security-scan/scripts
   --target-repo /path/to/target-repo --no-scan-dir
 ```
 
-npm 전역 설치 환경에서의 성공 출력(npm 0.1.29 = 매니페스트 0.1.95 기준, 2026-09-23 실측. npm 0.1.32 빌드에서도
-필드 구성이 같다(2026-09-30). 경로·Python·Node 값은 환경마다 다르다. 스킬 내부용 필드 `trustedPathEnv`·`trustedChildEnv`·`trustedChildEnvShell`·
+npm 전역 설치 환경에서의 성공 출력(npm 0.1.29 = 매니페스트 0.1.95 기준, 2026-09-23 실측. `candidateNormalizer`·
+`threatModelMarkdown` 값은 npm 0.2.0 실측(2026-10-14)이며, npm 0.1.32 이하에서는 `"kind": "python"`·`false`다. 경로·Python·Node 값은 환경마다 다르다. 스킬 내부용 필드 `trustedPathEnv`·`trustedChildEnv`·`trustedChildEnvShell`·
 `searchCommand`·`shellQuoted`와 `diagnostics`의 나머지 항목은 생략했다):
 
 ```json
@@ -215,6 +230,8 @@ npm 전역 설치 환경에서의 성공 출력(npm 0.1.29 = 매니페스트 0.1
     "node": "/usr/bin/node",
     "reason": null
   },
+  "candidateNormalizer": { "available": true, "kind": "node-helper", "reason": null },
+  "threatModelMarkdown": true,
   "sdk": {
     "dist": "<npm root -g>/@openai/codex-security/dist",
     "cli": "<npm root -g>/@openai/codex-security/bin/codex-security.mjs",
@@ -228,13 +245,18 @@ npm 전역 설치 환경에서의 성공 출력(npm 0.1.29 = 매니페스트 0.1
 }
 ```
 
-새 필드 세 개는 실패해도 `ok`를 바꾸지 않는다. 가용성과 사유만 싣고, 건너뛸지는 각 스킬이 정한다.
+관측 필드는 실패해도 `ok`를 바꾸지 않는다. 가용성과 사유만 싣고, 건너뛸지는 각 스킬이 정한다.
 
 | 필드 | 뜻 | 없을 때 |
 | --- | --- | --- |
 | `node` | 대상 저장소 밖에서 신뢰 게이트를 통과한 Node(`CODEX_MCP_NODE_PATH` → `CODEX_BROWSER_USE_NODE_PATH` → 신뢰 PATH 순) | `null`. 전체 스캔은 정책 해결을 건너뛰고, policy·classify-severity는 중단한다 |
 | `securityMdHelper` | 상류 SECURITY.md Node 헬퍼(npm 0.1.27부터) | `available: false`와 `reason`(헬퍼 파일 없음 / Node 없음 / 신뢰 게이트 거부). 전체 스캔은 건너뛰고, policy는 중단한다 |
 | `sdk` | npm 패키지의 `dist/`와 CLI 스크립트 | `dist: null`과 `reason`(상류 소스 체크아웃 등). policy·classify-severity가 중단한다 |
+| `candidateNormalizer` | 후보 정규화 경로. `python`(npm 0.1.32 이하 `scripts/normalize_candidates.py`) 또는 `node-helper`(npm 0.2.0, `securityMdHelper`와 같은 런처·Node) | `available: false`·`kind: null`과 `reason`. 전체·diff·deep 스캔이 0단계에서 중단한다 |
+| `threatModelMarkdown` | 플러그인 스키마가 정본 위협 모델의 markdown 형식을 받는가(npm 0.2.0) | `false`(npm 0.1.32 이하). 스캔이 `scan.threatModel`을 생략하고 `threatmodel.md`가 생기지 않는다 |
+
+npm 0.1.26~0.2.0은 매니페스트 버전이 모두 `0.1.95`라서 `pluginVersion`으로는 구분할 수 없다. 두 필드는
+버전 대신 파일(정규화 스크립트 존재, 스키마의 markdown 대안)로 판별한다.
 
 `ok: false`면 `stage`(`pluginRoot` / `python` / `scanDir` / `arguments`)와 `error`의 한국어 안내를
 그대로 따른다. `diagnostics.pluginAttempts`에 후보별 채택/거부 사유가 남으므로 왜 못 찾았는지
@@ -242,13 +264,16 @@ npm 전역 설치 환경에서의 성공 출력(npm 0.1.29 = 매니페스트 0.1
 
 ### 3.4 플러그인 사본별 동작 차이 확인 (권장)
 
-**매니페스트 0.1.95(npm 0.1.32) 기준으로는 두 사본이 같게 동작한다** — npm 배포본과 GitHub 저장소
+**매니페스트 0.1.95(npm 0.2.0) 기준으로는 두 사본이 같게 동작한다** — npm 배포본과 GitHub 저장소
 체크아웃 모두 워킹트리가 변경돼도 **종결은 성공하고 경고만** 남긴다. 태그 `npm-v0.1.32`로 빌드한 패키지에서
 `repro-u3.sh` S5가 `exit=0`이었고 경고 문구도 같았다(2026-09-30 재실측). npm 0.1.32의
 `scripts/workbench_target.py`는 Git 실행 파일 선택과 커밋 diff digest 함수가 늘었지만 게이트 판정은 그대로다.
 태그 체크아웃의 `scripts/`는 빌드 사본과 파일 단위로 같다. 체크아웃 사본에
 `--check`를 돌려도 "경고 사본"으로 판별된다. 하드 실패 사본을 만드는 심볼(`require_unchanged_target`)은
-현재 배포본에 존재하지 않는다.
+현재 배포본에 존재하지 않는다. npm 0.2.0 배포본도 `repro-u3.sh` S5가 `exit=0`이고 `--check`가 "경고 사본"으로
+판별한다(2026-10-14 실측). 0.2.0은 상태 DB 마이그레이션이 늘었다 — 0.2.0으로 한 번 연 상태 DB를 0.1.x로 다시
+쓸 수 있다는 보장이 없으므로, 전역 설치본을 0.2.0으로 올리기 전에 상태 디렉터리
+(`~/.codex/state/plugins/codex-security`)를 백업한다.
 
 과거(플러그인 0.1.14)에는 **같은 매니페스트 버전에서도 사본에 따라 처리가 달랐으므로**(하드 실패
 vs 경고), 오래된 사본을 쓰거나 상류가 다시 바꿀 수 있다는 전제로 아래 프로브를 유지한다.
@@ -264,7 +289,8 @@ grep -q "def require_unchanged_target" "$PLUGIN/scripts/workbench_db.py" \
 
 | 사본 / 시점 | 스캔 중 워킹트리 변경 후 종결 시 | 실측 메시지 |
 | --- | --- | --- |
-| 태그 `npm-v0.1.32` 빌드 패키지 (매니페스트 0.1.95) | **성공 종결 + 경고** | `Working-tree contents changed while the scan was running; results were saved for the original snapshot.` |
+| npm 배포본 0.2.0 (매니페스트 0.1.95) | **성공 종결 + 경고** | `Working-tree contents changed while the scan was running; results were saved for the original snapshot.` |
+| 태그 `npm-v0.1.32` 빌드 패키지 (매니페스트 0.1.95) | **성공 종결 + 경고** | 위와 동일 |
 | GitHub 저장소 체크아웃 0.1.32 (매니페스트 0.1.95) | **성공 종결 + 경고**(게이트 파일이 빌드 사본과 같다. `--check` 판별도 경고 사본) | 위와 동일 |
 | npm 배포본 0.1.29 (매니페스트 0.1.95, 과거 실측) | **성공 종결 + 경고** | 위와 동일 |
 | npm 배포본 0.1.25 (매니페스트 0.1.94, 과거 실측) | **성공 종결 + 경고** | 위와 동일 |
@@ -359,7 +385,8 @@ validation(compact) → attack-path(compact) → canonical JSON 3종 draft → �
 ├── coverage.json
 ├── report.md                   # 주 가독 산출물 (finalizer 생성 — 손으로 수정 금지)
 ├── *.sarif
-├── threat_model.md
+├── threatmodel.md              # 정본 위협 모델의 투영 (npm 0.2.0, finalizer 생성)
+├── threat_model.md             # 1단계 위협 모델 사람용 사본
 └── artifacts/
     ├── 01_context/             # threat_model 복사본, security_guidance.md, false_positive_feedback.json
     ├── 02_discovery/           # in_scope_files.txt, review_log.jsonl, raw/agent-*.jsonl, candidate_ledger.jsonl
@@ -368,8 +395,13 @@ validation(compact) → attack-path(compact) → canonical JSON 3종 draft → �
 
 완료 시 Claude가 한국어로 보고하는 항목: 파인딩 수와 심각도 분포, `report.md`·SARIF **절대 경로**,
 커버리지 상태(`complete`/`partial`)와 미리뷰 파일 수, 능력 확인에서 격하됐는지 여부, 워크벤치
-경고(있으면). 완전 커버리지를 거짓 주장하지 않으며, 후속 작업(내보내기·패치·트래킹)은
+경고(있으면), `threatmodel.md` 경로(npm 0.2.0). 완전 커버리지를 거짓 주장하지 않으며, 후속 작업(내보내기·패치·트래킹)은
 **제안만** 하고 요청 없이는 실행하지 않는다.
+
+**정본 위협 모델(npm 0.2.0).** 0.2.0은 위협 모델을 `scan-manifest.json`의 `scan.threatModel` 필드에 저장하고,
+봉인할 때 `threatmodel.md`로 투영한다. 스캔은 1단계 위협 모델을 이 필드에 `{"format": "markdown", …}`로 싣는다.
+`artifacts/01_context/threat_model.md` 사본만으로는 0.2.0이 "모델 없는 스캔"으로 본다. 저장한 모델은 인증 없이
+다시 꺼낼 수 있다(5.12절 `export`). npm 0.1.32 이하는 이 형식을 받지 않으므로 스캔이 필드를 생략한다.
 
 대형 저장소는 컨텍스트가 소진될 수 있다. 그때는 남은 파일을 미완으로 남기고 커버리지를
 `partial`로 정산해 정직하게 보고한다. 스코프를 좁혀(경로 지정) 나눠 돌리는 것도 방법이다.
@@ -432,7 +464,7 @@ outcome은 `fixed` / `no_change` / `blocked` 3값이다. **`fixed`는 수정이 
 실행 여부 / 되돌리는 방법**을 세 줄로 명시한다(되돌리기는 제안만 하고 실행은 별도 승인).
 **1단 승인 거부**도 `no_change`가 아니라 `blocked`다 — 저장소는 무변경이지만 "이미 안전함이 증거로
 확인된" 경우가 아니기 때문이다. `no_change`에도 검증 근거(원래 이슈가 재현되지 않는 증거와 정상 동작
-확인)가 필요하다. 근거가 없으면 `blocked`다. npm 0.1.32 상류 CLI도 근거 없는 `no_change`를 실패로 처리한다.
+확인)가 필요하다. 근거가 없으면 `blocked`다. npm 0.1.32부터 상류 CLI도 근거 없는 `no_change`를 실패로 처리한다.
 
 > 세션 퍼미션이 `acceptEdits`/`bypassPermissions`면 편집·실행이 프롬프트 없이 진행되므로, 그때는
 > **SKILL.md의 2단 승인 지침이 유일한 게이트**다. 스킬은 이 사실을 먼저 고지한다. 보안 수정을
@@ -470,7 +502,7 @@ finding별로 1건씩 판정한다.
 해결되는** finding을 그룹화해 이력을 연결한다(공식 `scans match` 대체 — 그 명령은 SDK가 Codex
 스레드를 직접 여는 유일한 지점이라 OpenAI 인증 없이는 막혀 있다).
 
-매칭은 상류 0.1.29~0.1.32 `scans match`와 같은 순서로 진행한다(이 구간에 조정 규칙 변경 없음).
+매칭은 상류 0.1.29~0.2.0 `scans match`와 같은 순서로 진행한다(이 구간에 조정 규칙 변경 없음. 0.2.0은 리팩터만).
 
 1. **호스트 신원 병합** — 같은 `findingId`와 **`knownFindingGroups`**(이전 비교들에서 이미 같은
    finding으로 확정된 `findingId` 묶음, union-find로 이행 병합)를 판정 **전에** 카드 한 장으로 접는다.
@@ -571,16 +603,22 @@ codex-security scans compare <before-scan-id> <after-scan-id>
 ~/.codex/state/plugins/codex-security/policies/<저장소이름>/codex-security-<저장소이름>-policy-XXXXXX/
 ├── previous-SECURITY.md   # 원래 정책(없으면 빈 파일)
 ├── project-spec.md        # architecture 단계 결과
-├── THREAT_MODEL.md        # threat_model 단계 결과
+├── threatmodel.md         # threat_model 단계 결과(매니페스트 threatModel 의 투영)
 ├── SECURITY.md            # 검토할 초안
-└── policy-draft.json      # 매니페스트(세 단계 성공 + 스냅샷 불변일 때만)
+└── policy-draft.json      # 매니페스트(threat_model 단계 뒤 status: threat_model_ready, 마무리 뒤 completed)
 ```
 
 **저장소를 바꾸지 않는다.** 초안을 검토한 뒤 사용자가 직접 대상 경로(`targetPath`)로 복사한다. 승인 후
 저장소에 적용하는 상류 plugin 단계는 이 스킬 범위 밖이다. 매니페스트의 `model`은
 `"claude-subagent (Claude Code)"`로 적는다.
 
-**전제**: npm 설치본(npm 0.1.27 이상, 권장 0.1.32) — Node 헬퍼와 `dist/`가 필요하다. 신뢰 Node도 필요하다.
+**npm 0.2.0 변경**: 상류와 같이 위협 모델은 `policy-draft.json`의 `threatModel`(markdown)에 담고
+`threatmodel.md`는 플러그인 finalizer(`--write-threat-model`)로 투영한다. 매니페스트는 threat_model 단계 직후에
+`status: "threat_model_ready"`로 먼저 쓰고, 마무리에서 `completed`로 바꾼다. 마무리 전에 정책이 바뀌면
+`threat_model_ready` 그대로 남는다. 투영에 실패하면 `threatModelPath: null`과 경고를 돌려준다. npm 0.1.32 이하
+finalizer에는 `--write-threat-model`이 없어 항상 이 경고가 난다.
+
+**전제**: npm 설치본(npm 0.1.27 이상, 권장 0.2.0) — Node 헬퍼와 `dist/`가 필요하다. 신뢰 Node도 필요하다.
 하나라도 없으면 초안을 만들지 않고 중단한다(3.2절 프로브 경고 줄로 미리 알 수 있다).
 
 > **비동등성 고지**: 상류 `policy`는 모델을 OS 수준 권한 프로필(읽기 경로 한정, Git 메타데이터 차단,
@@ -637,7 +675,7 @@ codex-security scans compare <before-scan-id> <after-scan-id>
   or its inputs changed.`로 멈추므로 끝까지 다시 분류한다.
 - **확인**: `publish scan --dry-run`으로 Linear API 키 없이 게시 미리보기를 볼 수 있다(5.12절).
 
-**전제**: npm 설치본의 `dist/`(npm 0.1.26 이상, 권장 0.1.32), 신뢰 Node, 플러그인 Python 3.10+.
+**전제**: npm 설치본의 `dist/`(npm 0.1.26 이상, 권장 0.2.0), 신뢰 Node, 플러그인 Python 3.10+.
 
 > **비동등성 고지**: 상류는 finding마다 OS 샌드박스(읽기 전용, 네트워크 차단, 셸·MCP 비활성)의 Codex 모델을
 > 쓴다. 이 스킬은 Claude 서브에이전트가 판정하고, 도구 금지는 서브에이전트 유형이나 프롬프트 지시로
@@ -661,7 +699,7 @@ python3 "${CLAUDE_SKILLS_DIR:-$HOME/.claude/skills}"/codex-security-scan/scripts
 | 서브커맨드 | 용도 |
 | --- | --- |
 | `check-running` | 같은 저장소의 `running` 행 advisory 경고(차단 아님) |
-| `register [--mode standard\|diff\|deep] [--paths …]` | 스캔 등록. **scan-dir이 비어 있어야** 성공. diff는 `--diff-target refs\|working_tree --base <base> [--head <head>]`를 함께 준다 |
+| `register [--mode standard\|diff] [--paths …]` | 스캔 등록. **scan-dir이 비어 있어야** 성공. diff는 `--diff-target refs\|working_tree --base <base> [--head <head>]`를 함께 준다. `--mode deep`은 거부한다 — 상류가 공식 deep 코디네이터의 실행 기록 없이는 mode=deep 스캔을 종결하지 않으므로 deep-lite는 표준 모드로 등록한다 |
 | `contract --scan-id <id>` | draft가 사전 일치시켜야 하는 좌표 필드 조회. diff 스캔은 `diffTarget`(base·head 커밋과 상류 규칙으로 계산한 `snapshotDigest`)도 준다 |
 | `feedback --scan-id <id>` | 과거 false-positive 피드백을 `01_context`에 기록 |
 | `complete --scan-id <id>` | 종결. 게이트 실패는 구조화 결과로, 경고는 `warnings`로 반환 |
@@ -684,7 +722,7 @@ codex-security findings false-positive <occurrence-id> --reason "…"
 공식 CLI(`@openai/codex-security`)에는 모델을 부르지 않아 **OpenAI 인증 없이 바로 쓸 수 있는** 명령이 있다.
 이 스킬들은 그 명령을 감싸지 않는다. 아래 표는 npm 0.1.29와 태그 `npm-v0.1.32` 빌드에서 빈 `HOME`·`CODEX_HOME`·
 `CODEX_SECURITY_STATE_DIR`로 격리해 **성공을 실측한 명령만** 담는다([phase0-results.md](verification/phase0-results.md)
-0.1.29 부록 2번, 0.1.32 부록).
+0.1.29 부록 2번, 0.1.32 부록). `export … --artifact threat-model`은 npm 0.2.0에서 같은 조건으로 실측했다(2026-10-14).
 
 호출은 전역 설치본이면 `codex-security <명령>`, 설치 없이 쓰려면 `npx @openai/codex-security <명령>`이다.
 공통 전제는 Node 22+와 플러그인 Python(3.10+, `PYTHON`으로 지정 가능)이다. 이 스킬들과 같은 이력을 쓰려면
@@ -697,6 +735,7 @@ codex-security findings false-positive <occurrence-id> --reason "…"
 | `classify-severity --scan-dir <dir>` (루브릭 없음) | 기존 severity를 상속해 심각도 평가를 저장한다 | 성공. `severity-classification.json`과 워크벤치 행을 쓴다 |
 | `policy <repo> --dry-run --headless` | SECURITY.md 초안 생성 입력(대상 해석 등)만 검증한다 | 성공. 모델을 시작하지 않는다(`authentication.verified: false`) |
 | `publish scan --scan-dir <dir> --to linear --linear-team <아무 값> --dry-run` | Linear 게시 미리보기 | 성공. Linear API 키 없이 미리보기를 낸다 |
+| `export <scan_dir> --artifact threat-model --output -` (npm 0.2.0) | 봉인 스캔에 저장된 위협 모델을 마크다운으로 내보낸다. 분석을 다시 하지 않는다 | 성공. `scan.threatModel`이 없는 스캔은 `No saved threat model is available for this result.`로 exit 2 |
 
 **명령별 주의와 이 스킬들과의 관계**
 
@@ -726,6 +765,9 @@ codex-security findings false-positive <occurrence-id> --reason "…"
 스캔을 원래 Codex 세션에서 이어 가고, 일반 스캔 `scans rerun`은 저장한 스캔을 Codex로 다시 돌린다. 모두
 인증이 필요하거나 OpenAI로 업로드하므로 이 환경에서 쓰지 않는다. 로그인 없이 어디까지 동작하는지는
 확인하지 않았다.
+
+**npm 0.2.0 CLI 변경(실측하지 않음)**: 도움말이 재구성됐고, `--model`·`--effort`를 patch·validate·verify-fix·
+match 명령에 공통으로 받는다(상류 #1143·#1238·#1274). 모두 모델을 부르므로 이 스킬들과 관계없다.
 
 **npm 0.1.30~0.1.32에 새로 생긴 명령(이 스킬들이 감싸지 않음, 실측하지 않음)**: `suggest-owners <findings>`
 (npm 0.1.31)는 커밋된 소스와 Git 이력으로 finding 소유자를 제안한다. 모델을 부르므로 인증이 필요하다.
@@ -775,8 +817,10 @@ codex-security findings false-positive <occurrence-id> --reason "…"
 | `rg: command not found` (저장소 전체 스캔·deep-lite) | 0단계에서 중단된다. `ripgrep`을 설치하거나 Claude Code 세션에서 실행한다(내장 ripgrep을 심링크로 노출). `git ls-files` 폴백은 상류와 다른 인벤토리를 만들어 채택하지 않는다 |
 | `running` 상태 좀비 행 | `list-stale --hours N`으로 나열 후 `close-stale --scan-id <id>`로 **명시적으로만** 정리 |
 | `codex-security: command not found` | 공식 CLI 조회 명령에만 필요하다. `npm install -g @openai/codex-security`(Node 22+) 또는 `npx @openai/codex-security …` |
-| 플러그인 버전 경고 | `pluginVersion`이 매핑 기준(매니페스트 0.1.95)과 다름 → 워크플로 지시가 바뀌었을 수 있으니 8절 재검증을 수행. 버전이 같아도 동작이 다를 수 있으므로 3.4절 프로브를 함께 본다. npm 0.1.26~0.1.32는 모두 매니페스트 0.1.95라 경고가 뜨지 않는다 — npm 버전은 `npm ls -g @openai/codex-security`로 확인한다. npm 0.1.26에는 SECURITY.md Node 헬퍼가 없어 정책 해결을 건너뛴다. 검증된 조합인 npm 0.1.32(npm에 없으면 0.1.31)를 설치한다 |
-| 스캔이 "SECURITY.md 정책 해결을 건너뜀"을 고지한다 | 부트스트랩 `securityMdHelper.available: false`. `reason`이 "헬퍼 파일 없음"이면 상류 소스 체크아웃이거나 npm 0.1.26 이하다 → npm 0.1.32(npm에 없으면 0.1.31) 설치본을 쓴다. "Node 없음"·"신뢰 게이트 거부"면 대상 저장소 밖의 Node를 PATH에 두거나 `CODEX_MCP_NODE_PATH=<절대 경로>`로 지정한다 |
+| `--check`가 "상류 'codex-security skills add' 가 이 스킬을 덮어썼습니다"를 보고한다 | 상류 CLI의 `skills add`가 같은 이름의 스킬을 지우고 CLI 안내 스킬로 바꿨다(3.2절). `bash skills/install.sh --force`(복사본이면 `--copy --force`)로 다시 설치하고, `skills add`를 다시 실행하지 않는다 |
+| 플러그인 버전 경고 | `pluginVersion`이 매핑 기준(매니페스트 0.1.95)과 다름 → 워크플로 지시가 바뀌었을 수 있으니 8절 재검증을 수행. 버전이 같아도 동작이 다를 수 있으므로 3.4절 프로브를 함께 본다. npm 0.1.26~0.2.0은 모두 매니페스트 0.1.95라 경고가 뜨지 않는다 — npm 버전은 `npm ls -g @openai/codex-security`로 확인한다. npm 0.1.26에는 SECURITY.md Node 헬퍼가 없어 정책 해결을 건너뛴다. 검증된 조합인 npm 0.2.0을 설치한다(상태 디렉터리 백업 후, 3.4절) |
+| 스캔이 0단계에서 "후보 정규화 불가"로 멈춘다 | 부트스트랩 `candidateNormalizer.available: false`. npm 0.2.0 상류 소스 체크아웃이면 Python 정규화 스크립트도 빌드된 Node 헬퍼도 없다 → npm 0.2.0 설치본을 쓴다. 설치본인데 멈추면 `reason`의 헬퍼 사유("Node 없음"·"신뢰 게이트 거부")를 아래 행처럼 해결한다 |
+| 스캔이 "SECURITY.md 정책 해결을 건너뜀"을 고지한다 | 부트스트랩 `securityMdHelper.available: false`. `reason`이 "헬퍼 파일 없음"이면 상류 소스 체크아웃이거나 npm 0.1.26 이하다 → npm 0.2.0 설치본을 쓴다. "Node 없음"·"신뢰 게이트 거부"면 대상 저장소 밖의 Node를 PATH에 두거나 `CODEX_MCP_NODE_PATH=<절대 경로>`로 지정한다 |
 | `codex-security-policy`·`-classify-severity`가 시작 직후 중단한다 | 부트스트랩의 `securityMdHelper`·`sdk.dist`·`node` 중 하나가 없다(3.3절 표). `--check`의 "사용 불가" 경고 줄이 사유를 알려 준다. 대개 npm 설치본(`npm install -g @openai/codex-security`)으로 해결된다 |
 | 두 스킬에서 `ERR_MODULE_NOT_FOUND` | `codex-security-scan` 스킬(공용 관문 `workflow_digest.mjs`)이 같은 스킬 루트에 없거나 버전이 다르다. 9종을 같은 버전으로 다시 설치한다 |
 | `scan import`가 `Scan output parent must not be group- or world-writable …`로 exit 2 | 출력 경로의 상위 디렉터리 중 group/world 쓰기 가능한 것이 있다. 권한을 조이거나 상태 디렉터리를 옮긴다(5.12절) |
@@ -796,7 +840,7 @@ bash docs/verification/scripts/repro-u4.sh
 # 워크벤치 계약 (register → seal → 게이트 → complete)
 bash docs/verification/scripts/repro-u3.sh
 
-# 매칭 검증기 계약: 상류 0.1.29~0.1.32 호스트 조정 재현(catalogue → finalize → measure),
+# 매칭 검증기 계약: 상류 0.1.29~0.2.0 호스트 조정 재현(catalogue → finalize → measure),
 # 상류 테스트 이식 픽스처 453건 대조(블록 R), 가짜 codex 로 돌린 상류 dist 결과와 대조(블록 S)
 bash docs/verification/scripts/repro-u5-match-validator.sh
 

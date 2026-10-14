@@ -141,6 +141,10 @@ install_one() {
 #   4. 플러그인 사본의 워킹트리 게이트 처리(하드 실패 / 경고) — 같은 버전에서도 다르다
 #   5. 신뢰 Node 와 SECURITY.md 헬퍼 가용성(P6-KTD6). 불가여도 종료코드는 바꾸지 않는다 —
 #      전체 스캔은 정책 해결을 건너뛰고 계속하기 때문이다(P6-KTD7). 사유만 보고한다.
+#   6. 후보 정규화 경로(Python 스크립트 또는 npm 0.2.0 의 Node 헬퍼). 불가이면 "부분 정상"으로
+#      표시한다 — 전체·diff·deep 스캔이 0단계에서 멈추기 때문이다.
+#   7. 상류 `codex-security skills add`(npm 0.2.0)가 같은 이름의 설치본을 덮어썼는지. 덮어쓰였으면
+#      "부분 정상"으로 표시한다(check_upstream_overwrite).
 # 자동 설치를 하지 않는 이유: 전역 npm 환경 변경은 사용자 결정이다.
 # ---------------------------------------------------------------------------
 run_check() {
@@ -202,9 +206,12 @@ if rc != 0 or not data.get("ok"):
 python_info = data.get("python") or {}
 plugin_root = pathlib.Path(data["pluginRoot"])
 search = data.get("searchCommand")
-# 저장소 전체 스캔과 deep-lite 는 검색 명령 없이는 시작조차 못 한다. 그 상태를
+normalizer = data.get("candidateNormalizer") or {}
+# 저장소 전체 스캔과 deep-lite 는 검색 명령 없이는 시작조차 못 한다. 후보 정규화가
+# 불가하면(npm 0.2.0 소스 체크아웃) 전체·diff·deep 스캔이 0단계에서 멈춘다. 그 상태를
 # "실행 환경 정상"으로 표시하면 주력 스킬 불가와 전부 정상이 같은 신호가 된다.
-print("\n[프로브] 실행 환경 정상" if search else "\n[프로브] 부분 정상 — 저장소 전체 스캔 불가")
+full_ok = bool(search) and bool(normalizer.get("available"))
+print("\n[프로브] 실행 환경 정상" if full_ok else "\n[프로브] 부분 정상 — 저장소 전체 스캔 불가")
 print(f"  플러그인 : {plugin_root}")
 print(f"  버전     : {data.get('pluginVersion')} (출처: {data.get('pluginSource')})")
 print(f"  Python   : {python_info.get('path')} ({python_info.get('version')})")
@@ -223,6 +230,15 @@ else:
     print("             ripgrep 을 설치하세요(apt/brew/cargo install ripgrep).")
     if detail:
         print(f"             {detail.splitlines()[0]}")
+
+# 후보 정규화(npm 0.2.0 부터 Node 헬퍼). 불가이면 스캔 스킬 3종이 시작하지 않는다.
+if normalizer.get("available"):
+    kind = {"python": "Python 스크립트", "node-helper": "Node 헬퍼"}.get(
+        normalizer.get("kind"), normalizer.get("kind"))
+    print(f"  정규화   : {kind}")
+else:
+    print("  정규화   : 사용 불가 — 전체·diff·deep 스캔을 시작할 수 없습니다")
+    print(f"             {normalizer.get('reason') or 'candidateNormalizer 없음'}")
 
 # Node 와 SECURITY.md 헬퍼(P6-KTD6). 불가여도 전체 스캔은 정책 없이 진행하므로
 # 종료코드를 바꾸지 않는다(P6-KTD7). 원인만 알린다.
@@ -274,8 +290,8 @@ else:
 print("\n  스캔 정확도를 위해 스캔 전 commit/stash 를 권장합니다.")
 
 # 부분 정상은 0 이 아니라 2 로 알린다(회귀 스크립트의 3값 규약과 같은 뜻) —
-# CI 나 릴리즈 검증이 종료코드만 보고 rg 부재를 놓치지 않게 한다.
-if not search:
+# CI 나 릴리즈 검증이 종료코드만 보고 rg 부재·정규화 불가를 놓치지 않게 한다.
+if not full_ok:
     raise SystemExit(2)
 PYEOF
   return "$report_rc"
@@ -283,13 +299,42 @@ PYEOF
 
 BOOTSTRAP_PATH="${SCRIPT_DIR}/codex-security-scan/scripts/bootstrap.py"
 
+# 상류 `codex-security skills add`(npm 0.2.0)는 <SKILLS_ROOT>/codex-security-<명령> 을 지우고
+# ~/.agents/skills 의 CLI 안내 스킬(frontmatter `requires_bin: codex-security`)로 바꾼다. 이름이
+# 우리 스킬 6개와 겹치고, 바뀐 스킬은 로그인이 필요한 CLI 를 부를 뿐이다. 덮어쓰인 스킬을 이름으로
+# 알리고 1을 돌려준다(호출자가 "부분 정상"으로 반영). 설치본을 읽기만 하고 고치지 않는다.
+check_upstream_overwrite() {
+  local name target found=0
+  for name in "${SKILL_NAMES[@]}"; do
+    target="${SKILLS_ROOT}/${name}"
+    if [ -f "${target}/SKILL.md" ] && grep -q '^requires_bin: codex-security' "${target}/SKILL.md"; then
+      if [ "$found" -eq 0 ]; then
+        echo ""
+        echo "[경고] 상류 'codex-security skills add' 가 이 스킬을 덮어썼습니다(로그인이 필요한 CLI 안내로 바뀜):"
+      fi
+      found=1
+      echo "  덮어쓰였습니다: ${name} -> $(readlink -f -- "$target" 2>/dev/null || echo "$target")"
+    fi
+  done
+  if [ "$found" -eq 1 ]; then
+    echo "  다시 설치하세요: bash skills/install.sh --force (복사본이면 --copy --force)"
+    echo "  상류 'codex-security skills add' 를 다시 실행하면 또 덮어씁니다."
+    return 1
+  fi
+  return 0
+}
+
 if [ "$CHECK_ONLY" = "true" ]; then
   if [ ! -f "$BOOTSTRAP_PATH" ]; then
     echo "오류: 프로브에 필요한 bootstrap.py 가 없습니다: ${BOOTSTRAP_PATH}" >&2
     exit 1
   fi
-  run_check "$BOOTSTRAP_PATH"
-  exit "$?"
+  check_rc=0
+  run_check "$BOOTSTRAP_PATH" || check_rc=$?
+  if ! check_upstream_overwrite && [ "$check_rc" -eq 0 ]; then
+    check_rc=2
+  fi
+  exit "$check_rc"
 fi
 
 echo "설치 위치: ${SKILLS_ROOT} (모드: ${MODE})"
@@ -322,6 +367,9 @@ if [ "$CHECK" = "true" ]; then
     fi
   else
     echo "경고: 프로브를 건너뜁니다(bootstrap.py 없음): ${probe_bootstrap}" >&2
+  fi
+  if ! check_upstream_overwrite && [ "$failed" -eq 0 ]; then
+    failed=2
   fi
 fi
 exit "$failed"

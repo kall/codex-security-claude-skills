@@ -14,7 +14,7 @@
 #   P6  저장 전 검사·반환 처리 — 허용 루트 밖 절대 경로·개인 키 머리글 등 거부, 깨끗한 문서 수용,
 #       비덮어쓰기, strict 스키마, blockedReason, 빈 markdown, 재시도 한도
 #   P7  프롬프트 — 상류 리터럴 드리프트(설치된 dist 와 대조), 난수 표식, 미신뢰 구획, 소유자 답 형식
-#   P8  마무리 — 스냅샷 불변이면 매니페스트·diff, 바뀌면 매니페스트 없음(AE4)
+#   P8  마무리 — 스냅샷 불변이면 매니페스트(completed)·threatmodel.md·diff, 바뀌면 매니페스트는 threat_model_ready 그대로(AE4)
 #   P9  실행 형태 — env -i 로 NODE_OPTIONS 주입이 끊기고, 남아 있으면 스크립트가 거부
 #   P10 종단 결정론 흐름 — 파일 5개 0600, 저장소 밖, 대상 저장소 git status 깨끗
 #   ── 심각도 블록(U8: skills/codex-security-classify-severity) ─────────────────────
@@ -114,6 +114,11 @@ PLUGIN_ROOT="$(jget "$RUN/boot.json" 'd["pluginRoot"]')"
 PLUGIN_VERSION="$(jget "$RUN/boot.json" 'd["pluginVersion"]')"
 PLUGIN_SOURCE="$(jget "$RUN/boot.json" 'd["pluginSource"]')"
 PYTHON_B="$(jget "$RUN/boot.json" '(d["python"] or {}).get("path") or ""')"
+# 정책 리터럴과 threatmodel.md 투영은 npm 0.2.0 계약이다(상류 #1133). 0.1.32 이하 사본은 상류 policy
+# 지시 첫 문장이 다르고 finalizer 에 --write-threat-model 이 없다. 그 사본에서는 해당 단언 대신 NOTE 를
+# 낸다(repro-u4 I9·I13 과 같은 규약). 판별은 같은 릴리즈의 스키마 변경을 보는 부트스트랩 필드로 한다.
+POLICY_020="$(jget "$RUN/boot.json" 'd.get("threatModelMarkdown")')"
+note020() { printf 'NOTE %s: 이 플러그인 사본은 npm 0.2.0 이전이라 0.2.0 정책 계약 단언 대상이 아닙니다\n' "$1"; }
 [ "$HELPER_OK" = "true" ] || missing "SECURITY.md 헬퍼 불가: $(jget "$RUN/boot.json" 'd["securityMdHelper"]["reason"]')"
 [ -n "$DIST" ] || missing "상류 dist 없음(소스 체크아웃?): $(jget "$RUN/boot.json" 'd["sdk"]["reason"]')"
 [ -n "$NODE_B" ] || missing "신뢰 Node 없음"
@@ -438,6 +443,37 @@ contains "$(cat "$RUN/pr6c.txt")" "Retry notice" "P6 거부 후 프롬프트에 
 contains "$(cat "$RUN/pr6c.txt")" "a GitHub token" "P6 재시도 안내에 거부 종류"
 not_contains "$(cat "$RUN/pr6c.txt")" "ghp_abcdefghij" "P6 재시도 안내에 거부된 값 없음"
 RP cleanup --output-dir "$OUT6C" >/dev/null
+# threat_model 단계의 blockedReason: 매니페스트는 status=blocked 로 남고 이후 단계·마무리는 진행하지 않는다.
+RP prepare "${PREP_ARGS[@]}" --bootstrap-repo-root "$R3" --repository "$R3" --path app >"$RUN/p6d.json"
+OUT6D="$(jget "$RUN/p6d.json" 'd["outputDir"]')"
+stage_json "$(jget "$RUN/p6d.json" 'd["stageResultFiles"]["architecture"]')" "# Spec"
+RP save-stage --output-dir "$OUT6D" --stage architecture >/dev/null; expect_exit 0 $? "P6d architecture 저장"
+stage_json "$(jget "$RUN/p6d.json" 'd["stageResultFiles"]["threat_model"]')" "# Partial model" '[]' '[]' '"could not read app/"'
+RP save-stage --output-dir "$OUT6D" --stage threat_model --python "$PYTHON_B" >"$RUN/s6d.json"; expect_exit 2 $? "P6d threat_model blockedReason → 실패 종료"
+expect_eq "blocked" "$(jget "$RUN/s6d.json" 'd["status"]')" "P6d 응답 status=blocked"
+expect_eq "blocked|# Partial model" "$(jget "$OUT6D/policy-draft.json" 'd["status"] + "|" + d["threatModel"]["content"]')" "P6d 매니페스트 status=blocked·모델 유지"
+# blocked 로 멈춘 단계를 다시 저장해도 매니페스트를 바꾸지 않고 거부한다(수용된 단계와 같은 규칙).
+M6D_BEFORE="$(sha "$OUT6D/policy-draft.json")"
+stage_json "$(jget "$RUN/p6d.json" 'd["stageResultFiles"]["threat_model"]')" "# Other model"
+RP save-stage --output-dir "$OUT6D" --stage threat_model --python "$PYTHON_B" >/dev/null 2>&1; expect_exit 2 $? "P6d blocked 단계 재저장 거부"
+expect_eq "$M6D_BEFORE" "$(sha "$OUT6D/policy-draft.json")" "P6d 재저장 시도 뒤 policy-draft.json 불변"
+RP prompt --output-dir "$OUT6D" --stage policy >/dev/null 2>&1; expect_exit 2 $? "P6d blocked 이후 policy 단계 진행 불가"
+RP finish --output-dir "$OUT6D" --python "$PYTHON_B" >/dev/null 2>&1; expect_exit 2 $? "P6d blocked 세션은 finish 거부"
+expect_eq "blocked" "$(jget "$OUT6D/policy-draft.json" 'd["status"]')" "P6d finish 거부 뒤에도 status=blocked"
+RP cleanup --output-dir "$OUT6D" >/dev/null
+# threatmodel.md 투영 실패: 쓸 수 없는 인터프리터를 주면 상류 resolvePluginPython 이 거부한다. 저장은 성공하고
+# threatModelPath 는 null, 경고가 실리며 정본(매니페스트 threatModel)은 남는다. 버전과 무관하게 일어난다.
+RP prepare "${PREP_ARGS[@]}" --bootstrap-repo-root "$R3" --repository "$R3" --path app >"$RUN/p6e.json"
+OUT6E="$(jget "$RUN/p6e.json" 'd["outputDir"]')"
+stage_json "$(jget "$RUN/p6e.json" 'd["stageResultFiles"]["architecture"]')" "# Spec"
+RP save-stage --output-dir "$OUT6E" --stage architecture >/dev/null; expect_exit 0 $? "P6e architecture 저장"
+stage_json "$(jget "$RUN/p6e.json" 'd["stageResultFiles"]["threat_model"]')" "# Model"
+RP save-stage --output-dir "$OUT6E" --stage threat_model --python "$RUN/no-such-python" >"$RUN/s6e.json"; expect_exit 0 $? "P6e 투영 실패여도 threat_model 저장 성공"
+expect_eq "None" "$(jget "$RUN/s6e.json" 'repr(d["path"])')" "P6e path=null"
+contains "$(jget "$RUN/s6e.json" 'd["threatModelWarning"] or ""')" "Could not save threatmodel.md" "P6e 투영 실패 경고"
+[ -e "$OUT6E/threatmodel.md" ] && bad "P6e threatmodel.md 가 생김" || ok "P6e threatmodel.md 없음"
+expect_eq "threat_model_ready|# Model" "$(jget "$OUT6E/policy-draft.json" 'd["status"] + "|" + d["threatModel"]["content"]')" "P6e 정본은 매니페스트에 남음"
+RP cleanup --output-dir "$OUT6E" >/dev/null
 
 # ---------------------------------------------------------------------------
 # P7. 프롬프트
@@ -455,7 +491,7 @@ print(len(frags), len(miss))
 for f in miss: print("MISSING:", f[:120])
 PYEOF
 read -r NFRAG NMISS <"$RUN/lit.check"
-if [ "${NFRAG:-0}" -ge 25 ] && [ "${NMISS:-1}" = "0" ]; then ok "P7 상류 리터럴 ${NFRAG}조각이 설치된 dist/security-policy.js 에 문자 그대로 있음"; else bad "P7 리터럴 드리프트: $(cat "$RUN/lit.check")"; fi
+if [ "$POLICY_020" != "true" ]; then note020 "P7 리터럴 드리프트"; elif [ "${NFRAG:-0}" -ge 25 ] && [ "${NMISS:-1}" = "0" ]; then ok "P7 상류 리터럴 ${NFRAG}조각이 설치된 dist/security-policy.js 에 문자 그대로 있음"; else bad "P7 리터럴 드리프트: $(cat "$RUN/lit.check")"; fi
 RP prompt --output-dir "$OUT3" --stage threat_model >"$RUN/pr1.txt"; expect_exit 0 $? "P7 threat_model 프롬프트(헤드리스)"
 RP prompt --output-dir "$OUT3" --stage threat_model >"$RUN/pr2.txt"
 PR1="$(cat "$RUN/pr1.txt")"
@@ -504,7 +540,7 @@ run_stages() { # run_stages <prepare.json> — canned 3단계 저장
 \`app/main.py:1\`" '["Q1?"]' '["N1"]'
   RP save-stage --output-dir "$od" --stage architecture >/dev/null || return 1
   stage_json "$(jget "$p" 'd["stageResultFiles"]["threat_model"]')" "# Threat model" '["TQ?"]' '["TN"]'
-  RP save-stage --output-dir "$od" --stage threat_model >/dev/null || return 1
+  RP save-stage --output-dir "$od" --stage threat_model --python "$PYTHON_B" >/dev/null || return 1
   stage_json "$(jget "$p" 'd["stageResultFiles"]["policy"]')" "# Security Policy
 New draft." '[]' '["N1","PN"]'
   RP save-stage --output-dir "$od" --stage policy >/dev/null || return 1
@@ -515,12 +551,20 @@ mkrepo "$R8"; mkdir -p "$R8/app"; printf '# root\n' >"$R8/SECURITY.md"; printf '
 RP prepare "${PREP_ARGS[@]}" --bootstrap-repo-root "$R8" --repository "$R8" --path app >"$RUN/p8.json"
 run_stages "$RUN/p8.json"; expect_exit 0 $? "P8a 3단계 저장"
 OUT8="$(jget "$RUN/p8.json" 'd["outputDir"]')"
+# 비덮어쓰기(threat_model): 수용된 단계를 다시 저장하면 부작용 없이 거부한다. 매니페스트·threatmodel.md
+# 가 바뀌거나 blocked 기록이 생기면 수용된 세션이 다른 모델로 초안을 쓰거나 finish 에서 거부된다.
+M8_BEFORE="$(sha "$OUT8/policy-draft.json")"
+TM8_BEFORE="$( [ -f "$OUT8/threatmodel.md" ] && sha "$OUT8/threatmodel.md" || echo none)"
+stage_json "$(jget "$RUN/p8.json" 'd["stageResultFiles"]["threat_model"]')" "# replaced model" '[]' '[]' '"re-run"'
+RP save-stage --output-dir "$OUT8" --stage threat_model --python "$PYTHON_B" >"$RUN/s8re.json"; expect_exit 2 $? "P8a 수용된 threat_model 재저장 거부"
+expect_eq "$M8_BEFORE" "$(sha "$OUT8/policy-draft.json")" "P8a 재저장 시도 뒤 policy-draft.json 불변"
+expect_eq "$TM8_BEFORE" "$( [ -f "$OUT8/threatmodel.md" ] && sha "$OUT8/threatmodel.md" || echo none)" "P8a 재저장 시도 뒤 threatmodel.md 불변"
 RP finish --output-dir "$OUT8" --python "$PYTHON_B" >"$RUN/f8.json"; expect_exit 0 $? "P8a finish"
 expect_eq "0o600" "$(fmode "$OUT8/policy-draft.json" 2>/dev/null)" "P8a policy-draft.json 0600"
 PY - "$OUT8/policy-draft.json" "$R8" "$(jget "$RUN/p8.json" 'd["inheritedPolicySha256"]')" "$(sha "$R8/app/SECURITY.md")" "$PLUGIN_VERSION" <<'PYEOF' >"$RUN/m8.check"
 import json, sys
 m = json.load(open(sys.argv[1]))
-keys = ["documentType","schemaVersion","repository","scope","createdAt","revision","previousPolicySha256","inheritedPolicySha256","model","reasoningEffort","pluginVersion","customPlugin","reviewNotes"]
+keys = ["documentType","schemaVersion","repository","scope","createdAt","revision","previousPolicySha256","inheritedPolicySha256","model","reasoningEffort","pluginVersion","customPlugin","status","threatModel","reviewNotes"]
 problems = []
 if list(m) != keys: problems.append(f"keys {list(m)}")
 if m.get("documentType") != "codex-security.policy-draft" or m.get("schemaVersion") != "1.0": problems.append("type")
@@ -530,10 +574,20 @@ if m.get("previousPolicySha256") != sys.argv[4]: problems.append("previous")
 if m.get("pluginVersion") != sys.argv[5]: problems.append("pluginVersion")
 if "claude" not in str(m.get("model","")).lower(): problems.append("model")
 if m.get("reviewNotes") != ["N1","PN","Q1?","TN","TQ?"]: problems.append(f"reviewNotes {m.get('reviewNotes')}")
+if m.get("status") != "completed": problems.append(f"status {m.get('status')}")
+if m.get("threatModel") != {"format": "markdown", "content": "# Threat model", "scope": {"includePaths": ["app"], "excludePaths": []}, "origin": "generated"}: problems.append(f"threatModel {m.get('threatModel')}")
 if not isinstance(m.get("revision"), str) or len(m["revision"]) < 40: problems.append("revision")
 print("ok" if not problems else "bad " + "; ".join(problems))
 PYEOF
 expect_eq "ok" "$(cat "$RUN/m8.check")" "P8a 매니페스트 스키마·값(reviewNotes 는 상류 합집합 순서)"
+if [ "$POLICY_020" = "true" ]; then
+  expect_eq "$OUT8/threatmodel.md" "$(jget "$RUN/f8.json" 'd["threatModelPath"]')" "P8a threatModelPath = finalizer 가 투영한 threatmodel.md"
+  contains "$(cat "$OUT8/threatmodel.md" 2>/dev/null)" "# Threat model" "P8a threatmodel.md 에 매니페스트 threatModel.content 투영"
+else
+  # 0.1.x finalizer 에는 투영 옵션이 없다 — 스킬은 경고와 null 로 계속한다(정본은 매니페스트에 남는다).
+  expect_eq "None" "$(jget "$RUN/f8.json" 'repr(d["threatModelPath"])')" "P8a 0.1.x: threatModelPath=null(투영 불가)"
+  contains "$(jget "$RUN/f8.json" 'd["threatModelWarning"] or ""')" "Could not save threatmodel.md" "P8a 0.1.x: 투영 실패 경고"
+fi
 F8="$(cat "$RUN/f8.json")"
 contains "$F8" "--- a/app/SECURITY.md" "P8a diff a/ 라벨"
 contains "$F8" "+++ b/app/SECURITY.md" "P8a diff b/ 라벨"
@@ -554,8 +608,10 @@ printf '# edited by owner\n' >"$R8/app/SECURITY.md"
 OUT8C="$(jget "$RUN/p8c.json" 'd["outputDir"]')"
 RP finish --output-dir "$OUT8C" --python "$PYTHON_B" >"$RUN/f8c.json"; expect_exit 2 $? "P8c 대상 변경 → finish 실패"
 contains "$(cat "$RUN/f8c.json")" "생성 후 SECURITY.md가 바뀜 — 새 초안 필요" "P8c AE4 한국어 문구"
-[ -e "$OUT8C/policy-draft.json" ] && bad "P8c 매니페스트가 생김" || ok "P8c 매니페스트 없음"
-for f in project-spec.md THREAT_MODEL.md SECURITY.md; do [ -f "$OUT8C/$f" ] && ok "P8c $f 남음" || bad "P8c $f 없음"; done
+# 상류 0.2.0: threat_model 단계 직후 매니페스트를 쓰므로 남지만 completed 로 갱신되지 않는다
+expect_eq "threat_model_ready" "$(jget "$OUT8C/policy-draft.json" 'd["status"]' 2>/dev/null)" "P8c 매니페스트는 threat_model_ready 그대로(completed 아님)"
+P8C_FILES="project-spec.md SECURITY.md"; [ "$POLICY_020" = "true" ] && P8C_FILES="project-spec.md threatmodel.md SECURITY.md"
+for f in $P8C_FILES; do [ -f "$OUT8C/$f" ] && ok "P8c $f 남음" || bad "P8c $f 없음"; done
 "${GITC[@]}" -C "$R8" checkout -q -- app/SECURITY.md
 # (d) 조상 정책 변경도 같은 규칙
 RP prepare "${PREP_ARGS[@]}" --bootstrap-repo-root "$R8" --repository "$R8" --path app >"$RUN/p8d.json"
@@ -564,8 +620,18 @@ printf '# root edited\n' >"$R8/SECURITY.md"
 OUT8D="$(jget "$RUN/p8d.json" 'd["outputDir"]')"
 RP finish --output-dir "$OUT8D" --python "$PYTHON_B" >"$RUN/f8d.json"; expect_exit 2 $? "P8d 조상 변경 → finish 실패"
 contains "$(cat "$RUN/f8d.json")" "An inherited SECURITY.md changed" "P8d 상류 상속 변경 문구"
-[ -e "$OUT8D/policy-draft.json" ] && bad "P8d 매니페스트가 생김" || ok "P8d 매니페스트 없음"
+expect_eq "threat_model_ready" "$(jget "$OUT8D/policy-draft.json" 'd["status"]' 2>/dev/null)" "P8d 매니페스트는 threat_model_ready 그대로(completed 아님)"
 "${GITC[@]}" -C "$R8" checkout -q -- SECURITY.md
+# (e) 중간 매니페스트가 없거나 createdAt 이 없으면 finish 는 매니페스트를 새로 만들지 않고 멈춘다.
+for variant in missing no-created-at; do
+  RP prepare "${PREP_ARGS[@]}" --bootstrap-repo-root "$R8" --repository "$R8" --path app >"$RUN/p8e.json"
+  run_stages "$RUN/p8e.json"; expect_exit 0 $? "P8e($variant) 3단계 저장"
+  OUT8E="$(jget "$RUN/p8e.json" 'd["outputDir"]')"
+  if [ "$variant" = missing ]; then rm -f "$OUT8E/policy-draft.json"; else printf '{}\n' >"$OUT8E/policy-draft.json"; fi
+  RP finish --output-dir "$OUT8E" --python "$PYTHON_B" >"$RUN/f8e.json"; expect_exit 2 $? "P8e($variant) finish 거부"
+  contains "$(cat "$RUN/f8e.json")" "threat_model 단계에서 쓴 매니페스트가 없거나 createdAt 이 없다" "P8e($variant) 사유"
+  RP cleanup --output-dir "$OUT8E" >/dev/null
+done
 
 # ---------------------------------------------------------------------------
 # P9. 실행 형태 — env -i 가 NODE_OPTIONS 주입을 끊는다
@@ -600,8 +666,10 @@ RP prepare "${PREP_ARGS[@]}" --bootstrap-repo-root "$(jget "$RUN/boot10.json" 'd
 run_stages "$RUN/p10.json"; expect_exit 0 $? "P10 3단계 저장"
 OUT10="$(jget "$RUN/p10.json" 'd["outputDir"]')"
 RP finish --output-dir "$OUT10" --python "$PYTHON_B" >"$RUN/f10.json"; expect_exit 0 $? "P10 finish"
-expect_eq "SECURITY.md THREAT_MODEL.md policy-draft.json previous-SECURITY.md project-spec.md" \
-  "$(cd "$OUT10" && ls -A | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')" "P10 파일 5개"
+P10_WANT="SECURITY.md policy-draft.json previous-SECURITY.md project-spec.md"
+[ "$POLICY_020" = "true" ] && P10_WANT="$P10_WANT threatmodel.md"
+expect_eq "$P10_WANT" \
+  "$(cd "$OUT10" && ls -A | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')" "P10 파일 목록(0.1.x 는 threatmodel.md 없이 4개)"
 modes="$(cd "$OUT10" && for f in *; do fmode "$f"; done | sort -u | tr '\n' ' ' | sed 's/ $//')"
 expect_eq "0o600" "$modes" "P10 5개 모두 0600"
 case "$OUT10" in "$R10"/*) bad "P10 출력이 저장소 안" ;; *) ok "P10 출력은 저장소 밖" ;; esac
@@ -684,7 +752,11 @@ for st in ("architecture", "threat_model", "policy"):
         bad.append(f"{st}@{i}: ours={ours[i:i+80]!r} upstream={theirs[i:i+80]!r}")
 print("ok" if not bad else "bad " + " | ".join(bad))
 PYEOF
-expect_eq "ok" "$(cat "$RUN/p11.check")" "P11 세 단계 프롬프트가 상류 런타임과 문자 단위로 같음(자리표시자 값 포함)"
+if [ "$POLICY_020" = "true" ]; then
+  expect_eq "ok" "$(cat "$RUN/p11.check")" "P11 세 단계 프롬프트가 상류 런타임과 문자 단위로 같음(자리표시자 값 포함)"
+else
+  note020 "P11 상류 런타임 프롬프트 동등성"
+fi
 contains "$(cat "$RUN/ours-architecture.txt")" '"svc/sub/SECURITY.md"' "P11 하위 정책이 policyPaths 에 포함"
 RP cleanup --output-dir "$OUT11" >/dev/null
 

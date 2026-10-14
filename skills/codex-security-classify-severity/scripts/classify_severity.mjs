@@ -88,6 +88,7 @@ const DOCUMENT_ONLY_TEXT = new Set([".pdf", ".docx"]);
 // 복사 시점: 태그 npm-v0.1.29 = 커밋 6620a380f86c26d6c6428a660b2a90c3b5a1fa45
 //   (npm @openai/codex-security 0.1.29 = 플러그인 매니페스트 0.1.95).
 // 재대조: 태그 npm-v0.1.32 = 커밋 7c19cce7224af29628cd10c218444d5c0e8fdd1c — classify-severity.ts 변경 없음.
+// 재대조: 태그 npm-v0.2.0 = 커밋 4949af70fcfadff154f6e8fdf100faa5bf2f8169 — 리팩터만(지시 8문단은 184–191행, 같음).
 // 이 리터럴은 프롬프트를 **만드는 데 쓰지 않는다.** 프롬프트는 상류 런타임이 조립한 원문을 가짜 Codex 로
 // 받아 쓴다. 리터럴은 받은 원문의 지시부가 우리가 검토한 문장과 **문자 단위로 같은지** 확인하는 데만
 // 쓴다. 다르면(상류가 문장을 바꾸거나 지시부에 데이터를 넣기 시작하면) 신뢰 구획에 무엇이 들어가는지
@@ -866,7 +867,7 @@ async function handleInherit(args) {
     throw new GatewayError(
       "--sdk-cli 가 없다. 부트스트랩 결과의 sdk.cli 가 null 이면 CLI 가 없는 설치(상류 소스 체크아웃 등)다. " +
         "루브릭 없는 분류는 상류 CLI 에 위임하므로 진행할 수 없다 — `npm install -g @openai/codex-security` " +
-        "(npm 0.1.26 이상, 권장 0.1.32) 설치본으로 부트스트랩을 다시 실행하라.",
+        "(npm 0.1.26 이상, 권장 0.2.0) 설치본으로 부트스트랩을 다시 실행하라.",
     );
   }
   const sdkCli = await realpath(args.sdkCli);

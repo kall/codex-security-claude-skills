@@ -17,7 +17,7 @@ LLM 두뇌 역할은 Claude Code 세션 자신이 맡고, 검증·ID 파생·봉
 릴리즈 tarball을 받아 설치한다. 아니면 Claude Code 세션에 이 문구를 그대로 복사/붙여넣기해도 된다:
 
 ```
-https://github.com/kall/codex-security-claude-skills/releases/tag/v0.1.32 이거 설치해줘
+https://github.com/kall/codex-security-claude-skills/releases/tag/v0.2.0 이거 설치해줘
 ```
 
 ```bash
@@ -63,15 +63,23 @@ Claude Code를 재시작한 뒤 호출한다:
 ## 요구사항
 
 Claude Code(구독 로그인) · Python 3.10+ · git · codex-security 번들 플러그인.
-Node 22+는 플러그인 npm 설치, 스캔의 SECURITY.md 정책 해결(상류 Node 헬퍼),
+Node 22+는 플러그인 npm 설치, 스캔의 후보 정규화(npm 0.2.0부터 상류 Node 헬퍼), 스캔의 SECURITY.md 정책 해결(상류 Node 헬퍼),
 `codex-security-policy`·`codex-security-classify-severity`, 공식 CLI 이력 조회에 필요하다.
 Linux·macOS(Windows는 WSL).
 
-검증된 조합: `@openai/codex-security@0.1.32` (플러그인 매니페스트 `0.1.95`). npm 0.1.26~0.1.32는 모두
-매니페스트 `0.1.95`라서 버전 경고로 구분되지 않는다. npm 0.1.32를 설치한다.
-릴리즈 시점에 npm 0.1.32는 상류에 태그만 있고 npm 레지스트리에는 없었다. `npm-v0.1.32` 태그로 빌드한
-패키지로 검증했고, 자기채점 스크립트는 npm 0.1.31에서도 통과한다(0.1.32 전용 동작 검사는 NOTE를 내고 돌지 않는다).
-0.1.32가 배포되기 전에는 0.1.31을 설치한다.
+검증된 조합: `@openai/codex-security@0.2.0` (플러그인 매니페스트 `0.1.95`). npm 0.1.26~0.2.0은 모두
+매니페스트 `0.1.95`라서 버전 경고로 구분되지 않는다. 스킬은 버전 대신 플러그인 파일로 0.2.0 변경을 판별한다.
+npm 0.2.0을 설치한다. 자기채점 스크립트는 npm 0.1.29에서도 통과한다(0.2.0 전용 동작 검사는 NOTE를 내고 돌지 않는다).
+다만 기존 결함인 `repro-u5` Q2b는 두 버전 모두에서 실패한다(`docs/verification/phase0-results.md`).
+
+npm 0.2.0부터 스캔 스킬은 npm 설치본이 필요하다. 상류 소스 체크아웃에는 빌드된 Node 헬퍼가 없어 후보
+정규화를 할 수 없고, 스캔이 0단계에서 멈춘다. 0.2.0은 상태 DB 마이그레이션도 늘었다. 전역 설치본을 0.1.x에서
+올리기 전에 `~/.codex/state/plugins/codex-security`를 백업한다.
+
+**`codex-security skills add`(npm 0.2.0)를 실행하지 않는다.** 이 명령은 `~/.claude/skills/codex-security-<명령>`을
+지우고, 로그인이 필요한 CLI를 부르기만 하는 상류 스킬 링크로 바꾼다. 이 저장소의 스킬 6개(scan, policy, patch,
+validate, verify-fix, classify-severity)와 이름이 겹친다. `install.sh --check`가 덮어쓰인 스킬을 알려 준다.
+`bash skills/install.sh --force`(복사본이면 `--copy --force`)로 다시 설치한다.
 
 ## 개발
 

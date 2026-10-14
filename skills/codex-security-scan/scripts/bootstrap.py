@@ -14,6 +14,9 @@
      (`scripts/launch_codex_security_mcp --helper …`)·SDK dist·CLI 의 가용성.
      5번은 결정이 아니라 관측이다. 없어도 ok:false 를 내지 않고, 가용성과 사유를
      필드로 싣는다(P6-KTD6·P6-KTD7).
+  6. 후보 정규화 경로(`candidateNormalizer`) — Python 스크립트 또는 5번의 Node 헬퍼.
+     이것도 관측이다. 불가일 때 멈출지는 스킬이 정한다.
+  7. 정본 위협 모델의 markdown 형식 지원(`threatModelMarkdown`) — 플러그인 스키마로 판별한다.
 
 이 JSON이 이후 모든 단계(register-cli-scan, 산출물 작성, finalize)의 경로
 source-of-truth 다. 스킬 문서는 이 스크립트를 한 번 호출하고 그 결과만 사용한다.
@@ -104,6 +107,13 @@ NODE_VERSION_RE = re.compile(r"v\d+\.\d+\.\d+\S*")
 # 실행한다. 상류 소스 체크아웃(plugins/codex-security)에는 빌드된 mcp/ 가 없다.
 HELPER_LAUNCHER_RELATIVE = Path("scripts") / "launch_codex_security_mcp"
 HELPER_SCRIPT_RELATIVE = Path("mcp") / "helpers.mjs"
+# 후보 정규화. npm 0.1.32 이하는 Python 스크립트, npm 0.2.0 은 그 스크립트를 지우고
+# 같은 런처의 `--helper normalize-candidates` 로 옮겼다(상류 #837). 두 버전 모두
+# 매니페스트 0.1.95 라서 버전 문자열로는 고를 수 없다 — 파일 존재로 고른다.
+NORMALIZER_SCRIPT_RELATIVE = Path("scripts") / "normalize_candidates.py"
+# 정본 위협 모델. npm 0.2.0 스키마는 scan.threatModel 을 anyOf(구조형 | {format:"markdown"})
+# 로 받고 finalizer 가 threatmodel.md 를 투영한다(상류 #1133). 0.1.32 이하는 구조형만 받는다.
+MANIFEST_SCHEMA_RELATIVE = Path("schemas") / "scan-manifest.schema.json"
 # npm 패키지 레이아웃: <패키지>/_bundled_plugin 의 형제가 dist/ 와 bin/ 이다.
 SDK_DIST_MARKER = "finding-workflow.js"
 SDK_CLI_RELATIVE = Path("bin") / "codex-security.mjs"
@@ -381,6 +391,8 @@ SUCCESS_KEYS = (
     "searchCommand",
     "node",
     "securityMdHelper",
+    "candidateNormalizer",
+    "threatModelMarkdown",
     "sdk",
     "scanDir",
     "scansRoot",
@@ -1473,6 +1485,44 @@ def resolve_security_md_helper(
     return result
 
 
+def resolve_candidate_normalizer(plugin_root: Path, target_repo: Path, helper: dict) -> dict:
+    """{"available","kind","reason"}. 실패하지 않는다.
+
+    Python 스크립트가 있으면 그것을 쓴다(그 버전의 상류 문서가 가리키는 경로다).
+    없으면 SECURITY.md 헬퍼와 같은 런처·Node 를 쓰므로 헬퍼 가용성을 그대로 따른다.
+    """
+    script = plugin_root / NORMALIZER_SCRIPT_RELATIVE
+    if not within_target(target_repo, script) and is_regular_file(script):
+        return {"available": True, "kind": "python", "reason": None}
+    if helper["available"]:
+        return {"available": True, "kind": "node-helper", "reason": None}
+    return {
+        "available": False,
+        "kind": None,
+        "reason": (
+            f"후보 정규화 불가 — {NORMALIZER_SCRIPT_RELATIVE} 가 없고(npm 0.2.0 부터 삭제) "
+            f"Node 헬퍼도 쓸 수 없음: {helper['reason']}"
+        ),
+    }
+
+
+def supports_markdown_threat_model(plugin_root: Path, target_repo: Path) -> bool:
+    """스키마의 scan.threatModel 에 markdown 대안이 있으면 참. 읽지 못하면 거짓(필드 생략 쪽)."""
+    schema = plugin_root / MANIFEST_SCHEMA_RELATIVE
+    if within_target(target_repo, schema) or not is_regular_file(schema):
+        return False
+    try:
+        model = json.loads(schema.read_text(encoding="utf-8"))["properties"]["scan"]["properties"]["threatModel"]
+    except (OSError, UnicodeDecodeError, ValueError, KeyError, TypeError):
+        return False
+    alternatives = model.get("anyOf") if isinstance(model, dict) else None
+    return any(
+        isinstance(item, dict)
+        and (item.get("properties") or {}).get("format") == {"const": "markdown"}
+        for item in alternatives or []
+    )
+
+
 def resolve_sdk(plugin_root: Path, target_repo: Path) -> dict:
     """npm 패키지의 dist/ 와 CLI 스크립트. {"dist","cli","reason"}. 실패하지 않는다.
 
@@ -1971,6 +2021,8 @@ def main(argv: list[str]) -> int:
     plugin_root_path = Path(plugin["pluginRoot"])
     node, node_attempts = resolve_node(target_repo, environ, state_dir, plugin_root_path)
     helper = resolve_security_md_helper(plugin_root_path, target_repo, node, node_attempts)
+    normalizer = resolve_candidate_normalizer(plugin_root_path, target_repo, helper)
+    markdown_threat_model = supports_markdown_threat_model(plugin_root_path, target_repo)
     sdk = resolve_sdk(plugin_root_path, target_repo)
 
     # emit() 의 errors="replace" 는 **진단·메시지 필드의 최후 안전망**이다. 경로
@@ -2073,6 +2125,13 @@ def main(argv: list[str]) -> int:
             # 헬퍼 가용성. available 이 거짓이면 스킬은 정책 해결을 건너뛰고
             # reason 을 scan.scope.limitations 와 최종 보고에 남긴다(P6-KTD7).
             "securityMdHelper": helper,
+            # 후보 정규화 경로. kind 가 python 이면 <python_command> 로 스크립트를,
+            # node-helper 면 securityMdHelper 의 런처·Node 로 `--helper normalize-candidates`
+            # 를 돌린다. 불가이면 kind 는 null 이고 사유는 reason 에 있다.
+            "candidateNormalizer": normalizer,
+            # 참이면 스킬은 scan.threatModel 을 {format:"markdown", content, …} 로 싣는다.
+            # 거짓이면 0.1.32 이하 스키마다 — markdown 객체는 거부되므로 필드를 생략한다.
+            "threatModelMarkdown": markdown_threat_model,
             # npm 패키지의 dist/(상류 JS 함수)와 CLI 스크립트. 소스 체크아웃이면 null.
             "sdk": sdk,
             # 셸 명령에 보간되는 값은 **전부** 인용된 형태를 함께 낸다. 한 축만
