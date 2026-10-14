@@ -32,7 +32,7 @@ npm 0.1.28부터 `references/artifact-storage.md`를 읽고 따르라고 지시�
 1. `artifact-storage.md` 스스로 "Explicit user instructions still take precedence"라고 쓴다. 사용자가
    설치해 호출한 이 스킬의 지시가 그 명시 지시다.
 2. 터미널 정본 경로(셸로 쓴 draft → `finalize_scan_contract.py` → 선택적 워크벤치 `complete-scan`)는
-   이 저장소의 고유 계약이다. npm 0.1.32에서도 finalizer와 `complete-scan`이 이 경로를 받아들인다
+   이 저장소의 고유 계약이다. npm 0.2.0에서도 finalizer와 `complete-scan`이 이 경로를 받아들인다
    (`repro-u3.sh`·`repro-u4.sh` 실측).
 
 "MCP 지시는 무시한다"는 위 문장만으로는 부족하다. 그 정책은 자기가 "older terminal file-authoring
@@ -58,9 +58,11 @@ fallbacks"보다 우선한다고 쓰기 때문이다. 그래서 상류 문서가
      상류 스크립트에 위임하므로 신뢰할 수 있는 ripgrep 확보가 선행 조건이다(P5-KTD2).
      **diff 스캔은 붙이지 않는다** — diff 모드는 `git` 만 쓴다(실측). 대신 `trustedPathEnv` 는 쓴다.
    - 성공 시 단일 JSON을 출력한다:
-     `{"ok": true, "pluginRoot", "pluginVersion", "pluginSource", "python": {"path","version"}, "searchCommand": {"path","source","pathPrefix","version"}, "node": {"path","source","version"}, "securityMdHelper": {"available","launcher","node","reason"}, "sdk": {"dist","cli","reason"}, "scanDir", "scansRoot", "stateDir", "repoRoot"}`.
-     `node`·`securityMdHelper`·`sdk`는 **관측 필드**다. 없거나 불가여도 `ok`는 `true`다
-     (`node`는 `null`, 불가 사유는 `securityMdHelper.reason`·`sdk.reason`). 3번이 이 값을 쓴다.
+     `{"ok": true, "pluginRoot", "pluginVersion", "pluginSource", "python": {"path","version"}, "searchCommand": {"path","source","pathPrefix","version"}, "node": {"path","source","version"}, "securityMdHelper": {"available","launcher","node","reason"}, "candidateNormalizer": {"available","kind","reason"}, "threatModelMarkdown", "sdk": {"dist","cli","reason"}, "scanDir", "scansRoot", "stateDir", "repoRoot"}`.
+     `node`·`securityMdHelper`·`candidateNormalizer`·`threatModelMarkdown`·`sdk`는 **관측 필드**다.
+     없거나 불가여도 `ok`는 `true`다(`node`는 `null`, 불가 사유는 `securityMdHelper.reason`·
+     `candidateNormalizer.reason`·`sdk.reason`). 3번이 헬퍼 값을, 아래 "후보 정규화 확인"이
+     `candidateNormalizer`를, 1단계·5단계가 `threatModelMarkdown`을 쓴다.
      **이 JSON이 이후 모든 단계의 경로·인터프리터 진실 원천이다.** 아래에서
      `<plugin_dir>` = `pluginRoot`, `<python_command>` = bootstrap이 반환한 **`python.path`**
      (3.10+·tomli 조건을 통과한 절대 경로 — 이걸 그대로 쓴다), `<scan_dir>` = `scanDir`,
@@ -102,17 +104,28 @@ fallbacks"보다 우선한다고 쓰기 때문이다. 그래서 상류 문서가
      대상 저장소 밖의 Git을 고른다(상류 `50b0e186`). 이 변수는 `env -i`로 구성한 자식 환경에 들어가지
      않고, `workbench_glue.py`도 상속값을 지운다(`repro-u7` I18). 상류 SDK도 사용자 값을 쓰지 않는다.
    - **시작 고지**: 선택된 플러그인의 절대 경로와 `pluginVersion`을 사용자에게 알린다.
-     `pluginVersion`이 이 번역 지침 작성 기준(**매니페스트 0.1.95**, npm 0.1.32)과 다르면 "플러그인 버전이
+     `pluginVersion`이 이 번역 지침 작성 기준(**매니페스트 0.1.95**, npm 0.2.0)과 다르면 "플러그인 버전이
      매핑 기준과 다름 — 워크플로 지시가 바뀌었을 수 있음"을 경고한다. 이 값은 매니페스트
-     버전이며 npm 패키지 버전과 다른 축이다(npm 0.1.32 = 매니페스트 0.1.95).
-   - **표기 규약**: 이 저장소의 문서는 두 축을 **항상 이름으로 구분해** 쓴다 — `npm 0.1.32`,
+     버전이며 npm 패키지 버전과 다른 축이다(npm 0.2.0 = 매니페스트 0.1.95).
+   - **표기 규약**: 이 저장소의 문서는 두 축을 **항상 이름으로 구분해** 쓴다 — `npm 0.2.0`,
      `매니페스트 0.1.95`. 축 없이 "플러그인 0.1.x"로 쓰지 않는다. 두 축의 숫자 범위가 겹쳐서
      (npm 0.1.20과 매니페스트 0.1.20이 둘 다 존재) 축을 생략하면 어느 쪽인지 알 수 없다.
-   - **경고로 구분되지 않는 구간(P6-KTD1)**: npm 0.1.26~0.1.32는 모두 매니페스트 0.1.95다. 그래서
-     이 경고는 일곱 버전을 구분하지 못한다. npm 0.1.26에는 Node 헬퍼(`securityMdHelper`)가 없어서
-     3번 정책 해결이 고지와 함께 건너뛰어진다(`securityMdHelper.available: false`). 헬퍼는
-     npm 0.1.27부터 있다. 검증된 조합인 npm 0.1.32 설치를 권장한다. npm에 0.1.32가 아직 없으면
-     0.1.31을 쓴다(자기채점 스크립트 통과를 확인했다. 0.1.32 전용 동작은 해당 절에 적었고 0.1.31에서는 검사하지 않는다).
+   - **경고로 구분되지 않는 구간(P6-KTD1)**: npm 0.1.26~0.2.0은 모두 매니페스트 0.1.95다. 그래서
+     이 경고는 여덟 버전을 구분하지 못한다. 버전 대신 **파일 존재로 판별한 필드**를 쓴다.
+     - npm 0.1.26에는 Node 헬퍼(`securityMdHelper`)가 없어서 3번 정책 해결이 고지와 함께
+       건너뛰어진다(`securityMdHelper.available: false`). 헬퍼는 npm 0.1.27부터 있다.
+     - npm 0.2.0은 후보 정규화 스크립트(`scripts/normalize_candidates.py`)를 지우고 Node 헬퍼로
+       옮겼다(상류 #837). `candidateNormalizer.kind`가 `python`이면 0.1.32 이하, `node-helper`면
+       0.2.0 경로다.
+     - npm 0.2.0 스키마는 정본 위협 모델을 markdown 형식으로도 받는다(상류 #1133).
+       `threatModelMarkdown`이 그 판별값이다. 0.1.32 이하 finalizer는 markdown 객체를 거부한다.
+
+     검증된 조합인 npm 0.2.0 설치를 권장한다. npm 0.1.32 이하도 동작한다(자기채점 스크립트가 두 경로를
+     모두 검사한다). 0.2.0 전용 동작은 해당 절에 적었다.
+   - **후보 정규화 확인**: `candidateNormalizer.available`이 `false`이면 **중단**한다. 후보가 1건이라도
+     나오면 2단계 정규화가 실패하기 때문이다. `candidateNormalizer.reason`을 전하고, npm 설치본
+     (`npm install -g @openai/codex-security`)을 쓰라고 안내한다. npm 0.2.0 상류 소스 체크아웃
+     (`plugins/codex-security`)에는 Python 스크립트도 빌드된 `mcp/`도 없어서 항상 이 경우다.
    - 검색 명령 해석 결과(`searchCommand.source`)도 함께 고지한다 — `trusted-executable`이면
      PATH의 ripgrep, `claude-shim`이면 Claude Code 바이너리를 `rg`로 노출한 심링크다.
    - `ok: false`이면 `stage`·`error`의 한국어 안내를 그대로 사용자에게 전하고 **중단**한다
@@ -214,8 +227,9 @@ fallbacks"보다 우선한다고 쓰기 때문이다. 그래서 상류 문서가
 **매니페스트 0.1.20**(npm 0.1.12에 처음 실림)에서 삭제되고 내용이 `references/core-scan.md`로 옮겨졌다. 또 상류 표준 스캔은 후보 원장
 (candidate ledger) 방식을 버리고 investigation packet + MCP 도구(`record_codex_security_scan_draft`)
 모델로 갔다. **원장 기반 절차의 권위 서술은 이 스킬 문서**이고, 원장 행 스키마와 중첩 레코드 필드는
-`references/scan-artifacts.md`와 `scripts/normalize_candidates.py`가 소유한다(diff 스캔 터미널 경로에
-동일 규약이 남아 있다: `skills/security-diff-scan/SKILL.md`).
+`references/scan-artifacts.md`와 후보 정규화기(npm 0.1.32 이하 `scripts/normalize_candidates.py`, npm 0.2.0
+Node 헬퍼 `normalize-candidates`)가 소유한다(diff 스캔 터미널 경로에 동일 규약이 남아 있다:
+`skills/security-diff-scan/SKILL.md`).
 
 각 단계에서 `$threat-model`/`$validation`/`$attack-path-analysis` 같은 `$skill` 참조는
 **해당 플러그인 스킬 파일을 직접 읽어** 그 절차를 수행하는 것으로 대체한다.
@@ -223,9 +237,16 @@ fallbacks"보다 우선한다고 쓰기 때문이다. 그래서 상류 문서가
 ### 1. 위협 모델
 `<plugin_dir>/skills/threat-model/SKILL.md`와 `references/threat-model.md`를 읽고 절차를
 수행한다. `<scan_dir>/threat_model.md`(리포지터리 스코프) + `artifacts/01_context/threat_model.md`
-(스캔별 복사본 = 이후 단계의 source of truth)에 쓴다. 리포지터리 스코프를 유지하고(스캔 타겟
+(스캔별 복사본 = 이후 단계의 작업 사본)에 쓴다. 리포지터리 스코프를 유지하고(스캔 타겟
 편향 금지), 마지막 두 줄에 `Repository: <target_id>` / `Version: <revision 또는 snapshot digest>`를
 넣는다.
+
+**정본 위치(npm 0.2.0, 상류 #1133).** 0.2.0에서 위협 모델의 정본은 파일이 아니라 `scan-manifest.json`의
+`scan.threatModel` 필드다. finalizer는 봉인 뒤 이 필드를 `<scan_dir>/threatmodel.md`로 투영한다.
+`artifacts/01_context/threat_model.md`는 artifacts에 기록되지 않으므로 0.2.0에서는 **모델이 없는
+스캔**이 된다(`export --artifact threat-model`이 "No saved threat model"로 실패한다. `repro-u4.sh` K3).
+그래서 5단계에서 이 모델을 draft에 싣는다. 규칙은 5단계 "정본 위협 모델"에 있다. 위 두 파일은
+사람이 읽는 사본으로 계속 쓴다.
 
 ### 2. 인벤토리 + 전 파일 리뷰
 1. 파일 목록 생성 — **상류 스크립트에 위임한다**(P5-KTD2):
@@ -307,6 +328,10 @@ fallbacks"보다 우선한다고 쓰기 때문이다. 그래서 상류 문서가
    3. 대안으로, 그 경로를 포함하지 않는 디렉터리만 scoped-path로 스캔할 수 있다고 제시한다. 그때
       커버리지는 요청한 경로에 한정된다는 점을 함께 밝힌다.
 
+   **중첩 Git 메타데이터(npm 0.2.0).** 인벤토리는 스코프 어디에 있든 `.git` 디렉터리와 그 내용을 뺀다
+   (상류 글롭 `!**/.git`·`!**/.git/**`, #1099). 0.1.32 이하 글롭은 `!.git/**`였다. 그래서 중첩
+   저장소나 서브모듈의 `.git` 파일이 있으면 두 버전의 커버리지 분모가 다를 수 있다.
+
    인벤토리를 손으로 만들거나 분모를 추측하지 않는다(P5-KTD3). 실패한 인벤토리로 리뷰를 시작하지
    않는다.
 2. **목록의 모든 파일을 처음부터 끝까지 리뷰**한다. 예제·데모·픽스처·테스트라고 건너뛰지 않는다.
@@ -316,17 +341,27 @@ fallbacks"보다 우선한다고 쓰기 때문이다. 그래서 상류 문서가
    추가한다. 이 로그가 커버리지 정산(R9)의 입력이다. 대형 저장소에서 컨텍스트가 소진되면 남은
    파일을 미완으로 남기고 정산에 맡긴다(거짓 완료 주장 금지).
 4. 원시 후보를 `<scan_dir>/artifacts/02_discovery/raw/agent-*.jsonl`에 쓴다. 행 스키마는
-   `scripts/normalize_candidates.py`(문서화: `references/scan-artifacts.md`)가 소유하며 **정확히** 따른다(`cwe_ids`, `locations`[repo-relative path,
+   후보 정규화기(문서화: `references/scan-artifacts.md`)가 소유하며 **정확히** 따른다(`cwe_ids`, `locations`[repo-relative path,
    양의 start_line, 선택 end_line·role ∈ {entrypoint, entrypoint/wrapper, source, root_control,
    sink, concrete_implementation, evidence}], `summary`, `evidence`, 선택 `context`·`instance`;
    최소 1개 location은 `in_scope_files.txt`에 있어야 함). 필드를 추가하면 거부된다.
-5. **후보 정규화(필수 호출)** — 후보가 1건 이상이면:
-   ```bash
-   <python_command> <plugin_dir>/scripts/normalize_candidates.py --input <raw1.jsonl> [<raw2.jsonl> ...] --out <scan_dir>/artifacts/02_discovery/candidate_ledger.jsonl --repo-root <repo_root> --in-scope-files <scan_dir>/artifacts/02_discovery/in_scope_files.txt
-   ```
-   후보 0건이면 빈 원장으로 진행한다. `candidate_id`는 스크립트가 부여한다(짓지 말 것).
+5. **후보 정규화(필수 호출)** — 후보가 1건 이상이면 `candidateNormalizer.kind`에 맞는 명령을 쓴다.
+   인자는 두 경로가 같다.
+   - `python`(npm 0.1.32 이하):
+     ```bash
+     <python_command> <plugin_dir>/scripts/normalize_candidates.py --input <raw1.jsonl> [<raw2.jsonl> ...] --out <scan_dir>/artifacts/02_discovery/candidate_ledger.jsonl --repo-root <repo_root> --in-scope-files <scan_dir>/artifacts/02_discovery/in_scope_files.txt
+     ```
+   - `node-helper`(npm 0.2.0, 상류 #837):
+     ```bash
+     env -i <trusted_child_env> CODEX_MCP_NODE_PATH=<node> <security_md_launcher> --helper normalize-candidates --input <raw1.jsonl> [<raw2.jsonl> ...] --out <scan_dir>/artifacts/02_discovery/candidate_ledger.jsonl --repo-root <repo_root> --in-scope-files <scan_dir>/artifacts/02_discovery/in_scope_files.txt
+     ```
+     런처는 0단계 3번의 SECURITY.md 헬퍼와 같은 파일이다. `env -i`와 `CODEX_MCP_NODE_PATH`를 쓰는 이유도
+     같다(P6-KTD6). 원시 `$PATH`나 원시 환경을 물려주지 않는다.
+
+   두 경로의 출력은 같다. 여러 입력·CRLF·비ASCII 경로·중복 병합 픽스처에서 바이트 단위로 같았다
+   (`repro-u4.sh` K4). 후보 0건이면 빈 원장으로 진행한다. `candidate_id`는 정규화기가 부여한다(짓지 말 것).
    정규화 후 discovery 필드를 **동결**하고, 이후 단계는 중첩 레코드만 추가하며 원장을 원자적으로
-   재작성(`.tmp` → 이동)한다. **enriched 원장을 normalize_candidates.py에 재투입하지 않는다.**
+   재작성(`.tmp` → 이동)한다. **enriched 원장을 정규화기에 재투입하지 않는다.**
 
 ### 3. Validation (compact)
 `<plugin_dir>/skills/validation/SKILL.md`와 `skills/validation/references/validation-guidance.md`·
@@ -366,6 +401,25 @@ compact 절은 이제 workbench diff 전용 서술이므로 MCP 도구 호출(`r
 설정하고 2차 support-impact CWE는 추가하지 않는다. `<scan_dir>`에 `scan-manifest.json`(unsealed
 draft — R6 금지 필드 없음), `findings.json`, `coverage.json`을 쓰고, `artifacts/03_coverage/reviewed_surfaces.md`도
 작성한다. `report.md`는 **직접 쓰지 않는다**(finalizer 생성). 3개 파일이 디스크에 존재하는지 확인한다.
+
+**정본 위협 모델(`scan.threatModel`)** — 0단계 `threatModelMarkdown`으로 형식을 고른다.
+
+| 경우 | `scan.threatModel` |
+| --- | --- |
+| `true`, 1단계에서 생성한 모델 | `{"format": "markdown", "content": "<1단계 마크다운 전문>", "scope": {"includePaths": [<모델 범위 — 아래 규칙>], "excludePaths": []}, "origin": "generated"}` |
+| `true`, 사용자가 마크다운·텍스트 모델을 공급 | 위와 같되 `content`는 공급된 텍스트 그대로, `"origin": "provided"` |
+| `true` 또는 `false`, 사용자가 스키마에 맞는 구조형 객체(`summary` 필수)를 공급 | 그 객체를 바꾸지 않고 싣는다 |
+| `false`, 그 밖의 경우 | 필드를 **생략**한다(0.1.32 이하 finalizer는 markdown 객체를 `summary` 누락으로 거부한다. `repro-u4.sh` K2) |
+
+- `content`는 1단계 문서를 **요약하지 않고 전문 그대로** 넣는다. 최종 findings 목록으로 모델을 다시 쓰지 않는다.
+- `scope.includePaths`는 **모델의 실제 범위**다. 저장소 전체 모델이면 `["."]`다. 스캔 스코프가 좁아도
+  모델이 저장소 전체를 다뤘으면 `["."]`를 쓴다. 범위를 모르면 `scope`를 생략한다.
+- 이 필드는 R6 금지 필드가 아니다. 모델이 정한 정본 의미 필드이므로 draft에 쓴다.
+- 1단계에서 생성한 모델이면 `scan.scope`의 컨텍스트 서술에도 "1단계에서 생성한 모델"이라고 적는다
+  (상류 `final-report.md`). 생성한 모델을 외부 입력이라고 쓰지 않는다.
+
+**`coverage.resolvedDeferred`(npm 0.2.0)는 쓰지 않는다.** 상류는 저장된 유예 작업을 다음 draft에서
+종결할 때 이 필드를 쓴다(#1036). 이 스킬은 한 번에 봉인하므로 종결할 이전 유예 작업이 없다.
 
 **쓰기 직전 자기검사(P5-KTD9 · P5-R23)** — 필드 정의는 `references/finding-detail-fields.md`가 소유하므로
 그 문서를 읽어 따르되, 그 읽기 지시는 이 워크플로 앞머리에 있고 실제로 문장을 쓰는 시점은 여기다.
@@ -409,6 +463,9 @@ draft — R6 금지 필드 없음), `findings.json`, `coverage.json`을 쓰고, 
    CODEX_SECURITY_STARTED_AT=<시작시각> <python_command> <plugin_dir>/scripts/finalize_scan_contract.py --scan-dir <scan_dir> --source-root <repo_root>
    ```
    성공(exit 0) 시 `<scan_dir>/report.md`와 SARIF가 생성된다. **report.md/SARIF를 손으로 수정하지 않는다.**
+   npm 0.2.0은 `scan.threatModel`이 있으면 `<scan_dir>/threatmodel.md`도 만든다. 투영에 실패하면 finalizer는
+   exit 0을 유지하고 stderr에 `codex-security: warning: Automatic threat model save failed …`를 낸다. 이 경고는
+   리페어 대상이 아니다(리페어 루프는 exit≠0에만 반응한다). 경고 문구를 최종 보고에 그대로 싣는다.
 
 ---
 
@@ -426,8 +483,15 @@ draft — R6 금지 필드 없음), `findings.json`, `coverage.json`을 쓰고, 
    - `coverage.surfaces[N].disposition: unsupported disposition: <값>` → surface disposition은
      정확히 `reported | no_issue_found | rejected | not_applicable | needs_follow_up` 중 하나여야 함
      (`no_issue`·`no-issue` 등 오타 주의; U6 실측에서 발생).
-   - `scan-manifest.schema.scan.threatModel: expected schema type object` → `scan.threatModel`은
-     **객체**여야 하며 문자열이면 거부된다. 산문 요약만 있으면 이 필드를 아예 생략한다(선택 필드).
+   - `scan.threatModel` 오류 → 문자열을 넣으면 거부된다. 문구는 버전마다 다르다.
+     - npm 0.1.32 이하: `scan-manifest.schema.scan.threatModel: expected schema type object`
+     - npm 0.2.0: `scan-manifest.schema.scan.threatModel: no schema alternative matched: …`
+       (구조형과 markdown 두 대안이 모두 맞지 않음)
+     - npm 0.1.32 이하에 markdown 객체를 넣으면 `scan-manifest.schema.scan.threatModel.summary: missing
+       required schema property`
+
+     5단계 "정본 위협 모델" 표대로 다시 쓴다. 산문만 있고 `threatModelMarkdown`이 `false`이면 이 필드를
+     생략한다(선택 필드).
 3. 다시 실행한다.
 4. **3회 초과 시** draft와 오류 원문을 `<scan_dir>`에 보존하고 사용자에게 정확한 finalizer 오류를
    보고하며 **중단**한다(같은 응답에서 무한 재시도 금지). 구조적 스키마 불일치로 판단되면 픽스처 재검토가 필요하다.
@@ -521,11 +585,17 @@ draft — R6 금지 필드 없음), `findings.json`, `coverage.json`을 쓰고, 
 - 커버리지 상태(`complete`/`partial`)와 미리뷰 파일 수. **근거는 `coverage_reconcile.py`의 요약
   (`completenessAfter`·`unreviewedCount`·`deferredCount`)이며 SARIF가 아니다**(P5-KTD8 · P5-R14).
   상류 SARIF는 npm 0.1.25부터 종결 상태만 반영해 부분 커버리지 스캔도 '성공'으로 표시하고, `deferred`가
-  비면 경고조차 남기지 않는다(npm 0.1.32에서도 같다. `repro-u4.sh` F). **SARIF의 성공 표시를 근거로 완전 커버리지를 주장하지 않는다.**
+  비면 경고조차 남기지 않는다(npm 0.2.0에서도 같다. `repro-u4.sh` F). **SARIF의 성공 표시를 근거로 완전 커버리지를 주장하지 않는다.**
   정산 요약의 `partialWithoutDeferred`가 참이면 그 사실을 보고에 명시한다.
 - 0단계 경량 확인에서 **degraded path로 격하됐다면** 그 사실.
 - 실행·테스트 상태는 이 응답에서 직접 말한다. npm 0.1.29부터 `report.md`는 `Runtime or test status`
   행을 표시하지 않는다(`repro-u4.sh` H1). 값은 `scan.scope.runtimeStatus`로 매니페스트에 계속
   남기되, 리포트에 나온다고 쓰지 않는다.
 - 완전 커버리지를 주장하지 않는다 — 남은 파일·후보가 있으면 정직하게 명시한다.
+- 정본 위협 모델을 실었으면 `<scan_dir>/threatmodel.md`의 절대 경로를 적는다(npm 0.2.0). 투영 경고가
+  있었으면 그 문구도 적는다. 저장된 모델은 인증 없이 다시 내보낼 수 있다:
+  `npx codex-security export <scan_dir> --artifact threat-model --output -`. `threatModelMarkdown`이
+  `false`라서 필드를 생략했으면 `threatmodel.md`가 없다는 사실과 1단계 사본 경로를 적는다.
+- 상류 stderr(finalizer·워크벤치 오류)를 보고에 그대로 옮길 때는 민감값이 있는지 먼저 본다. npm 0.2.0부터
+  상류 진단 문구가 자격증명을 가리지 않는다(#1179). 토큰·키처럼 보이는 값은 가리고 옮긴다.
 - 후속 옵션(내보내기 sarif/csv/json, 패치, 트래킹)을 **제안**만 하고 요청 없이는 실행하지 않는다.

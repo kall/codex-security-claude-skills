@@ -1422,6 +1422,36 @@ EOF
     bad "I17f: 비-diff 모드의 --head 거부가 기대와 다릅니다(exit $I17F_CODE)"
     sed 's/^/     /' "$RUN/i17-usage2.json"
   fi
+
+  # I17g. deep-lite 는 표준 모드로 등록한다. 상류는 레시피 mode=deep 스캔을 종결하기 전에 공식 deep
+  # 코디네이터가 만드는 deep_scan_runs 행(succeeded + manifest)을 요구한다(deep_scan_workbench.py,
+  # npm 0.1.29~0.2.0). deep-lite 는 그 행을 만들지 않으므로 mode=deep 으로 등록하면 complete 가 항상
+  # 거부되고 행은 running 으로 남는다(2026-10-14 스모크 테스트 실측). 글루는 그 등록을 상태 DB 에
+  # 행을 만들기 전에 거부한다.
+  I17G="$RUN/i17-deep"
+  mkdir -p "$I17G/scan" "$I17G/state"
+  chmod 700 "$I17G" "$I17G/scan" "$I17G/state"
+  PY - "$I17G/boot.json" "$PLUGIN" "$I17G/state" "$DREPO" "$PYTHON_BIN" "$I17G/scan" <<'EOF'
+import json, pathlib, sys
+out, plugin, state, repo, python, scan_dir = sys.argv[1:7]
+manifest = json.loads((pathlib.Path(plugin) / ".codex-plugin" / "plugin.json").read_text())
+pathlib.Path(out).write_text(json.dumps({
+    "ok": True, "pluginRoot": plugin, "pluginVersion": manifest["version"],
+    "stateDir": state, "scanDir": scan_dir, "repoRoot": repo,
+    "python": {"path": python, "version": "probe"},
+}, indent=2))
+EOF
+  i17g_running() { PY "$GLUE" --bootstrap "$I17G/boot.json" check-running 2>/dev/null | PY -c 'import json,sys; print(json.load(sys.stdin).get("count"))'; }
+  I17G_BEFORE="$(i17g_running)"
+  PY "$GLUE" --bootstrap "$I17G/boot.json" register --mode deep >"$RUN/i17-deep.json" 2>&1
+  I17G_CODE=$?
+  I17G_AFTER="$(i17g_running)"
+  if [ "$I17G_CODE" = 1 ] && grep -q "deep-lite" "$RUN/i17-deep.json" && [ "$I17G_BEFORE" = 0 ] && [ "$I17G_AFTER" = 0 ]; then
+    ok "I17g: register --mode deep 은 글루가 상태 DB 에 행을 만들기 전에 거부(running 행 0 그대로)"
+  else
+    bad "I17g: --mode deep 거부가 기대와 다릅니다(exit $I17G_CODE, running $I17G_BEFORE -> $I17G_AFTER)"
+    sed 's/^/     /' "$RUN/i17-deep.json"
+  fi
 fi
 
 # ---------------------------------------------------------------------------

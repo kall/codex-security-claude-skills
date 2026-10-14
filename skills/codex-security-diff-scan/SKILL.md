@@ -31,6 +31,8 @@ SKILL.md의 prompt-only 절이 정본이다. 이 스킬이 읽는 `skills/threat
 ## 0단계 — 부트스트랩·등록·contract (Phase 1·2 준수)
 
 1. `bootstrap.py --target-repo <저장소 루트>`로 pluginRoot·python·scanDir을 얻는다(Phase 1 0단계).
+   Phase 1 0단계의 **후보 정규화 확인**을 그대로 적용한다 — `candidateNormalizer.available`이 `false`면
+   중단한다(npm 0.2.0 소스 체크아웃 등).
 2. **워크벤치 등록(Phase 2)**: `workbench_glue.py register`에 diff 대상을 인자로 준다(R10).
    ```bash
    # refs (커밋/브랜치)
@@ -68,7 +70,9 @@ SKILL.md의 prompt-only 절이 정본이다. 이 스킬이 읽는 `skills/threat
 `<plugin_dir>/skills/security-diff-scan/SKILL.md`를 **읽고** 순서를 따른다.
 
 1. **위협 모델 — 저장소 전체 범위**: `skills/threat-model/SKILL.md` 절차. diff 범위가 아니라
-   저장소 수준 위협 모델을 만든다(무관한 diff에도 유효하도록).
+   저장소 수준 위협 모델을 만든다(무관한 diff에도 유효하도록). 5단계에서 이 모델을 정본
+   `scan.threatModel`에 싣는다(Phase 1 5단계 "정본 위협 모델" 표). `scope.includePaths`는 **모델의
+   범위**인 `["."]`이며 변경 파일 목록으로 바꾸지 않는다(상류 `skills/security-diff-scan/SKILL.md` 1항).
 2. **Discovery — diff 범위**: 인벤토리를 diff-rank-input으로 생성한다.
    ```bash
    # refs (커밋/브랜치)
@@ -108,10 +112,11 @@ SKILL.md의 prompt-only 절이 정본이다. 이 스킬이 읽는 `skills/threat
    저장소가 커밋한 `./node_modules/.bin/git`이 실행된다(실측). 전체 스캔과 같은 이유이며 정본
    서술은 Phase 1 SKILL.md 2단계에 있다(P5-KTD2).
 
-   **diff 인벤토리에 들어가는 파일(npm 0.1.32 기준).** diff 인벤토리와 diff 랭킹 입력은 같은 규칙을
+   **diff 인벤토리에 들어가는 파일(npm 0.2.0 기준).** diff 인벤토리와 diff 랭킹 입력은 같은 규칙을
    쓴다(`repro-u4.sh` I 블록).
    - 확장자는 `rank_preview.TEXT_CODE_EXTENSIONS`로 거른다. npm 0.1.27~0.1.29에서 `.cjs`·`.cts`·
-     `.mts`·`.tf`가, npm 0.1.31에서 `.m`이, npm 0.1.32에서 `.sol`·`.svelte`가 추가됐다. 이 확장자 목록은 diff 인벤토리와 랭킹 입력(diff·저장소 모두)에만 쓰인다. 전체 스캔
+     `.mts`·`.tf`가, npm 0.1.31에서 `.m`이, npm 0.1.32에서 `.sol`·`.svelte`가, npm 0.2.0에서 `.hh`·`.hxx`
+     (C++ 헤더)·`.ejs`·`.erb`·`.phtml`(템플릿)·`.vy`(Vyper)가 추가됐다. 이 확장자 목록은 diff 인벤토리와 랭킹 입력(diff·저장소 모두)에만 쓰인다. 전체 스캔
      인벤토리는 확장자 필터가 없는 `rg --files`라 0.1.25에서도 이 파일들을 포함했다.
    - `.github/workflows/*` 변경은 제외 규칙(`path_is_diff_excluded`)에서 빠져 인벤토리에 남는다.
      `.github`의 다른 파일(예: `dependabot.yml`)은 여전히 제외된다.
@@ -120,13 +125,17 @@ SKILL.md의 prompt-only 절이 정본이다. 이 스킬이 읽는 `skills/threat
      0.1.25에도 있었다. 그 경로는 Phase 1 SKILL.md 2단계의 탐색 명령(`<스코프>`는 `.`)으로 찾아
      사용자에게 보여 준다. 이름을 바꾸기 전에는 이 diff를 스캔할 수 없다.
 
-   변경된 source-like 파일만 리뷰한다. 후보는 `normalize_candidates.py`로 단일 원장에 병합하되
-   (Phase 1과 동일), **diff 스캔은 `--allow-missing-in-scope`를 반드시 붙인다**:
+   변경된 source-like 파일만 리뷰한다. 후보는 Phase 1 2단계 5번의 정규화 명령(`candidateNormalizer.kind`로
+   고름)으로 단일 원장에 병합하되, **diff 스캔은 `--allow-missing-in-scope`를 반드시 붙인다**. 두 경로 모두
+   이 인자를 받는다:
    ```bash
+   # kind = python (npm 0.1.32 이하)
    <python> <plugin_dir>/scripts/normalize_candidates.py --input <raw1.jsonl> [...] --out <scan_dir>/artifacts/02_discovery/candidate_ledger.jsonl --repo-root <repo_root> --in-scope-files <scan_dir>/artifacts/02_discovery/in_scope_files.txt --allow-missing-in-scope
+   # kind = node-helper (npm 0.2.0)
+   env -i <trusted_child_env> CODEX_MCP_NODE_PATH=<node> <security_md_launcher> --helper normalize-candidates --input <raw1.jsonl> [...] --out <scan_dir>/artifacts/02_discovery/candidate_ledger.jsonl --repo-root <repo_root> --in-scope-files <scan_dir>/artifacts/02_discovery/in_scope_files.txt --allow-missing-in-scope
    ```
    diff 인벤토리에는 **삭제된 경로**가 포함되며(예: `git rm` 된 파일), 이 플래그가 없으면
-   `in-scope file row N: No such file or directory`로 정규화가 실패한다(실측). 플래그를 붙여도
+   정규화가 exit 2로 실패한다(실측). 문구는 npm 0.1.32 이하 Python이 `in-scope file row N: [Errno 2] No such file or directory: '<경로>'`, npm 0.2.0 Node 헬퍼가 `in-scope file row N: ENOENT: no such file or directory, realpath '<경로>'`다. 플래그를 붙여도
    후보 location 파일의 실존 검사는 그대로 수행된다.
 
    **삭제된 파일에 대한 finding 처리**: head 시점에 존재하지 않는 경로만 `locations`에 갖는
@@ -138,7 +147,8 @@ SKILL.md의 prompt-only 절이 정본이다. 이 스킬이 읽는 `skills/threat
 4. **Attack Path (compact)** — Phase 1과 동일.
 5. **Canonical JSON** — Phase 1의 순서 있는 결과 매핑 적용. `coverage.mode`는 kind별 기대값
    (refs → `branch_diff`, working_tree → `working_tree`)을 따르되, 실제 기대값은 **Phase 2 contract
-   조회 결과가 권위**다. finalizer가 덮어쓰는 R6 금지 필드는 작성하지 않는다.
+   조회 결과가 권위**다. finalizer가 덮어쓰는 R6 금지 필드는 작성하지 않는다. `scan.threatModel`은
+   1단계 모델로 Phase 1 5단계 "정본 위협 모델" 표대로 싣는다(`threatModelMarkdown`이 `false`면 생략).
 
 ## 완료 (Phase 1·2 준수)
 

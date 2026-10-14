@@ -537,10 +537,11 @@ EOF
 fi
 
 # ---------------------------------------------------------------------------
-# I. diff 인벤토리·diff 랭킹 입력 (npm 0.1.27~0.1.32, 상류 be7807de·fa5fe21c·46dce4a2·
-#    cce82310·ce7f75c1·6f8b3545)
+# I. diff 인벤토리·diff 랭킹 입력 (npm 0.1.27~0.2.0, 상류 be7807de·fa5fe21c·46dce4a2·
+#    cce82310·ce7f75c1·6f8b3545, #1079·#1197·#1306)
 #
-#   새 확장자(.cjs .cts .mts .tf, 0.1.31 의 .m, 0.1.32 의 .sol .svelte)는
+#   새 확장자(.cjs .cts .mts .tf, 0.1.31 의 .m, 0.1.32 의 .sol .svelte,
+#   0.2.0 의 .hh .hxx .ejs .erb .phtml .vy)는
 #   rank_preview.TEXT_CODE_EXTENSIONS 에 들어갔다.
 #   이 집합은 diff 인벤토리와 랭킹 입력만 쓴다. 전체 인벤토리는 확장자 필터가
 #   없는 `rg --files` 라 0.1.25 에서도 이 파일들을 포함했다.
@@ -548,6 +549,13 @@ fi
 #   .github 의 다른 파일(dependabot.yml)은 계속 제외된다 — 음성 대조군이다.
 #   기대 집합은 손으로 열거한다(P5-KTD3). 상류 출력끼리 비교하지 않는다.
 # ---------------------------------------------------------------------------
+# npm 0.2.0 판별(I13~I16·K2·K3): 스키마의 scan.threatModel 에 markdown 대안이 있는가(상류 #1133).
+MD_SUPPORTED="$(PY - "$PLUGIN/schemas/scan-manifest.schema.json" <<'EOF'
+import json, sys
+t = json.load(open(sys.argv[1]))["properties"]["scan"]["properties"]["threatModel"]
+print("yes" if any((a.get("properties") or {}).get("format") == {"const": "markdown"} for a in t.get("anyOf") or []) else "no")
+EOF
+)"
 step "I. diff 인벤토리·랭킹 입력: 새 확장자와 .github/workflows"
 RANK_SCRIPT="$PLUGIN/scripts/generate_rank_input.py"
 GIT_BIN="$(command -v git || true)"
@@ -670,6 +678,34 @@ EOF
   else
     printf 'NOTE I9~I12: 이 플러그인 사본은 npm 0.1.32 이전이라 .m·.sol·.svelte 단언 대상이 아닙니다\n'
   fi
+
+  # 커밋 4: npm 0.2.0 에서 추가된 확장자 .hh·.hxx(#1079)·.ejs·.erb·.phtml(#1197)·.vy(#1306).
+  # .txt 는 계속 음성 대조군이다. 0.2.0 사본은 같은 릴리즈의 스키마 변경(scan.threatModel 의
+  # markdown 대안, #1133)으로 알아본다 — 매니페스트 버전은 0.1.95 로 같다.
+  printf '#pragma once\n' > "$DREPO/src/g.hh"
+  printf '#pragma once\n' > "$DREPO/src/h.hxx"
+  printf '<%%= name %%>\n' > "$DREPO/src/i.ejs"
+  printf '<%%= name %%>\n' > "$DREPO/src/j.erb"
+  printf '<?php echo $x; ?>\n' > "$DREPO/src/k.phtml"
+  printf '@external\ndef f(): pass\n' > "$DREPO/src/l.vy"
+  printf 'more notes\n' > "$DREPO/notes2.txt"
+  dgit add -A >/dev/null && dgit commit -qm exts3 >/dev/null
+  DHEAD4="$(dgit rev-parse HEAD)"
+  if [ "$MD_SUPPORTED" = "yes" ]; then
+    printf '%s\n' src/g.hh src/h.hxx src/i.ejs src/j.erb src/k.phtml src/l.vy | LC_ALL=C sort > "$RUN/diff4.expected"
+    diff_inventory "$DHEAD3" "$DHEAD4" "$RUN/diff4.inv"
+    expect_exit 0 "$?" "I13 diff 인벤토리 생성 (0.2.0 확장자 커밋)"
+    LC_ALL=C sort "$RUN/diff4.inv" 2>/dev/null > "$RUN/diff4.inv.actual"
+    compare_set "I14" "$RUN/diff4.expected" "$RUN/diff4.inv.actual" \
+      "diff 인벤토리에 .hh·.hxx·.ejs·.erb·.phtml·.vy 가 들어가고 .txt 는 빠짐"
+    diff_rank_input "$DHEAD3" "$DHEAD4" "$RUN/diff4.rank.jsonl"
+    expect_exit 0 "$?" "I15 diff 랭킹 입력 생성 (0.2.0 확장자 커밋)"
+    LC_ALL=C sort "$RUN/diff4.rank.jsonl.paths" 2>/dev/null > "$RUN/diff4.rank.actual"
+    compare_set "I16" "$RUN/diff4.expected" "$RUN/diff4.rank.actual" \
+      "diff 랭킹 입력이 diff 인벤토리와 같은 기대 집합"
+  else
+    printf 'NOTE I13~I16: 이 플러그인 사본은 npm 0.2.0 이전이라 0.2.0 확장자 단언 대상이 아닙니다\n'
+  fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -778,6 +814,139 @@ EOF
       bad "J5: 정산기 안내에 줄바꿈 경로 원인이 없거나 종료코드가 3 이 아닙니다 (exit $r_rc)"
       sed 's/^/     /' "$RUN/reconcile-nl.err"
     fi
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+# K. 정본 위협 모델(npm 0.2.0, 상류 #1133)과 후보 정규화 경로(#837)
+#    K1 구조형 threatModel 은 모든 버전에서 봉인된다.
+#    K2 markdown threatModel — 지원 사본: 봉인 + threatmodel.md 투영 + export 가 content 를 담음.
+#       미지원 사본(0.1.32 이하): summary 누락으로 거부 — 스킬이 그때 필드를 생략하는 근거.
+#    K3 레거시 레이아웃(artifacts/01_context/threat_model.md 만, scan.threatModel 없음) — 지원
+#       사본에서는 export 가 "No saved threat model" 로 실패한다. 스킬이 정본 필드에 싣는 근거.
+#    K4 후보 정규화 — 이 사본의 경로(Python 스크립트 또는 Node 헬퍼)가 여러 입력·CRLF·비ASCII
+#       경로·중복 병합에서 기준 원장과 바이트 단위로 같다. 기준은 npm 0.1.29 Python 구현 출력이다.
+# ---------------------------------------------------------------------------
+step "K. 정본 위협 모델 형식과 후보 정규화 경로"
+tm_scan() { # tm_scan <이름> <threatModel JSON 또는 빈 문자열> — 픽스처 draft 에 threatModel 을 넣는다
+  local dir="$RUN/scan-k-$1"
+  mkdir -p "$dir"
+  cp "$FIXTURES"/scan-manifest.json "$FIXTURES"/findings.json "$FIXTURES"/coverage.json "$dir/"
+  PY - "$dir/scan-manifest.json" "$2" <<'EOF'
+import json, sys
+path, model = sys.argv[1], sys.argv[2]
+data = json.load(open(path))
+if model:
+    data["scan"]["threatModel"] = json.loads(model)
+else:
+    data["scan"].pop("threatModel", None)
+open(path, "w").write(json.dumps(data, indent=2) + "\n")
+EOF
+  CODEX_SECURITY_STARTED_AT=2026-07-30T09:00:00Z PY "$FINALIZE" --scan-dir "$dir" --source-root "$SRC" \
+    >"$dir.out" 2>"$dir.err"
+}
+
+tm_scan structured '{"summary": "K1 structured summary", "assets": ["archive"]}'
+expect_exit 0 "$?" "K1 구조형 threatModel 봉인"
+
+MD_CONTENT='# K2 Threat Model
+
+Body line.
+
+Repository: u4-min/source-root
+Version: 0123456789abcdef0123456789abcdef01234567
+'
+MD_JSON="$(PY -c 'import json,sys; print(json.dumps({"format": "markdown", "content": sys.argv[1], "scope": {"includePaths": ["."], "excludePaths": []}, "origin": "generated"}))' "$MD_CONTENT")"
+tm_scan markdown "$MD_JSON"
+k2_rc=$?
+if [ "$MD_SUPPORTED" = "yes" ]; then
+  expect_exit 0 "$k2_rc" "K2 markdown threatModel 봉인(지원 사본)"
+  if [ -f "$RUN/scan-k-markdown/threatmodel.md" ] && grep -qF "Body line." "$RUN/scan-k-markdown/threatmodel.md"; then
+    ok "K2 finalizer 가 <scan_dir>/threatmodel.md 를 투영하고 content 를 담음"
+  else
+    bad "K2 threatmodel.md 가 없거나 content 가 없습니다"
+  fi
+  PY "$FINALIZE" --scan-dir "$RUN/scan-k-markdown" --export-artifact threat-model \
+    --export-output "$RUN/k2-export.md" >/dev/null 2>"$RUN/k2-export.err"
+  expect_exit 0 "$?" "K2 --export-artifact threat-model"
+  if grep -qF "Body line." "$RUN/k2-export.md" 2>/dev/null && grep -qF "Model origin: generated" "$RUN/k2-export.md"; then
+    ok "K2 export 가 저장된 content 와 origin 을 담음"
+  else
+    bad "K2 export 내용이 기대와 다릅니다: $(head -c 300 "$RUN/k2-export.md" 2>/dev/null)"
+  fi
+else
+  expect_exit 2 "$k2_rc" "K2 markdown threatModel 거부(미지원 사본)"
+  if grep -q "threatModel.summary: missing required schema property" "$RUN/scan-k-markdown.err"; then
+    ok "K2 미지원 사본은 summary 누락으로 거부 — 스킬은 threatModelMarkdown=false 면 필드를 생략"
+  else
+    bad "K2 거부 문구가 다릅니다: $(tail -1 "$RUN/scan-k-markdown.err")"
+  fi
+fi
+
+# 스킬이 쓰던 순서대로 사본을 봉인 전에 둔다. finalizer 는 이 파일을 artifacts 에 기록하지 않는다.
+mkdir -p "$RUN/scan-k-legacy/artifacts/01_context"
+printf '# Legacy model\n' >"$RUN/scan-k-legacy/artifacts/01_context/threat_model.md"
+tm_scan legacy ''
+k3_rc=$?
+expect_exit 0 "$k3_rc" "K3 threatModel 없는 draft 봉인"
+if [ "$MD_SUPPORTED" = "yes" ]; then
+  PY "$FINALIZE" --scan-dir "$RUN/scan-k-legacy" --export-artifact threat-model \
+    --export-output "$RUN/k3-export.md" >/dev/null 2>"$RUN/k3-export.err"
+  k3e_rc=$?
+  if [ "$k3e_rc" != "0" ] && grep -q "No saved threat model" "$RUN/k3-export.err" && [ ! -e "$RUN/scan-k-legacy/threatmodel.md" ]; then
+    ok "K3 레거시 레이아웃만으로는 저장된 모델이 없음(export exit $k3e_rc, threatmodel.md 없음)"
+  else
+    bad "K3 레거시 레이아웃 export 가 기대와 다릅니다 (exit $k3e_rc): $(tail -1 "$RUN/k3-export.err")"
+  fi
+else
+  ok "K3 미지원 사본에는 threat-model export 가 없음 — 해당 없음"
+fi
+
+# K4. 후보 정규화. 입력 두 개(둘째는 CRLF), 비ASCII 경로, 두 입력에 걸친 중복 1건, CRLF 인벤토리.
+NREPO4="$RUN/norm-repo"
+mkdir -p "$NREPO4/src/한글" "$NREPO4/lib"
+printf 'a\nb\nc\nd\ne\n' >"$NREPO4/app.py"
+printf 'x\n' >"$NREPO4/src/한글/뷰.py"
+printf 'a\nb\nc\n' >"$NREPO4/lib/db.py"
+printf 'app.py\r\nsrc/한글/뷰.py\r\nlib/db.py\r\n' >"$RUN/norm-in-scope.txt"
+cat >"$RUN/norm-raw1.jsonl" <<'EOF'
+{"cwe_ids":["CWE-89"],"locations":[{"path":"lib/db.py","start_line":3,"role":"sink"},{"path":"app.py","start_line":1,"end_line":2,"role":"entrypoint"}],"summary":"sql","evidence":"e1","context":"c"}
+{"cwe_ids":["CWE-79","CWE-80"],"locations":[{"path":"src/한글/뷰.py","start_line":1,"role":"sink"}],"summary":"xss 한글","evidence":"e2","instance":"i1"}
+EOF
+printf '%s\r\n' \
+  '{"cwe_ids":["CWE-22"],"locations":[{"path":"app.py","start_line":5,"role":"source"}],"summary":"path","evidence":"e3"}' \
+  '{"cwe_ids":["CWE-79","CWE-80"],"locations":[{"path":"src/한글/뷰.py","start_line":1,"role":"sink"}],"summary":"xss 한글","evidence":"e2","instance":"i1"}' \
+  >"$RUN/norm-raw2.jsonl"
+cat >"$RUN/norm-expected.jsonl" <<'EOF'
+{"candidate_id":"candidate-2b1d20d7f4474d9f","cwe_ids":["CWE-22"],"evidence":"e3","locations":[{"end_line":5,"path":"app.py","role":"source","start_line":5}],"summary":"path"}
+{"candidate_id":"candidate-9cba951695c2c106","cwe_ids":["CWE-79","CWE-80"],"evidence":"e2","instance":"i1","locations":[{"end_line":1,"path":"src/한글/뷰.py","role":"sink","start_line":1}],"summary":"xss 한글"}
+{"candidate_id":"candidate-f39518c23dd39976","context":"c","cwe_ids":["CWE-89"],"evidence":"e1","locations":[{"end_line":2,"path":"app.py","role":"entrypoint","start_line":1},{"end_line":3,"path":"lib/db.py","role":"sink","start_line":3}],"summary":"sql"}
+EOF
+NORM_ARGS=(--input "$RUN/norm-raw1.jsonl" "$RUN/norm-raw2.jsonl" --out "$RUN/norm-out.jsonl"
+  --repo-root "$NREPO4" --in-scope-files "$RUN/norm-in-scope.txt")
+NODE_FOR_HELPER="$(command -v node || true)"
+if [ -f "$PLUGIN/scripts/normalize_candidates.py" ]; then
+  NORM_KIND=python
+  PY "$PLUGIN/scripts/normalize_candidates.py" "${NORM_ARGS[@]}" >/dev/null 2>"$RUN/norm.err"
+  norm_rc=$?
+elif [ -f "$PLUGIN/mcp/helpers.mjs" ] && [ -n "$NODE_FOR_HELPER" ]; then
+  NORM_KIND=node-helper
+  env -i PATH=/usr/bin:/bin HOME="$HOME" CODEX_MCP_NODE_PATH="$NODE_FOR_HELPER" \
+    "$PLUGIN/scripts/launch_codex_security_mcp" --helper normalize-candidates "${NORM_ARGS[@]}" \
+    >/dev/null 2>"$RUN/norm.err"
+  norm_rc=$?
+else
+  NORM_KIND=none
+fi
+if [ "$NORM_KIND" = "none" ]; then
+  skip "K4: 이 사본에는 Python 정규화 스크립트도 Node 헬퍼(+node)도 없습니다 — 정규화는 검증되지 않았습니다"
+else
+  expect_exit 0 "$norm_rc" "K4 후보 정규화($NORM_KIND)"
+  if cmp -s "$RUN/norm-expected.jsonl" "$RUN/norm-out.jsonl"; then
+    ok "K4 $NORM_KIND 출력이 기준 원장과 바이트 단위로 같음(CRLF·비ASCII·중복 병합)"
+  else
+    bad "K4 $NORM_KIND 출력이 기준 원장과 다릅니다"
+    diff "$RUN/norm-expected.jsonl" "$RUN/norm-out.jsonl" | sed 's/^/     /' | head -20
   fi
 fi
 

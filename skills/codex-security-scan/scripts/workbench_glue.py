@@ -219,6 +219,14 @@ def workbench_json(boot: dict, args: list[str]) -> dict:
 # 서브커맨드
 # --------------------------------------------------------------------------
 def cmd_register(boot: dict, args: argparse.Namespace) -> int:
+    if args.mode == "deep":
+        # 상류는 레시피 mode=deep 스캔을 종결하기 전에 공식 deep 코디네이터가 만드는 deep_scan_runs
+        # 행(succeeded + manifest)을 요구한다(deep_scan_workbench.py, npm 0.1.29~0.2.0). deep-lite 는 그
+        # 행을 만들지 않으므로 이 모드로 등록하면 complete 가 항상 거부되고 행은 running 으로 남는다.
+        raise GlueError(
+            "register --mode deep 은 쓰지 않습니다. deep-lite 는 표준 모드(--mode standard, 기본값)로 "
+            "등록합니다 — 상류는 mode=deep 스캔을 공식 deep 코디네이터의 실행 기록 없이 종결하지 않습니다."
+        )
     paths = args.paths or []
     recipe = {
         "repository": boot["repoRoot"],
@@ -317,6 +325,7 @@ def committed_diff_snapshot_digest(kind: str, base_revision: str, head_revision:
     출처: 태그 npm-v0.1.32 = 커밋 7c19cce7224af29628cd10c218444d5c0e8fdd1c 의
     `plugins/codex-security/scripts/workbench_target.py`(상류 8c78e655에서 도입). 그 전에도
     `workbench_saved_results.py`가 같은 식을 인라인으로 썼다. `repro-u7` I17이 상류 봉인 결과와 대조한다.
+    태그 npm-v0.2.0 = 커밋 4949af70fcfadff154f6e8fdf100faa5bf2f8169 에서도 이 함수는 같다.
     """
     digest = hashlib.sha256(
         f"codex-security-diff/v1\0{kind}\0{base_revision}\0{head_revision}".encode()
