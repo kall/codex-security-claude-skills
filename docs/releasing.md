@@ -124,7 +124,9 @@ tarball을 교체하지 말고 새 버전을 올린다 — 사용자가 체크�
 
 1. **고정한 상류 영문 리터럴을 새 상류 태그와 다시 대조한다.** 아래 네 곳은 상류 원문을 복사 시점 커밋
    (태그 `npm-v0.1.29` = `6620a380f86c26d6c6428a660b2a90c3b5a1fa45`)과 함께 고정했다. 마지막 재대조는
-   태그 `npm-v0.1.32` = `7c19cce7224af29628cd10c218444d5c0e8fdd1c`이고 네 원문 모두 같았다. 상류 저장소에서
+   태그 `npm-v0.2.0` = `4949af70fcfadff154f6e8fdf100faa5bf2f8169`이다. scan-match·classify-severity·patch
+   원문은 같았다. policy는 policy 단계 지시 첫 문장이 바뀌어 리터럴과 복사 시점 커밋을 `npm-v0.2.0`으로
+   갱신했다(위협 모델 파일 대신 매니페스트의 `threatModel.content`를 읽는다). 상류 저장소에서
    `git diff npm-v<이전> npm-v<새 버전> -- <원본 파일>`로 원본을 보고, 바뀌었으면 리터럴과 복사 시점 커밋을
    함께 갱신한다. 회귀 스크립트만으로는 전부 잡히지 않는다.
 
@@ -144,6 +146,9 @@ tarball을 교체하지 말고 새 버전을 올린다 — 사용자가 체크�
 
 ### 7.1 상류 태그가 npm에 아직 없을 때
 
+> npm 0.2.0은 레지스트리에 있었다. 그때는 아래 빌드 없이 `npm install -g --prefix /tmp/<dir>
+> @openai/codex-security@0.2.0`으로 격리 설치하고 7.2절 방법으로 검증했다.
+
 상류가 `npm-v<버전>` 태그를 만든 뒤에도 npm 레지스트리 배포는 늦을 수 있다(0.1.32가 그랬다). 그때는 태그
 소스로 패키지를 빌드해 격리 경로에 설치하고 검증한다. 전역 설치본은 건드리지 않는다.
 
@@ -159,11 +164,32 @@ npx -y pnpm@<같은 버전> --dir "$B/plugins/codex-security/mcp-app" install --
 (cd "$B/sdk/typescript" && npx -y pnpm@<같은 버전> pack --pack-destination "$B/dist")
 npm install -g --prefix /tmp/cs-prefix "$B"/dist/openai-codex-security-<버전>.tgz
 P=/tmp/cs-prefix/lib/node_modules/@openai/codex-security/_bundled_plugin
-# 자기채점 스크립트는 경로 변수로 이 사본을 가리킨다.
-CODEX_SECURITY_PLUGIN_DIR=$P CODEX_SECURITY_PLUGIN_ROOT=$P NPM_CONFIG_PREFIX=/tmp/cs-prefix \
-  PATH=/tmp/cs-prefix/bin:$PATH bash docs/verification/scripts/repro-u4.sh
+# 자기채점 스크립트는 경로 변수로 이 사본을 가리킨다. 부트스트랩을 거치는 스크립트는 7.2절 npm 래퍼도 필요하다.
+CODEX_SECURITY_PLUGIN_DIR=$P CODEX_SECURITY_PLUGIN_ROOT=$P \
+  PATH=/tmp/cs-bin:/tmp/cs-prefix/bin:$PATH bash docs/verification/scripts/repro-u4.sh
 ```
 
 빌드한 tarball의 파일 목록을 직전 npm 배포본과 비교해 빠진 파일이 없는지 본다. 릴리즈 노트와 README에는
 "태그 소스 빌드로 검증했고 npm 배포 전에는 직전 버전을 설치한다"를 적고, 직전 npm 배포본으로도 자기채점
 스크립트를 돌려 통과를 확인한다.
+
+### 7.2 전역 설치본을 바꾸지 않고 다른 버전으로 검증
+
+`bootstrap.py`는 `npm root -g`를 **정화된 환경**에서 실행한다. 그래서 `NPM_CONFIG_PREFIX` 환경변수만으로는
+채택 사본이 바뀌지 않는다(2026-10-14 실측: 전역 0.1.29가 계속 선택됐다). PATH 맨 앞에 `--prefix`를 고정한
+`npm` 래퍼를 둔다.
+
+```bash
+npm install -g --prefix /tmp/cs-prefix @openai/codex-security@<버전>
+mkdir -p /tmp/cs-bin
+printf '#!/bin/sh\nexec %s --prefix /tmp/cs-prefix "$@"\n' "$(command -v npm)" > /tmp/cs-bin/npm
+chmod 755 /tmp/cs-bin/npm
+P=/tmp/cs-prefix/lib/node_modules/@openai/codex-security/_bundled_plugin
+PATH=/tmp/cs-bin:$PATH CODEX_SECURITY_PLUGIN_DIR=$P CODEX_SECURITY_PLUGIN_ROOT=$P \
+  bash docs/verification/scripts/repro-u1-search-command.sh
+```
+
+먼저 `PATH=/tmp/cs-bin:$PATH python3 skills/codex-security-scan/scripts/bootstrap.py --no-scan-dir`의
+`pluginRoot`가 격리 사본인지 확인한 뒤 자기채점 스크립트를 돌린다. 새 버전이 상태 DB 마이그레이션을 늘렸으면
+기본 상태 디렉터리를 그 버전으로 열지 않는다 — 자기채점 스크립트는 임시 상태 디렉터리를 쓰지만, 실제 스캔을
+돌려 볼 때는 `CODEX_SECURITY_STATE_DIR`를 임시 경로로 둔다.

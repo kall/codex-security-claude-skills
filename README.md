@@ -18,7 +18,7 @@ is installed at runtime.
 Download the release tarball and install it. Or just paste this into a Claude Code session:
 
 ```
-Install https://github.com/kall/codex-security-claude-skills/releases/tag/v0.1.32
+Install https://github.com/kall/codex-security-claude-skills/releases/tag/v0.2.0
 ```
 
 ```bash
@@ -66,15 +66,25 @@ Full usage, environment variables, and troubleshooting:
 ## Requirements
 
 Claude Code (subscription login) · Python 3.10+ · git · the codex-security bundled plugin.
-Node 22+ is needed for the plugin's npm install, the scan's SECURITY.md policy resolution
-(upstream Node helper), `codex-security-policy` and `codex-security-classify-severity`, and for
+Node 22+ is needed for the plugin's npm install, the scan's candidate normalization (npm 0.2.0
+moved it to an upstream Node helper), the scan's SECURITY.md policy resolution (upstream Node helper), `codex-security-policy` and `codex-security-classify-severity`, and for
 querying the official CLI's history. Linux/macOS (Windows via WSL).
 
-Verified combination: `@openai/codex-security@0.1.32` (plugin manifest `0.1.95`). npm 0.1.26 through
-0.1.32 all report manifest `0.1.95`, so the version warning cannot tell them apart. Install npm 0.1.32.
-At release time npm 0.1.32 was tagged upstream but not yet on the npm registry. We verified a package
-built from the `npm-v0.1.32` tag, and the self-check scripts also pass with npm 0.1.31 (checks for
-0.1.32-only behavior print NOTE there and are not run). Until 0.1.32 is published, install 0.1.31.
+Verified combination: `@openai/codex-security@0.2.0` (plugin manifest `0.1.95`). npm 0.1.26 through
+0.2.0 all report manifest `0.1.95`, so the version warning cannot tell them apart; the skills detect the
+0.2.0 changes from plugin files instead. Install npm 0.2.0. The self-check scripts also pass with npm 0.1.29
+(checks for 0.2.0-only behavior print NOTE there and are not run). One known pre-existing failure,
+`repro-u5` Q2b, fails on both versions; see `docs/verification/phase0-results.md`.
+
+From npm 0.2.0 the scan skills need the npm package: an upstream source checkout has no built Node
+helper, so candidate normalization is unavailable and the scans stop at step 0. npm 0.2.0 also adds
+state-database migrations; back up `~/.codex/state/plugins/codex-security` before upgrading a global
+install from 0.1.x.
+
+**Do not run `codex-security skills add` (npm 0.2.0).** It deletes `~/.claude/skills/codex-security-<command>`
+and replaces it with a link to an upstream skill that only calls the login-requiring CLI. Six names collide
+with these skills (scan, policy, patch, validate, verify-fix, classify-severity). `install.sh --check`
+reports overwritten skills; reinstall with `bash skills/install.sh --force` (`--copy --force` for copies).
 
 ## Development
 

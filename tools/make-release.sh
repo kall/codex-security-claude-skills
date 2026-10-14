@@ -145,12 +145,12 @@ bash skills/install.sh --copy --force --check
 
 ## 검증된 조합
 
-- 번들 플러그인: \`@openai/codex-security@0.1.32\` (플러그인 매니페스트 \`0.1.95\`)
-  — npm 0.1.26~0.1.32 는 모두 매니페스트 \`0.1.95\` 라서 버전 경고로 구분되지 않는다. npm 0.1.32 를 설치한다.
-  릴리즈 시점에 npm 0.1.32 는 npm 레지스트리에 없었다(태그 소스 빌드로 검증). 배포 전에는 0.1.31 을 설치한다
-  (자기채점 스크립트 통과 확인).
-- Python 3.10+ / git / Node 22+(플러그인 npm 설치, SECURITY.md 정책 해결, codex-security-policy·
-  codex-security-classify-severity)
+- 번들 플러그인: \`@openai/codex-security@0.2.0\` (플러그인 매니페스트 \`0.1.95\`)
+  — npm 0.1.26~0.2.0 은 모두 매니페스트 \`0.1.95\` 라서 버전 경고로 구분되지 않는다. npm 0.2.0 을 설치한다.
+  0.2.0 부터 스캔 스킬도 npm 설치본이 필요하다(후보 정규화가 Node 헬퍼로 옮겨짐). 전역 설치본을 0.1.x 에서
+  올리기 전에 상태 디렉터리(~/.codex/state/plugins/codex-security)를 백업한다.
+- Python 3.10+ / git / Node 22+(플러그인 npm 설치, 스캔 후보 정규화, SECURITY.md 정책 해결,
+  codex-security-policy·codex-security-classify-severity)
 - Linux · macOS (Windows 는 WSL)
 
 > 매니페스트 \`0.1.95\` 기준 두 사본 모두 워킹트리 변경 시 "종결 성공 + 경고" 다.
