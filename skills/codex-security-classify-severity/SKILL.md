@@ -12,7 +12,7 @@ description: >-
 
 npm 0.1.29 CLI의 `codex-security classify-severity --rubric`은 finding마다 OpenAI 모델을 한 번 호출한다.
 구독 사용자는 이 명령을 쓸 수 없다. 이 스킬은 **모델 호출 자리만** 도구 없는 격리 서브에이전트로 바꾸고,
-나머지는 모두 상류 코드로 실행한다. 기준 실측 버전은 **npm 0.1.32(매니페스트 0.1.95)**다.
+나머지는 모두 상류 코드로 실행한다. 기준 실측 버전은 **npm 0.2.0(매니페스트 0.1.95)**다.
 
 - **스캔 산출물은 바꾸지 않는다.** 봉인된 `scan-manifest.json`·`findings.json`·`coverage.json`은 그대로다.
   상류와 같이 `severity-classification.json` 한 파일만 스캔 디렉터리에 원자적으로 쓴다.
@@ -34,7 +34,9 @@ npm 0.1.29 CLI의 `codex-security classify-severity --rubric`은 finding마다 O
   `sdk/typescript/src/scan-comparison.ts` 158행·543·568·579행·636–650행,
   `sdk/typescript/src/classify-scan-severity.ts` 101–153행. 태그 `npm-v0.1.32`(커밋 `7c19cce7`)까지
   `classify-severity.ts`·`classify-scan-severity.ts`는 바뀌지 않았다. `scan-comparison.ts`는 60행에 타입 한 줄이
-  늘어 위 행 번호가 1씩 밀렸고 내용은 같다.
+  늘어 위 행 번호가 1씩 밀렸고 내용은 같다. 태그 `npm-v0.2.0`(커밋 `4949af70fcfadff154f6e8fdf100faa5bf2f8169`)에서는 세 파일 모두 리팩터만 있었다(옵션 타입 상속,
+  `findingEntry`·`workbenchEnvironment` 추출). 그래서 행 번호가 바뀌었다 — `classify-scan-severity.ts`는 98–150행,
+  `scan-comparison.ts`의 `options.codex` 분기는 528·556·568행이다. 주입 경로와 지시 8문단은 같다(`repro-u8` S12).
 - **상류가 하는 일**(재구현 없음): 스캔 해석과 봉인 확인, finding 선택(`selectClassificationFindings`),
   루브릭·지식 베이스 읽기(`prepareKnowledgeBase`), 세 digest(`workflowDigest`), 저장 평가 재사용 규칙,
   프롬프트 조립, 7키 strict 스키마와 결정 일관성 검사, 워크벤치 `begin`/`save`(`SeverityStore`),
@@ -106,7 +108,7 @@ env -i <trusted_child_env> <node> <classify_script> <하위 명령> --sdk-dist <
 - 출력은 JSON 1개다(`prompt`만 원문 텍스트). exit 0 = 성공, 2 = 거부·실패(`error`와 상류 원문
   `upstreamError`가 실림), 1 = 사용법 오류.
 
-**시작 고지**: 플러그인 경로와 `pluginVersion`(기준 0.1.95, npm 0.1.32 — 다르면 "플러그인 버전이 기준과
+**시작 고지**: 플러그인 경로와 `pluginVersion`(기준 0.1.95, npm 0.2.0 — 다르면 "플러그인 버전이 기준과
 다름 — 상류 계약이 바뀌었을 수 있음" 경고), 스캔 입력, 루브릭 유무, 그리고 **"스캔 산출물과 저장소 파일은
 바꾸지 않고 `severity-classification.json`과 워크벤치 평가만 쓴다"**를 알린다.
 
