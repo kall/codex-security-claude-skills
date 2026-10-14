@@ -10,15 +10,16 @@ description: >-
 
 # codex-security-policy — SECURITY.md 초안 작성 (저장소 무변경)
 
-npm 0.1.29 CLI의 `codex-security policy`는 OpenAI 모델을 세 번 호출해 SECURITY.md 초안을 만든다.
+npm CLI의 `codex-security policy`는 OpenAI 모델을 세 번 호출해 SECURITY.md 초안을 만든다.
 구독 사용자는 이 명령을 쓸 수 없다. 이 스킬은 모델 호출 세 번을 **읽기 전용 격리 서브에이전트**로
-바꾸고, 나머지 호스트 동작은 상류 코드로 재현한다. 기준 실측 버전은 **npm 0.1.32(매니페스트 0.1.95)**다.
+바꾸고, 나머지 호스트 동작은 상류 코드로 재현한다. 기준 실측 버전은 **npm 0.2.0(매니페스트 0.1.95)**다.
 
 - **초안만 만든다(P6-KTD9).** CLI `policy`와 같다. 상류 plugin `define-security-policy/SKILL.md`
   4절(승인 후 저장소 편집)은 CLI에 없는 단계라 이 스킬 범위 밖이다(후속 작업으로 연기). 사용자가
   초안을 검토하고 직접 복사한다.
 - **산출물은 저장소 밖에만 쓴다(R19).** `<stateDir>/policies/<repo>/codex-security-<repo>-policy-XXXXXX`
-  (0700) 아래에 파일 5개를 0600·비덮어쓰기로 쓴다.
+  (0700) 아래에 파일 5개를 0600으로 쓴다. 비덮어쓰기가 원칙이고, 상류와 같이 두 번 쓰는
+  `policy-draft.json`·`threatmodel.md`만 교체한다.
 
 ## 상류 문서 변경 주의 (출처 고정)
 
@@ -29,14 +30,19 @@ npm 0.1.29 CLI의 `codex-security policy`는 OpenAI 모델을 세 번 호출해 
   `resolveSecurityPolicyGuidance`·`requireUnchangedSecurityPolicy`·`parseSecurityPolicyStageResult`·
   `securityPolicyStageOutputSchema`·`securityPolicyDiff`·`formatSecurityPolicyText`, `runtime.js`의
   `preparePersistentOutputRoot`·`prepareOutputDir`·`requireOutputOutsideRepositories`·
-  `requirePrivatePolicyOutputDirectory`, `targets.js`의 `repositoryRevision`. 계획(U7)은 digest를
+  `requirePrivatePolicyOutputDirectory`·`resolvePluginPython`·`pythonUtf8Environment`, `targets.js`의 `repositoryRevision`. 계획(U7)은 digest를
   스크립트가 직접 계산하도록 적었지만, 0.1.29 dist가 이 함수들을 export하므로(phase0-results.md 0.1.29
   부록 4번) 상류 호출로 바꿨다. 재구현하면 링크·Git 메타데이터·숫자 표기 규칙이 조용히 어긋난다.
   상류 소스 체크아웃에는 `dist/`가 없으므로 이 스킬을 쓸 수 없다.
 - **단계 프롬프트는 영문 리터럴로 고정한다(P6-KTD10).** 원문은 `sdk/typescript/src/security-policy.ts`
-  `runSecurityPolicyStages()`(791–897행)이고, 태그 `npm-v0.1.29` = 커밋
-  `6620a380f86c26d6c6428a660b2a90c3b5a1fa45`에서 복사했다. 태그 `npm-v0.1.32`(커밋 `7c19cce7`)까지 이 파일은
-  바뀌지 않았다. 리터럴의 정본은 `scripts/policy_draft.mjs`의
+  `runSecurityPolicyStages()`(762–939행)이고, 태그 `npm-v0.2.0` = 커밋
+  `4949af70fcfadff154f6e8fdf100faa5bf2f8169`에서 복사했다. 이전 기준은 `npm-v0.1.29`(커밋 `6620a380`)였고
+  `npm-v0.1.32`까지 바뀌지 않았다. 0.2.0에서는 policy 단계 첫 문장이 위협 모델 파일 대신 매니페스트의
+  `threatModel.content`를 읽으라고 바뀌었다. **npm 0.1.32 이하 설치본에서도 이 스킬은 0.2.0 흐름을 쓴다.**
+  그래서 policy 단계 첫 문장이 그 버전의 상류 프롬프트와 다르고(서브에이전트는 매니페스트의 모델을 읽으므로
+  초안 작성은 같게 동작한다), finalizer에 `--write-threat-model`이 없어 `threatmodel.md`가 생기지 않는다
+  (`threatModelPath: null`과 경고. 모델은 `policy-draft.json`에 남는다). `repro-u8`은 그 사본에서 P7·P11
+  대신 NOTE를 내고 P8a에서 이 경고 경로를 확인한다. 리터럴의 정본은 `scripts/policy_draft.mjs`의
   `UPSTREAM_*` 표다. 이 문서에 옮겨 적지 않는다 — 두 곳에 두면 한쪽만 낡는다. TS 원본은 npm 번들에
   없지만 컴파일된 `dist/security-policy.js`에 같은 문자열이 남아 있다. 그래서 회귀 스크립트
   `repro-u8-policy-severity.sh`가 P7에서 리터럴 조각을 설치된 dist와 대조하고, P11에서 상류
@@ -71,7 +77,7 @@ Git worktree 루트**로 명시한다.
 | 조건 | 사용자 안내(한국어) |
 | --- | --- |
 | `ok: false` | `stage`·`error`를 그대로 전한다 |
-| `securityMdHelper.available: false` | `securityMdHelper.reason`을 전한다. "헬퍼 파일 없음"이면 상류 소스 체크아웃이다 — `npm install -g @openai/codex-security`(npm 0.1.27 이상, 권장 0.1.32) 설치본을 쓰라고 안내 |
+| `securityMdHelper.available: false` | `securityMdHelper.reason`을 전한다. "헬퍼 파일 없음"이면 상류 소스 체크아웃이다 — `npm install -g @openai/codex-security`(npm 0.1.27 이상, 권장 0.2.0) 설치본을 쓰라고 안내 |
 | `sdk.dist: null` | `sdk.reason`을 전한다. 상류 함수가 든 `dist/`가 없다 — 위와 같은 설치 안내 |
 | `node: null` | "신뢰할 수 있는 Node 없음"과 `securityMdHelper.reason` |
 
@@ -103,7 +109,7 @@ env -i <trusted_child_env> <node> <policy_script> <하위 명령> …
 - 출력은 JSON 1개다(`prompt`만 원문 텍스트). exit 0 = 성공, 2 = 거부·실패(`error`와 상류 원문
   `upstreamError`가 실림), 1 = 사용법 오류.
 
-**시작 고지**: 플러그인 경로와 `pluginVersion`(기준 0.1.95, npm 0.1.32 — 다르면 "플러그인 버전이
+**시작 고지**: 플러그인 경로와 `pluginVersion`(기준 0.1.95, npm 0.2.0 — 다르면 "플러그인 버전이
 기준과 다름 — 상류 계약이 바뀌었을 수 있음" 경고), 대상 저장소, 컴포넌트, 그리고 **"이 스킬은
 저장소 파일을 바꾸지 않는다"**를 알린다.
 
@@ -173,8 +179,14 @@ env -i <trusted_child_env> <node> <policy_script> prepare --sdk-dist <sdk_dist> 
    셸 명령을 이어 실행시킬 수 있다. 내용을 고치거나 다듬지 않는다(단일 ```json 펜스는 스크립트가 벗긴다).
 4. **검사·저장**:
    ```bash
-   env -i <trusted_child_env> <node> <policy_script> save-stage --output-dir <outputDir 인용본> --stage <단계>
+   env -i <trusted_child_env> <node> <policy_script> save-stage --output-dir <outputDir 인용본> --stage <단계> --python <python_command>
    ```
+
+   threat_model 단계는 문서를 직접 쓰지 않는다(상류 0.2.0과 같다). 먼저 `policy-draft.json`에
+   `status`(`threat_model_ready`, blocked면 `blocked`)와 `threatModel`(`format: "markdown"`, `content`,
+   `scope`, `origin: "generated"`)을 쓰고, 플러그인 finalizer(`finalize_scan_contract.py
+   --write-threat-model`)로 `threatmodel.md`를 투영한다. `--python`은 이 투영에 쓴다. 투영이 실패하면
+   `path: null`과 `threatModelWarning`이 실린다. 정본은 매니페스트에 남으므로 경고로만 전하고 계속한다.
 
    | `status` | 의미와 조치 |
    | --- | --- |
@@ -184,7 +196,8 @@ env -i <trusted_child_env> <node> <policy_script> prepare --sdk-dist <sdk_dist> 
    | `blocked` | `blockedReason`이 있음. markdown이 있었으면 **먼저 저장한 뒤** 멈춘다(상류와 같다). 이후 단계를 진행하지 않는다 |
    | `empty` | 빈 markdown. 상류와 같이 오류로 멈춘다 |
 
-   단계당 시도는 최대 3회다. 같은 이름의 파일이 이미 있으면 덮어쓰지 않고 실패한다.
+   단계당 시도는 최대 3회다. 같은 이름의 파일이 이미 있으면 덮어쓰지 않고 실패한다. 예외는
+   `policy-draft.json`과 `threatmodel.md`다 — 상류와 같이 마무리 때 다시 쓴다.
 
 ### 신뢰 구획과 미신뢰 구획
 
@@ -256,12 +269,15 @@ env -i <trusted_child_env> <node> <policy_script> finish --output-dir <outputDir
 
 - 상류 함수로 스냅샷을 다시 계산해 `prepare` 시점 값과 비교한다(대상·보호 루트·Git 메타데이터·
   `previousPolicySha256`·`inheritedPolicySha256`).
-- **같으면** `policy-draft.json`을 0600·비덮어쓰기로 쓰고, 상류 `securityPolicyDiff`(플러그인 Python
+- **같으면** `policy-draft.json`을 `status: "completed"`로 다시 쓰고(0600, 임시 파일 뒤 rename — 상류와
+  같다), `threatmodel.md`를 다시 투영한다. 투영이 실패하면 `threatModelPath: null`과
+  `threatModelWarning`을 경고로 전한다. 그다음 상류 `securityPolicyDiff`(플러그인 Python
   difflib, `a/<경로>`↔`b/<경로>`, 새 파일은 `/dev/null`)로 미리보기를 만든다. 결과의 `diffDisplay`
   (제어문자를 보이게 치환한 형태)와 `reviewNotesDisplay`(소유자 검토 목록)를 보여 준다. 미리보기가
   실패하면 `diffError`를 경고로만 전하고 계속한다(상류와 같다). `status`가 `unchanged`면 "기존
   SECURITY.md와 같다"를 알린다.
-- **다르면(AE4)** 매니페스트를 쓰지 않는다(`status: policy-changed`). **"생성 후 SECURITY.md가 바뀜 —
+- **다르면(AE4)** 매니페스트를 `completed`로 갱신하지 않는다(`status: policy-changed`). threat_model
+  단계에서 쓴 매니페스트는 `status: "threat_model_ready"`로 남는다(상류와 같다). **"생성 후 SECURITY.md가 바뀜 —
   새 초안 필요"**와 상류 원문(`upstreamError`)을 보고한다. 이미 저장한 세 문서는 남는다(`keptFiles`).
 - 어느 경우든 작업 디렉터리(`<outputDir>.work`)를 지운다. 2단계·3단계에서 중단했으면
   `cleanup --output-dir <outputDir 인용본>`으로 작업 디렉터리만 지운다. 저장한 문서는 남긴다.
@@ -272,21 +288,24 @@ env -i <trusted_child_env> <node> <policy_script> finish --output-dir <outputDir
 | --- | --- |
 | `previous-SECURITY.md` | 원래 대상 정책(없으면 빈 파일). 가장 먼저 기록 |
 | `project-spec.md` | architecture 단계 결과 |
-| `THREAT_MODEL.md` | threat_model 단계 결과 |
+| `threatmodel.md` | threat_model 단계 결과. 매니페스트 `threatModel`에서 finalizer가 투영한다(실패하면 없음) |
 | `SECURITY.md` | policy 단계 결과(검토할 초안) |
-| `policy-draft.json` | 매니페스트. 세 단계가 모두 성공하고 스냅샷이 그대로일 때만 |
+| `policy-draft.json` | 매니페스트. threat_model 단계 직후 `threat_model_ready`(또는 `blocked`)로 쓰고, 세 단계가 모두 성공하고 스냅샷이 그대로이면 `completed`로 다시 쓴다 |
 
 매니페스트 스키마는 상류와 같다: `documentType`(`codex-security.policy-draft`), `schemaVersion`(`1.0`),
 `repository`, `scope`, `createdAt`, `revision`, `previousPolicySha256`, `inheritedPolicySha256`, `model`,
-`reasoningEffort`, `pluginVersion`, `customPlugin`, `reviewNotes`(상류와 같은 합집합 순서). 값 두 개가
+`reasoningEffort`, `pluginVersion`, `customPlugin`, `status`(`threat_model_ready`/`blocked`/`completed`),
+`threatModel`(`{format: "markdown", content, scope: {includePaths: [scope], excludePaths: []}, origin: "generated"}`),
+`reviewNotes`(상류와 같은 합집합 순서. threat_model 단계 직후에는 architecture → threat_model 순으로 중복 제거 없이 잇는다). 값 두 개가
 상류와 다르다. `model`은 `"claude-subagent (Claude Code)"`다 — 초안을 만든 것은 OpenAI 모델이 아니라
 Claude Code 서브에이전트이므로 그 사실을 그대로 적는다. `reasoningEffort`는 해당 설정이 없어 `null`이다.
 `customPlugin`은 `CODEX_SECURITY_PLUGIN_ROOT`로 플러그인을 직접 지정했을 때 `true`다.
 
 ## 최종 보고 (한국어)
 
-1. **"저장소 파일은 바뀌지 않았다."** 그리고 초안 경로(`draftPath`), 아키텍처·위협 모델 경로, 매니페스트
-   경로(없으면 없는 이유).
+1. **"저장소 파일은 바뀌지 않았다."** 그리고 초안 경로(`draftPath`), 아키텍처·위협 모델 경로(위협 모델
+   경로가 `null`이면 `threatModelWarning`과 "정본은 매니페스트 `threatModel`에 있다"), 매니페스트 경로와
+   `status`.
 2. diff 미리보기와 소유자 검토 목록. 검토 목록의 새 제외 항목·수용 위험·심각도 변경은 **소유자 승인이
    필요한 결정**이다. 생성된 위협 시나리오는 승인도, 확정된 취약점도 아니다.
 3. 미해결로 남은 소유자 질문.
@@ -313,6 +332,6 @@ Claude Code 서브에이전트이므로 그 사실을 그대로 적는다. `reas
 - 저장 전 검사(`save-stage`)를 우회하지 않는다. 거부된 문서를 손으로 고쳐 저장하거나, 출력 디렉터리에
   직접 쓰지 않는다. 거부는 재시도(최대 3회) 또는 보고 대상이다.
 - 소유자 질문은 한 번에 최대 3개다. 답이 없으면 미해결로 남긴다. 답을 추측해 채우지 않는다.
-- 스냅샷이 바뀌면 매니페스트를 쓰지 않고 "생성 후 SECURITY.md가 바뀜 — 새 초안 필요"를 보고한다.
+- 스냅샷이 바뀌면 매니페스트를 `completed`로 갱신하지 않고 "생성 후 SECURITY.md가 바뀜 — 새 초안 필요"를 보고한다.
 - 상류 `artifact-storage.md` 저장 정책과 MCP 저장 도구를 쓰지 않는다(P6-KTD8).
 - 최종 보고는 한국어로 쓰고, 비동등성 고지를 빠뜨리지 않는다.

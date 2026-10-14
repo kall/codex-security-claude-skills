@@ -1,7 +1,7 @@
 // policy_draft.mjs — codex-security-policy 스킬의 결정론 부분(대상·스냅샷·출력 디렉터리·프롬프트·
 // 저장 전 검사·저장·마무리). 서브에이전트 호출과 사용자 질문은 부모 세션이 한다.
 //
-// 상류 `codex-security policy`(npm 0.1.29 = 매니페스트 0.1.95)의 호스트 쪽 동작을 **상류 dist 함수로**
+// 상류 `codex-security policy`(npm 0.2.0 = 매니페스트 0.1.95)의 호스트 쪽 동작을 **상류 dist 함수로**
 // 재현한다. 대상 해석·인벤토리·스냅샷 digest·보호 루트·출력 디렉터리 위생·stage 결과 파싱·diff
 // 미리보기는 전부 부트스트랩이 채택한 npm 패키지의 dist/ 에서 import 한 상류 함수가 한다
 // (공용 관문 ../../codex-security-scan/scripts/workflow_digest.mjs). 이 파일이 소유하는 것은
@@ -14,8 +14,12 @@
 // 하위 명령(출력은 JSON 1개. `prompt` 만 원문 텍스트):
 //   prepare      대상 해석 → 1 MiB 검사 → 스냅샷 → 출력 디렉터리(0700) → 가이던스 → previous-SECURITY.md
 //   prompt       --output-dir O --stage S        단계 서브에이전트 프롬프트 원문(stdout)
-//   save-stage   --output-dir O --stage S        <작업 dir>/<stage>.json 을 파싱·검사·저장(0600, 비덮어쓰기)
-//   finish       --output-dir O [--python P]     스냅샷 재확인 → policy-draft.json → diff 미리보기
+//   save-stage   --output-dir O --stage S [--python P]
+//                                                <작업 dir>/<stage>.json 을 파싱·검사·저장(0600, 비덮어쓰기).
+//                                                threat_model 은 policy-draft.json(status·threatModel)을 쓰고
+//                                                threatmodel.md 를 finalizer 로 투영한다.
+//   finish       --output-dir O [--python P]     스냅샷 재확인 → policy-draft.json(completed) → threatmodel.md
+//                                                재투영 → diff 미리보기
 //   cleanup      --output-dir O                  작업 디렉터리만 지운다(중단 시)
 //   upstream-literals                            상류 영문 리터럴 조각 목록(드리프트 회귀용)
 //   render-upstream --output-dir O --stage S     상류 형태 프롬프트(회귀 전용 — 상류 런타임과 문자 대조)
@@ -23,7 +27,7 @@
 // 종료코드: 0 성공 / 2 거부·실패(JSON 에 사유) / 1 사용법 오류.
 
 import { execFile } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { constants as fsConstants } from "node:fs";
 import {
   chmod,
@@ -64,9 +68,11 @@ const HELPER_TIMEOUT_MS = 120_000;
 // 상수 — 상류 값은 출처를 단다
 // ---------------------------------------------------------------------------
 export const STAGES = ["architecture", "threat_model", "policy"];
+// threat_model 문서는 직접 쓰지 않는다. 상류 0.2.0 과 같이 매니페스트의 threatModel 을 플러그인
+// finalizer(`finalize_scan_contract.py --write-threat-model`)가 이 이름으로 투영한다.
 const STAGE_FILES = {
   architecture: "project-spec.md",
-  threat_model: "THREAT_MODEL.md",
+  threat_model: "threatmodel.md",
   policy: "SECURITY.md",
 };
 const ORIGINAL_NAME = "previous-SECURITY.md"; // security-policy.ts ORIGINAL_NAME
@@ -93,11 +99,13 @@ const OWNER_ANSWERS_NAME = "owner-answers.json";
 // 상류 영문 리터럴 (P6-KTD10)
 //
 // 출처: openai/codex-security  sdk/typescript/src/security-policy.ts  runSecurityPolicyStages()
-//   common 배열 791–812행, architecture 지시 839–847행, ownerContext 867–873행,
-//   threat_model 지시 874–884행, policy 지시 885–897행.
-// 복사 시점: 태그 npm-v0.1.29 = 커밋 6620a380f86c26d6c6428a660b2a90c3b5a1fa45
-//   (npm @openai/codex-security 0.1.29 = 플러그인 매니페스트 0.1.95).
-// 재대조: 태그 npm-v0.1.32 = 커밋 7c19cce7224af29628cd10c218444d5c0e8fdd1c — security-policy.ts 변경 없음.
+//   common 배열 762–783행, architecture 지시 816–818행, ownerContext 841–847행,
+//   threat_model 지시 909–913행, policy 지시 933–939행.
+// 복사 시점: 태그 npm-v0.2.0 = 커밋 4949af70fcfadff154f6e8fdf100faa5bf2f8169
+//   (npm @openai/codex-security 0.2.0 = 플러그인 매니페스트 0.1.95).
+// 이전 기준: 태그 npm-v0.1.29 = 커밋 6620a380f86c26d6c6428a660b2a90c3b5a1fa45(0.1.32 까지 변경 없음).
+//   0.2.0 에서 바뀐 것: policy 지시 첫 문장(위협 모델 파일 대신 매니페스트의 threatModel.content),
+//   threat_model 문서 이름(threatmodel.md)과 투영 방식, 매니페스트 status·threatModel 필드와 중간 저장.
 // TypeScript 원본은 npm 번들에 없다. 대신 컴파일된 dist/security-policy.js 에 같은 문자열이 남아
 // 있으므로 회귀 스크립트(repro-u8-policy-severity.sh P7)가 `upstream-literals` 조각을 설치된 dist 와
 // 문자 단위로 대조한다. 다음 상류 정합 작업은 위 함수를 다시 대조한다.
@@ -154,7 +162,7 @@ const UPSTREAM_THREAT_MODEL_TAIL = [
   ["Do not read or replace a shared repository-model cache. This model is specific to the selected component and supplied context."],
 ];
 const UPSTREAM_POLICY_HEAD = [
-  ["Read the completed specification at ", { host: "specificationPath" }, " and threat model at ", { host: "threatModelPath" }, "."],
+  ["Read the completed specification at ", { host: "specificationPath" }, " and the retained threatModel.content in ", { host: "manifestPath" }, "."],
   ["Retain their full repository-relative citations where they support policy decisions; do not shorten nested source paths."],
 ];
 const UPSTREAM_POLICY_TAIL = [
@@ -308,6 +316,10 @@ async function readJsonFile(path, label) {
   } catch (error) {
     throw new GatewayError(`${label} 가 JSON 이 아니다: ${path} (${error.message})`);
   }
+}
+
+function pythonArg(args) {
+  return typeof args.python === "string" && args.python !== "" ? args.python : undefined;
 }
 
 function stageArg(args) {
@@ -498,7 +510,6 @@ function ownerClarification(questions, answers) {
 /** 단계 프롬프트의 재료: 자리표시자 값과 상류 줄 표(common, 단계 지시). */
 async function stageMaterial(session, workDir, stage) {
   const specificationPath = join(session.outputDir, STAGE_FILES.architecture);
-  const threatModelPath = join(session.outputDir, STAGE_FILES.threat_model);
   const values = {
     host: {
       target: session.target,
@@ -508,7 +519,7 @@ async function stageMaterial(session, workDir, stage) {
         session.target.scope === "." ? "src/server.ts:42" : `${session.target.scope}/src/server.ts:42`,
       knowledgeBase: session.knowledgeBase,
       specificationPath,
-      threatModelPath,
+      manifestPath: join(session.outputDir, MANIFEST_NAME),
     },
     raw: { batchSize: OWNER_QUESTION_BATCH_SIZE },
     untrusted: { guidance: session.guidance, policyPaths: session.policyPaths },
@@ -865,6 +876,86 @@ async function handlePrepare(args) {
 }
 
 // ---------------------------------------------------------------------------
+// 매니페스트·위협 모델 문서 (security-policy.ts 0.2.0 848–905행 manifest·saveManifest·saveModelDocument)
+// ---------------------------------------------------------------------------
+function draftManifest(session, { createdAt, status, threatModelContent, reviewNotes }) {
+  return {
+    documentType: "codex-security.policy-draft",
+    schemaVersion: "1.0",
+    repository: session.target.repository,
+    scope: session.target.scope,
+    createdAt,
+    revision: session.revision,
+    previousPolicySha256: session.previousPolicySha256,
+    inheritedPolicySha256: session.inheritedPolicySha256,
+    model: MODEL_IDENTITY,
+    reasoningEffort: null,
+    pluginVersion: session.pluginVersion,
+    customPlugin: session.customPlugin,
+    status,
+    threatModel: {
+      format: "markdown",
+      content: threatModelContent,
+      scope: { includePaths: [session.target.scope], excludePaths: [] },
+      origin: "generated",
+    },
+    reviewNotes,
+  };
+}
+
+/** 상류 saveManifest: 임시 파일(wx·0600)에 쓰고 rename 으로 교체한다. 두 번 쓰이므로 덮어쓴다. */
+async function saveManifest(outputDir, manifest) {
+  const temporary = join(outputDir, `.policy-draft-${randomUUID()}.json`);
+  try {
+    await writeArtifact(temporary, `${JSON.stringify(manifest, null, 2)}\n`);
+    await rename(temporary, join(outputDir, MANIFEST_NAME));
+  } finally {
+    await rm(temporary, { force: true }).catch(() => undefined);
+  }
+}
+
+// artifact-export.ts exportEnvironment 가 finalizer 에 넘기는 변수(POSIX 에 해당하는 것).
+const EXPORT_ENVIRONMENT_KEYS = ["PATH", "TMP", "TEMP", "TMPDIR", "PYTHON", "LANG", "LC_ALL", "LC_CTYPE"];
+
+/**
+ * 상류 saveModelDocument + artifact-export.ts writeThreatModel: 플러그인 finalizer 로 매니페스트의
+ * threatModel 을 threatmodel.md 로 투영한다. 실패는 경고만 하고 경로를 null 로 돌려준다.
+ * 인터프리터는 상류 resolvePluginPython(보호 루트 안 인터프리터 거부)으로 고르고, 실행은 이 파일의
+ * 다른 플러그인 실행과 같이 execFile + HELPER_TIMEOUT_MS 로 한다.
+ */
+async function saveModelDocument(session, outputDir, python) {
+  let warning;
+  try {
+    const runtime = await loadUpstream(session.sdkDist, "runtime.js");
+    const environment = runtime.pythonUtf8Environment(
+      Object.fromEntries(EXPORT_ENVIRONMENT_KEYS.filter((key) => process.env[key] !== undefined).map((key) => [key, process.env[key]])),
+    );
+    const interpreter = await runtime.resolvePluginPython({
+      configuredPath: python,
+      environment,
+      protectedRoot: session.protectedRoots[0] ?? session.target.repository,
+    });
+    const { stderr } = await execFileAsync(
+      interpreter,
+      ["-I", "-X", "utf8", join(session.pluginRoot, "scripts", "finalize_scan_contract.py"), "--scan-dir", outputDir, "--write-threat-model"],
+      { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, env: environment, timeout: HELPER_TIMEOUT_MS },
+    ).catch((error) => {
+      if (error.killed || error.signal === "SIGTERM") {
+        throw new Error(`finalize_scan_contract.py --write-threat-model 가 제한 시간 ${HELPER_TIMEOUT_MS / 1000}초 안에 끝나지 않았다.`);
+      }
+      const detail = String(error.stderr ?? "").trim().split("\n").at(-1);
+      throw new Error(detail?.replace(/^finalize_scan_contract\.py: error: /, "") || error.message);
+    });
+    warning = stderr.trim().replace(/^codex-security: warning: /u, "");
+  } catch (error) {
+    warning = `Could not save threatmodel.md; the retained threat model remains exportable: ${error instanceof Error ? error.message : String(error)}`;
+  }
+  return warning
+    ? { path: null, warning }
+    : { path: join(outputDir, STAGE_FILES.threat_model), warning: null };
+}
+
+// ---------------------------------------------------------------------------
 // prompt / save-stage
 // ---------------------------------------------------------------------------
 async function handlePrompt(args) {
@@ -894,6 +985,14 @@ async function handleSaveStage(args) {
   const { session, outputDir, workDir } = await loadSession(args);
   await requirePreviousStages(workDir, stage);
   const paths = stagePaths(workDir, stage);
+  // threat_model 은 수용·blocked 기록(wx)보다 먼저 매니페스트를 교체하므로, 이미 끝난 단계(수용 또는
+  // blocked)는 부작용 전에 거부한다.
+  if ((await acceptedResult(workDir, stage)) !== undefined) {
+    throw new GatewayError(`${stage} 단계는 이미 저장됐다.`);
+  }
+  if ((await readJsonFile(paths.blocked, "blocked 기록")) !== undefined) {
+    throw new GatewayError(`${stage} 단계가 blockedReason 으로 멈췄다 — 다시 저장하지 않는다.`);
+  }
   if ((await rejectedAttempts(workDir, stage)) >= MAX_STAGE_ATTEMPTS) {
     throw new GatewayError(`${stage} 단계가 ${MAX_STAGE_ATTEMPTS}회 거부됐다 — 재시도 한도를 넘어 중단한다.`);
   }
@@ -946,6 +1045,7 @@ async function handleSaveStage(args) {
   }
   const hasDocument = result.markdown.trim().length > 0;
   let saved = null;
+  let threatModelWarning = null;
   if (hasDocument) {
     if (!result.markdown.isWellFormed()) {
       throw new GatewayError(UPSTREAM_MESSAGES.unicode(stage), { upstreamMessage: UPSTREAM_MESSAGES.unicode(stage) });
@@ -953,9 +1053,34 @@ async function handleSaveStage(args) {
     if (stage === "policy" && Buffer.byteLength(result.markdown, "utf8") > MAX_SECURITY_MD_BYTES) {
       throw new GatewayError("정책 초안이 1 MiB 를 넘는다.", { upstreamMessage: UPSTREAM_MESSAGES.size });
     }
-    saved = join(outputDir, STAGE_FILES[stage]);
-    await writeArtifact(saved, result.markdown);
+    if (stage === "threat_model") {
+      // 상류 0.2.0: threat_model 문서는 매니페스트(status·threatModel)에 담고 threatmodel.md 는 투영한다.
+      // reviewNotes 중간값은 상류와 같이 중복 제거 없이 architecture → threat_model 순으로 잇는다.
+      const architecture = await acceptedResult(workDir, "architecture");
+      await saveManifest(
+        outputDir,
+        draftManifest(session, {
+          createdAt: new Date().toISOString(),
+          status: result.blockedReason === null ? "threat_model_ready" : "blocked",
+          threatModelContent: result.markdown,
+          reviewNotes: [
+            ...architecture.reviewNotes,
+            ...architecture.questions,
+            ...result.reviewNotes,
+            ...result.questions,
+          ],
+        }),
+      );
+      const projected = await saveModelDocument(session, outputDir, pythonArg(args));
+      saved = projected.path;
+      threatModelWarning = projected.warning;
+    } else {
+      saved = join(outputDir, STAGE_FILES[stage]);
+      await writeArtifact(saved, result.markdown);
+    }
   }
+  const threatModelExtras =
+    stage === "threat_model" ? { manifestPath: join(outputDir, MANIFEST_NAME), threatModelWarning } : {};
   if (result.blockedReason !== null) {
     await writeArtifact(paths.blocked, `${JSON.stringify({ blockedReason: result.blockedReason })}\n`);
     return {
@@ -965,6 +1090,7 @@ async function handleSaveStage(args) {
         status: "blocked",
         stage,
         saved,
+        ...threatModelExtras,
         blockedReason: result.blockedReason,
         error: "서브에이전트가 필요한 증거를 검사하지 못했다(blockedReason). 저장한 문서는 남기고 여기서 멈춘다.",
         upstreamError: UPSTREAM_MESSAGES.blocked(stage, result.blockedReason),
@@ -995,6 +1121,7 @@ async function handleSaveStage(args) {
     status: "saved",
     stage,
     path: saved,
+    ...threatModelExtras,
     questions: result.questions,
     questionBatches: stage === "architecture" ? batches : [],
     reviewNotes: result.reviewNotes,
@@ -1052,7 +1179,7 @@ async function handleFinish(args) {
         ok: false,
         status: "recheck-failed",
         message: "생성 후 SECURITY.md가 바뀜 — 새 초안 필요",
-        error: "마무리 전 정책 스냅샷을 다시 계산하지 못했다. 매니페스트를 쓰지 않았다.",
+        error: "마무리 전 정책 스냅샷을 다시 계산하지 못했다. 매니페스트를 completed 로 갱신하지 않았다.",
         upstreamError: `${error?.name ?? "Error"}: ${error?.message ?? String(error)}`,
         outputDir,
       },
@@ -1076,27 +1203,29 @@ async function handleFinish(args) {
         upstreamError: changed,
         outputDir,
         keptFiles: (await readdir(outputDir)).sort(),
-        manifestWritten: false,
+        // 상류 0.2.0 과 같이 threat_model 단계에서 쓴 매니페스트(status: threat_model_ready)는 남는다.
+        manifestCompleted: false,
       },
     };
   }
-  const manifest = {
-    documentType: "codex-security.policy-draft",
-    schemaVersion: "1.0",
-    repository: session.target.repository,
-    scope: session.target.scope,
-    createdAt: new Date().toISOString(),
-    revision: session.revision,
-    previousPolicySha256: session.previousPolicySha256,
-    inheritedPolicySha256: session.inheritedPolicySha256,
-    model: MODEL_IDENTITY,
-    reasoningEffort: null,
-    pluginVersion: session.pluginVersion,
-    customPlugin: session.customPlugin,
-    reviewNotes,
-  };
+  // 상류는 threat_model 단계 전에 만든 매니페스트 객체를 status·reviewNotes 만 바꿔 다시 저장한다
+  // (createdAt 유지). 우리는 프로세스가 나뉘므로 threat_model 단계에서 쓴 매니페스트의 createdAt 을 읽는다.
   const manifestPath = join(outputDir, MANIFEST_NAME);
-  await writeArtifact(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  const intermediate = await readJsonFile(manifestPath, "중간 매니페스트");
+  if (typeof intermediate?.createdAt !== "string") {
+    throw new GatewayError(`threat_model 단계에서 쓴 매니페스트가 없거나 createdAt 이 없다: ${manifestPath}`);
+  }
+  await saveManifest(
+    outputDir,
+    draftManifest(session, {
+      createdAt: intermediate.createdAt,
+      status: "completed",
+      threatModelContent: threatModel.markdown,
+      reviewNotes,
+    }),
+  );
+  const python = pythonArg(args);
+  const projected = await saveModelDocument(session, outputDir, python);
 
   // 미리보기: 상류 securityPolicyDiff(플러그인 Python difflib, a/ b/ 라벨, 새 파일은 /dev/null).
   // 미리보기 실패는 상류 CLI 와 같이 경고만 하고 계속한다.
@@ -1113,12 +1242,12 @@ async function handleFinish(args) {
         outputDir,
         draftPath,
         specificationPath: join(outputDir, STAGE_FILES.architecture),
-        threatModelPath: join(outputDir, STAGE_FILES.threat_model),
+        threatModelPath: projected.path,
         customPlugin: session.customPlugin,
         reviewNotes,
         cost: null,
       },
-      typeof args.python === "string" && args.python !== "" ? args.python : undefined,
+      python,
     );
   } catch (error) {
     diffError = `Preview unavailable. Review the saved draft. (${error?.message ?? String(error)})`;
@@ -1130,7 +1259,9 @@ async function handleFinish(args) {
     targetPath: session.target.targetPath,
     draftPath,
     specificationPath: join(outputDir, STAGE_FILES.architecture),
-    threatModelPath: join(outputDir, STAGE_FILES.threat_model),
+    // 상류 0.2.0: 투영에 실패하면 null(정본은 매니페스트 threatModel 에 남는다).
+    threatModelPath: projected.path,
+    threatModelWarning: projected.warning,
     previousPath: join(outputDir, ORIGINAL_NAME),
     manifestPath,
     files: (await readdir(outputDir)).sort(),
