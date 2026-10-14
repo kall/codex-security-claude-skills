@@ -1347,8 +1347,8 @@ npm 0.2.0은 레지스트리에 배포돼 있어 소스 빌드 없이 `npm insta
 Python 3.14.8, Node v22.23.2. SKIP은 0건이다. 0.1.29의 NOTE 항목은 0.1.32·0.2.0 전용 동작이라 검사하지 않았다. 새 단언이 수정 전 코드에서 실패하는지 확인한 결과:
 
 - `repro-u1` H14a-3·H14b-2·H14b-3(정규화 경로): 수정 전 3건 FAIL. H14a-4·H14b-4(`threatModelMarkdown`): 2건 FAIL.
-- `repro-u8` P8a 수용된 threat_model 재저장: 수정 전 10건 FAIL(코드 리뷰가 찾은 결함, 커밋 `f7d6240`).
-- 이미 있던 동작을 고정하는 특성화 단언은 코드를 일부러 망가뜨려 확인했다: 투영 실패 처리와 `createdAt` 가드를 지우면 P6e·P8e 6건 FAIL, 정규화 스크립트·스키마의 `within_target` 검사를 지우면 H14b-5 FAIL.
+- `repro-u8` P8a 수용된 threat_model 재저장: 수정 전 10건 FAIL(코드 리뷰가 찾은 결함).
+- 이미 있던 동작을 고정하는 특성화 단언은 코드를 일부러 망가뜨려 확인했다: 투영 실패 처리와 `createdAt` 가드를 지우면 P6e·P8e 6건 FAIL, 정규화 스크립트·스키마의 `within_target` 검사를 지우면 H14b-5 FAIL, `install.sh`의 덮어쓰기 감지 종료코드 배선을 끊으면 H15c FAIL.
 - `repro-u4` K1~K4는 0.2.0과 0.1.29에서 서로 다른 분기를 타므로 두 설치본 실행 자체가 대조군이다.
 
 ### 종단간 스모크 테스트 (2026-10-14)
@@ -1394,4 +1394,4 @@ Python 3.14.8, Node v22.23.2. SKIP은 0건이다. 0.1.29의 NOTE 항목은 0.1.3
 **codex-security-deep-scan (npm 0.2.0)** — 랭킹 행과 원시 후보는 스킬에서 서브에이전트가 맡는 부분이라 직접 작성했다.
 
 - `--require-search` 부트스트랩, 인벤토리, 랭킹 파이프라인 7단계(`make-repo-rank-input` → `make-rank-shards` → `make-rank-pool-plan` → `validate-rank-shard` → `validate-rank-worker` → `merge-rank-outputs` → `select-deep-review-input`), 두 입력 정규화(후보 3건), 정산·봉인·검증이 모두 성공했다.
-- **기존 결함 발견**: 스킬 문서대로 `register --mode deep`으로 등록하면 `complete`가 `Deep Scan discovery orchestration must finish and persist its manifest before the parent scan can be completed.`로 거부되고 행은 `running`으로 남았다. 상류는 mode=deep 스캔을 종결하기 전에 공식 deep 코디네이터의 실행 기록(`deep_scan_runs`)을 요구한다. 이 검사는 npm 0.1.29부터 있었고, deep-lite의 워크벤치 종결은 처음부터 실행된 적이 없었다(phase4 기록). deep-lite를 표준 모드로 등록하도록 고쳤다(커밋 `2a6534a`, `repro-u7` I17g). 고친 절차로 다시 돌린 결과 `complete` 성공, `mode standard`, `threatModelAvailable: true`, finding 3건이다.
+- **기존 결함 발견**: 스킬 문서대로 `register --mode deep`으로 등록하면 `complete`가 `Deep Scan discovery orchestration must finish and persist its manifest before the parent scan can be completed.`로 거부되고 행은 `running`으로 남았다. 상류는 mode=deep 스캔을 종결하기 전에 공식 deep 코디네이터의 실행 기록(`deep_scan_runs`)을 요구한다. 이 검사는 npm 0.1.29부터 있었고, deep-lite의 워크벤치 종결은 처음부터 실행된 적이 없었다(phase4 기록). deep-lite를 표준 모드로 등록하도록 고쳤다(`repro-u7` I17g). 고친 절차로 다시 돌린 결과 `complete` 성공, `mode standard`, `threatModelAvailable: true`, finding 3건이다.
