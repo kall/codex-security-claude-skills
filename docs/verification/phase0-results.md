@@ -1308,3 +1308,90 @@ npm 0.1.26~0.1.29는 모두 매니페스트 0.1.95다. npm 0.1.26에는 Python �
 FAIL·SKIP은 0건이다. 새 단언 I17·I18은 수정 전 글루에서 실패함을 확인했다(대조군 FAIL 6건, 상류 거부를 재는 I17e만 통과).
 npm 0.1.31의 NOTE 항목(I9~I12, I17c)은 0.1.32 전용 동작이라 검사하지 않았다. `.m`은 0.1.31에도 있지만 I9~I12가 0.1.32 사본에서만
 돌기 때문에 0.1.31에서는 확인하지 않았다.
+
+## 부록 — npm 0.2.0(매니페스트 0.1.95) 재실측 (2026-10-14)
+
+기준선을 npm 0.1.32에서 상류 태그 `npm-v0.2.0`(커밋 `4949af70fcfadff154f6e8fdf100faa5bf2f8169`)으로 올리면서 재실측한 결과다. 위 본문과 이전 부록은 시점 고정 기록이라 고치지 않는다. 검토 기록은 `docs/plans/2026-10-14-1130-chore-codex-security-020-alignment-review.md`다.
+
+### 실측 대상 패키지
+
+npm 0.2.0은 레지스트리에 배포돼 있어 소스 빌드 없이 `npm install -g --prefix /tmp/cs020-g`로 격리 설치했다. 부트스트랩은 `npm root -g`를 정화된 환경에서 실행하므로 `NPM_CONFIG_PREFIX`만으로는 채택 사본이 바뀌지 않았다. PATH 맨 앞에 `--prefix`를 고정한 `npm` 래퍼를 두었다([releasing.md](../releasing.md) 7.2절). 구버전 대조는 사용자 전역 설치본 **npm 0.1.29**로 했다. 0.1.32 설치본으로는 돌리지 않았다.
+
+### 회귀 없음 (정합 작업 전)
+
+수정 전 스킬로 0.2.0에서 돌린 결과: `repro-u4`·`repro-u1`·`repro-u7`은 exit 0, `repro-u3` S5는 exit 0(경고 사본)이었다. `repro-u8`은 P7·P11만 실패했고(policy 리터럴 드리프트), `repro-u5`는 Q2b만 실패했다(아래 "기존 결함"). **녹색인 스크립트도 아래 1·2번 결함을 잡지 못했다** — 정규화 명령과 정본 위협 모델을 상류 사본에 대고 재는 단언이 없었다.
+
+### 새로 관측한 계약 변화
+
+1. **후보 정규화가 Python에서 Node 헬퍼로 이동(#837).** `scripts/normalize_candidates.py`가 삭제되고 `launch_codex_security_mcp --helper normalize-candidates`가 같은 인자(`--allow-missing-in-scope` 포함)를 받는다. 수정 전 스킬로는 후보가 1건이라도 있으면 전체·diff·deep 스캔이 "파일 없음"으로 실패한다. 여러 입력·CRLF 입력과 인벤토리·비ASCII 경로·두 입력에 걸친 중복 픽스처에서 0.1.29 Python 출력과 0.2.0 Node 출력이 바이트 단위로 같았다(`repro-u4` K4). 상류 소스 체크아웃(`plugins/codex-security`)에는 빌드된 `mcp/`가 없어 0.2.0 체크아웃으로는 정규화를 할 수 없다.
+2. **정본 위협 모델이 `scan.threatModel` 필드로 이동(#1133).** 스키마가 `anyOf(구조형 | {format:"markdown", content, scope?, origin?})`가 됐고, finalizer가 봉인 뒤 `<scan_dir>/threatmodel.md`를 투영한다. `artifacts/01_context/threat_model.md`만 쓴 스캔은 0.2.0에서 "모델 없음"이다 — `export --artifact threat-model`이 `No saved threat model is available for this result.`로 exit 2(`repro-u4` K3, CLI는 빈 `HOME`·`CODEX_HOME`·`CODEX_SECURITY_STATE_DIR`로 실측). 0.1.29 finalizer는 같은 markdown 객체를 `scan.threatModel.summary: missing required schema property`로 거부한다(K2). 문자열 `threatModel`의 오류 문구는 0.2.0에서 `no schema alternative matched: …`다.
+3. **SECURITY.md 초안 흐름(security-policy.ts).** 단계 파일 `THREAT_MODEL.md` → `threatmodel.md`(finalizer `--write-threat-model` 투영), `policy-draft.json`을 threat_model 단계 직후에도 저장하고 `status`·`threatModel` 필드가 생겼다. policy 단계 첫 문장이 매니페스트의 `threatModel.content`를 읽으라고 바뀌었다.
+4. **인벤토리.** diff·랭킹 확장자에 `.hh`·`.hxx`(#1079), `.ejs`·`.erb`·`.phtml`(#1197), `.vy`(#1306)가 추가됐다(`repro-u4` I13~I16). 전체 인벤토리 글롭이 `!.git/**`에서 `!**/.git`·`!**/.git/**`로 바뀌었다(#1099).
+5. **바뀌지 않은 것.** 봉인 계약·`validate_scan_contract.py`·워크벤치 종결 순서·커버리지 복구·신뢰 게이트 판별(`require_unchanged_target` 없음, 경고 사본)은 그대로다. 고정 리터럴 중 `comparisonPrompt()`·`classify-severity.ts` 지시·patch 검증 머리말 두 줄은 문자 단위로 같고, 바뀐 것은 policy 첫 문장 하나다. 상태 DB 마이그레이션이 늘었으므로 0.2.0으로 한 번 연 상태 DB를 0.1.x로 다시 쓸 수 있다는 보장이 없다.
+
+### 기존 결함 (0.2.0과 무관)
+
+`repro-u5` Q2b가 0.2.0과 0.1.29 두 설치본, Python 3.14·3.12 네 조합 모두에서 실패한다. 픽스처(깊게 중첩된 행)가 `repr` 재귀 방어에 닿기 전에 "문자열 occurrenceId 없음"으로 거부된다. 0.1.32 부록(2026-09-30)에는 `repro-u5`가 exit 0으로 적혀 있으나 그때의 Python 버전은 기록되지 않았다. 단언이 공허해진 상태이므로 별도로 고친다.
+
+### 정합 작업 뒤 재검증 (2026-10-14, 브랜치 `review-codex-security-0-2-0`)
+
+| 스크립트 | npm 0.2.0 | npm 0.1.29 |
+| --- | --- | --- |
+| `repro-u1-search-command.sh` | exit 0, OK 85 | exit 0, OK 85 |
+| `repro-u4.sh` | exit 0, OK 66 | exit 0, OK 56 (I9~I12·I13~I16 NOTE) |
+| `repro-u5-match-validator.sh` | exit 1, OK 706, FAIL 1 (Q2b, 기존 결함) | 같음 |
+| `repro-u7-coverage-recovery.sh` | exit 0, OK 63 | exit 0, OK 62 (I17c NOTE) |
+| `repro-u8-policy-severity.sh` | exit 0, OK 282 | exit 0, OK 279 (P7·P11 NOTE) |
+| `repro-u3.sh` 요약 | S5 0, S6 0, S9 1, S9b 0 — 기대값과 일치 | 같음 |
+
+Python 3.14.8, Node v22.23.2. SKIP은 0건이다. 0.1.29의 NOTE 항목은 0.1.32·0.2.0 전용 동작이라 검사하지 않았다. 새 단언이 수정 전 코드에서 실패하는지 확인한 결과:
+
+- `repro-u1` H14a-3·H14b-2·H14b-3(정규화 경로): 수정 전 3건 FAIL. H14a-4·H14b-4(`threatModelMarkdown`): 2건 FAIL.
+- `repro-u8` P8a 수용된 threat_model 재저장: 수정 전 10건 FAIL(코드 리뷰가 찾은 결함, 커밋 `f7d6240`).
+- 이미 있던 동작을 고정하는 특성화 단언은 코드를 일부러 망가뜨려 확인했다: 투영 실패 처리와 `createdAt` 가드를 지우면 P6e·P8e 6건 FAIL, 정규화 스크립트·스키마의 `within_target` 검사를 지우면 H14b-5 FAIL.
+- `repro-u4` K1~K4는 0.2.0과 0.1.29에서 서로 다른 분기를 타므로 두 설치본 실행 자체가 대조군이다.
+
+### 종단간 스모크 테스트 (2026-10-14)
+
+자기채점 스크립트는 부품 단위 계약만 잰다. 그래서 합성 저장소(Flask 파일 하나, SQL 주입·명령 주입 2건, `SECURITY.md` 포함)에 이 브랜치의 스킬 문서를 처음부터 끝까지 따라 실행했다. 셸 명령은 SKILL.md 명령형에 부트스트랩 `shellQuoted` 값을 맨몸으로 넣어 만들었다. 위협 모델·리뷰 로그·원시 후보·정본 JSON은 스킬에서 Claude가 맡는 부분이라 직접 작성했다. 상태 디렉터리는 임시 경로(0700)를 썼고, 전역 설치본과 `~/.claude/skills`는 건드리지 않았다. 대상 저장소는 끝까지 `git status`가 깨끗했다.
+
+**codex-security-scan**
+
+| 단계 | npm 0.2.0 | npm 0.1.29 |
+| --- | --- | --- |
+| 부트스트랩 | `candidateNormalizer.kind: node-helper`, `threatModelMarkdown: true` | `python`, `false` |
+| SECURITY.md 해결(Node 헬퍼)·인벤토리 | exit 0, 파일 4개 | 같음 |
+| 후보 정규화(문서의 `kind`별 명령) | Node 헬퍼 exit 0 | Python exit 0 |
+| `candidate_id` | 두 버전이 같음 | 두 버전이 같음 |
+| 정산 → 봉인 → 계약 검증 | 모두 exit 0, `complete` | 모두 exit 0 |
+| `scan.threatModel` | markdown 형식으로 실음. `threatmodel.md` 생성, `report.md`에 위협 모델 절 | 생략. `threatmodel.md` 없음 |
+| `export <scan_dir> --artifact threat-model` | exit 0, `Model origin: generated`, `Model scope: .` | 해당 없음 |
+| 워크벤치 register → contract → 봉인 → complete | `status: complete`, 경고 없음, `threatModelAvailable: true`, finding 2건 | 실행하지 않음 |
+
+워크벤치 등록은 처음에 `Scan output parent must not be group- or world-writable without the sticky bit.`로 실패했다. 테스트용으로 만든 상위 디렉터리가 0775였기 때문이다. 0700으로 바꾼 뒤 통과했다(상류 동작, 매뉴얼 5.12절).
+
+**codex-security-policy (npm 0.2.0, 실제 서브에이전트 3단계)**
+
+- `prepare` → 단계별 `prompt` → 서브에이전트(프롬프트 무변경) → 반환을 Write로 저장 → `save-stage` → `finish` 순서로 실행했다. 소유자 질문은 헤드리스 경로로 건너뛰었다.
+- architecture: 저장, 질문 5개(3·2 묶음).
+- threat_model: `policy-draft.json`이 `status: threat_model_ready`와 markdown `threatModel`(scope `.`, origin `generated`)로 저장되고, finalizer 투영으로 `threatmodel.md`가 생겼다(경고 없음).
+- policy: 프롬프트가 "`policy-draft.json`의 `threatModel.content`를 읽으라"는 0.2.0 문장으로 나갔고, 저장 전 검사를 통과했다.
+- finish: 매니페스트가 `completed`로 바뀌고(필드 순서 상류와 같음, `model: claude-subagent (Claude Code)`, `customPlugin: true`), `threatmodel.md` 재투영과 diff 미리보기가 성공했다. 산출물 5개가 모두 0600이다.
+
+**관측한 제약(이번 변경과 무관)**: `codex-security-policy-reader` 에이전트 정의가 없어 대체 유형(Explore)을 썼다. 그 세션에서는 Glob·Grep을 쓸 수 없어 서브에이전트가 경로를 추측해 읽었고 `app/config.py`를 놓쳤다(초안 reviewNotes에 인벤토리 불완전을 스스로 적었다). Read·Grep·Glob 전용 정의를 `~/.claude/agents/`에 두면 이 제약이 풀릴 것으로 본다(정의 예시는 policy SKILL.md 2단계).
+
+**실행하지 않은 것**: 0.1.29에서의 policy 종단간 실행과 워크벤치 complete, 소유자 질문에 답하는 대화형 경로. 0.1.x policy 경로(`threatmodel.md` 없이 경고·null)는 `repro-u8` P8a가 잰다.
+
+**codex-security-diff-scan (npm 0.2.0)** — 같은 저장소에 커밋을 하나 더 만들었다(경로 조작 파일 추가, `app/config.py` 삭제).
+
+| 단계 | 결과 |
+| --- | --- |
+| `register --mode diff --diff-target refs` → contract | `git_diff`, `diffTarget.kind: range`, digest 포함 |
+| `make-diff-rank-input` → `copy-deep-review-input` → diff 인벤토리 | 모두 exit 0. 삭제된 `app/config.py`가 인벤토리에 들어감 |
+| Node 헬퍼 정규화 | `--allow-missing-in-scope` 없으면 exit 2(`in-scope file row 1: ENOENT: … realpath`), 있으면 성공. npm 0.1.29 Python도 플래그 없이 exit 2(`[Errno 2] No such file or directory`) — diff SKILL.md 문구를 두 버전 실측으로 고쳤다 |
+| 정산 → 봉인 → 검증 → complete | 모두 성공. `mode diff`, `threatModelAvailable: true`, finding 1건 |
+
+**codex-security-deep-scan (npm 0.2.0)** — 랭킹 행과 원시 후보는 스킬에서 서브에이전트가 맡는 부분이라 직접 작성했다.
+
+- `--require-search` 부트스트랩, 인벤토리, 랭킹 파이프라인 7단계(`make-repo-rank-input` → `make-rank-shards` → `make-rank-pool-plan` → `validate-rank-shard` → `validate-rank-worker` → `merge-rank-outputs` → `select-deep-review-input`), 두 입력 정규화(후보 3건), 정산·봉인·검증이 모두 성공했다.
+- **기존 결함 발견**: 스킬 문서대로 `register --mode deep`으로 등록하면 `complete`가 `Deep Scan discovery orchestration must finish and persist its manifest before the parent scan can be completed.`로 거부되고 행은 `running`으로 남았다. 상류는 mode=deep 스캔을 종결하기 전에 공식 deep 코디네이터의 실행 기록(`deep_scan_runs`)을 요구한다. 이 검사는 npm 0.1.29부터 있었고, deep-lite의 워크벤치 종결은 처음부터 실행된 적이 없었다(phase4 기록). deep-lite를 표준 모드로 등록하도록 고쳤다(커밋 `2a6534a`, `repro-u7` I17g). 고친 절차로 다시 돌린 결과 `complete` 성공, `mode standard`, `threatModelAvailable: true`, finding 3건이다.
