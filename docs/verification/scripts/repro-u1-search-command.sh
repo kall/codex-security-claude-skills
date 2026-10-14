@@ -1184,6 +1184,33 @@ else
   skip "H14a-2: 이 플러그인은 npm 패키지 레이아웃이 아닙니다($PKG_ROOT) — sdk 축은 검증되지 않았습니다"
 fi
 
+# H14a-3. 후보 정규화 경로. npm 0.2.0 이 scripts/normalize_candidates.py 를 지우고 Node 헬퍼
+#         `--helper normalize-candidates` 로 옮겼다(상류 #837). Python 스크립트가 있으면
+#         python, 없고 헬퍼가 가용이면 node-helper 다. 매니페스트 버전은 같으므로 파일로 고른다.
+if [ -f "$PLUGIN/scripts/normalize_candidates.py" ]; then H14A3_KIND=python; else H14A3_KIND=node-helper; fi
+H14A3="$(jget "$RUN/h14a.json" 'd.get("candidateNormalizer") == {"available": True, "kind": "'"$H14A3_KIND"'", "reason": None}')"
+if [ "$H14A3" = "True" ]; then
+  ok "H14a-3: candidateNormalizer.kind=$H14A3_KIND"
+else
+  bad "H14a-3: 기대 kind=$H14A3_KIND, 실제 $(jget "$RUN/h14a.json" 'd.get("candidateNormalizer")')"
+fi
+
+# H14a-4. 위협 모델 markdown 형식 지원. npm 0.2.0 스키마는 scan.threatModel 을
+#         anyOf(구조형 | {format:"markdown"}) 로 받고, 0.1.32 이하는 구조형만 받는다(상류 #1133).
+#         기대값은 스키마를 직접 읽어 정한다 — 부트스트랩 판정과 독립이다.
+H14A4_WANT="$(PY - "$PLUGIN/schemas/scan-manifest.schema.json" <<'EOF'
+import json, sys
+t = json.load(open(sys.argv[1]))["properties"]["scan"]["properties"]["threatModel"]
+print(any((a.get("properties") or {}).get("format") == {"const": "markdown"} for a in t.get("anyOf") or []))
+EOF
+)"
+H14A4_GOT="$(jget "$RUN/h14a.json" 'd.get("threatModelMarkdown")')"
+if [ -n "$H14A4_WANT" ] && [ "$H14A4_GOT" = "$H14A4_WANT" ]; then
+  ok "H14a-4: threatModelMarkdown=$H14A4_GOT (스키마의 markdown 대안 유무와 같음)"
+else
+  bad "H14a-4: threatModelMarkdown=$H14A4_GOT, 스키마 기대=$H14A4_WANT"
+fi
+
 # H14b. 헬퍼 파일이 없는 플러그인 사본(상류 소스 체크아웃 형상)이면 불가 + "헬퍼 파일 없음".
 #       sdk 도 null 이어야 한다(형제 dist/ 가 없다).
 NOHELPER="$RUN/src-checkout/plugins/codex-security"
@@ -1198,6 +1225,64 @@ if [ "$H14B" = "True" ]; then
 else
   bad "H14b: $(jget "$RUN/h14b.json" '[d.get("securityMdHelper"), d.get("sdk")]')"
 fi
+# 0.2.0 소스 체크아웃 형상(Python 정규화 스크립트도 헬퍼도 없음)이면 정규화 불가다.
+H14B2="$(jget "$RUN/h14b.json" '(lambda c: c.get("available") is False and c.get("kind") is None and str(c.get("reason") or "").startswith("후보 정규화 불가") and "헬퍼 파일 없음" in str(c.get("reason")))(d.get("candidateNormalizer") or {})')"
+if [ "$H14B2" = "True" ]; then
+  ok "H14b-2: Python 스크립트·헬퍼가 둘 다 없으면 candidateNormalizer 불가"
+else
+  bad "H14b-2: $(jget "$RUN/h14b.json" 'd.get("candidateNormalizer")')"
+fi
+# 스키마 파일이 없는 사본이면 markdown 을 쓰지 않는다(필드 생략으로 되돌아가는 쪽이 안전하다).
+H14B4="$(jget "$RUN/h14b.json" 'd.get("threatModelMarkdown")')"
+if [ "$H14B4" = "False" ]; then
+  ok "H14b-4: 스키마 없는 사본은 threatModelMarkdown=false"
+else
+  bad "H14b-4: threatModelMarkdown=$H14B4 (기대 False)"
+fi
+# H14b-5. 신뢰 게이트: 사본의 scripts/·schemas/ 디렉터리가 대상 저장소 안을 가리키면, 그 안의 정규 파일도
+#         정규화 스크립트·스키마로 채택하지 않는다(파일 자체가 심링크인 경우는 is_regular_file 이 이미 거부한다).
+#         대조군으로 같은 내용의 사본 안 정규 파일은 채택되고(H14b-6, H14b-3), 깨진 스키마 JSON 은 false 다.
+MD_SCHEMA_JSON='{"properties":{"scan":{"properties":{"threatModel":{"anyOf":[{"type":"object"},{"type":"object","properties":{"format":{"const":"markdown"}}}]}}}}}'
+LINKED="$RUN/src-checkout-linked/plugins/codex-security"
+mkdir -p "$LINKED/.codex-plugin" "$NT/evil-scripts" "$NT/evil-schemas"
+cp "$PLUGIN/.codex-plugin/plugin.json" "$LINKED/.codex-plugin/plugin.json"
+printf 'raise SystemExit(0)\n' >"$NT/evil-scripts/normalize_candidates.py"
+printf '%s\n' "$MD_SCHEMA_JSON" >"$NT/evil-schemas/scan-manifest.schema.json"
+ln -s "$NT/evil-scripts" "$LINKED/scripts"
+ln -s "$NT/evil-schemas" "$LINKED/schemas"
+NBOOT_PLUGIN="$LINKED" nboot "$RUN/h14b5.json" "$NODE_DIR:$EMPTY_BIN"
+expect_exit 0 "$?" "H14b-5 대상 저장소를 가리키는 디렉터리가 있는 사본으로 부트스트랩"
+H14B5="$(jget "$RUN/h14b5.json" '(d.get("candidateNormalizer") or {}).get("kind") is None and d.get("threatModelMarkdown") is False')"
+if [ "$H14B5" = "True" ]; then
+  ok "H14b-5: realpath 가 대상 저장소 안인 정규화 스크립트·스키마는 채택하지 않음"
+else
+  bad "H14b-5: $(jget "$RUN/h14b5.json" '[d.get("candidateNormalizer"), d.get("threatModelMarkdown")]')"
+fi
+mkdir -p "$NOHELPER/schemas"
+printf '%s\n' "$MD_SCHEMA_JSON" >"$NOHELPER/schemas/scan-manifest.schema.json"
+NBOOT_PLUGIN="$NOHELPER" nboot "$RUN/h14b6.json" "$NODE_DIR:$EMPTY_BIN"
+expect_exit 0 "$?" "H14b-6 사본 안 markdown 스키마로 부트스트랩"
+[ "$(jget "$RUN/h14b6.json" 'd.get("threatModelMarkdown")')" = "True" ] \
+  && ok "H14b-6 대조군: 같은 스키마가 사본 안 정규 파일이면 true" \
+  || bad "H14b-6: threatModelMarkdown=$(jget "$RUN/h14b6.json" 'd.get("threatModelMarkdown")') (기대 True)"
+printf '{"properties": ' >"$NOHELPER/schemas/scan-manifest.schema.json"
+NBOOT_PLUGIN="$NOHELPER" nboot "$RUN/h14b7.json" "$NODE_DIR:$EMPTY_BIN"
+expect_exit 0 "$?" "H14b-7 깨진 스키마 JSON 이어도 부트스트랩 성공"
+[ "$(jget "$RUN/h14b7.json" 'd.get("threatModelMarkdown")')" = "False" ] \
+  && ok "H14b-7 깨진 스키마 JSON 은 false(필드 생략 쪽)" \
+  || bad "H14b-7: threatModelMarkdown=$(jget "$RUN/h14b7.json" 'd.get("threatModelMarkdown")') (기대 False)"
+rm -rf "$NOHELPER/schemas"
+# 같은 사본에 Python 정규화 스크립트만 있으면(npm 0.1.32 이하 소스 체크아웃) python 이다.
+touch "$NOHELPER/scripts/normalize_candidates.py"
+NBOOT_PLUGIN="$NOHELPER" nboot "$RUN/h14b3.json" "$NODE_DIR:$EMPTY_BIN"
+expect_exit 0 "$?" "H14b-3 Python 정규화 스크립트만 있는 사본으로 부트스트랩"
+H14B3="$(jget "$RUN/h14b3.json" 'd.get("candidateNormalizer") == {"available": True, "kind": "python", "reason": None}')"
+if [ "$H14B3" = "True" ]; then
+  ok "H14b-3: 헬퍼가 없어도 Python 스크립트가 있으면 kind=python"
+else
+  bad "H14b-3: $(jget "$RUN/h14b3.json" 'd.get("candidateNormalizer")')"
+fi
+rm -f "$NOHELPER/scripts/normalize_candidates.py"
 
 # H14c. PATH 의 `node` 가 대상 저장소 안이면 거부하고 다음 후보를 쓴다.
 mkdir -p "$NT/node_modules/.bin"
@@ -1376,6 +1461,50 @@ if [ "$H10_STAGE" = "trustedPathEnv" ]; then
   ok "H10b: stage=trustedPathEnv"
 else
   bad "H10b: stage=$H10_STAGE (trustedPathEnv 기대)"
+fi
+
+# ---------------------------------------------------------------------------
+# H15. 상류 `codex-security skills add`(npm 0.2.0)가 같은 이름의 설치본을 덮어쓴 상태 감지.
+#      상류는 ~/.claude/skills/<이름> 을 지우고 ~/.agents/skills/<이름> 심링크로 바꾼다. 그 SKILL.md 는
+#      `requires_bin: codex-security` 를 가진 CLI 안내뿐이다(로그인 필요). install.sh --check-only 는
+#      덮어쓰인 스킬을 이름으로 알리고 exit 2(부분 정상)를 낸다. 대조군(우리 스킬 링크)은 경고 없음.
+# ---------------------------------------------------------------------------
+step "H15. 상류 skills add 덮어쓰기 감지 (install.sh --check-only)"
+INSTALL_SH="$REPO_ROOT/skills/install.sh"
+H15="$RUN/h15"
+mkdir -p "$H15/clean" "$H15/clobbered" "$H15/.agents/skills/codex-security-policy"
+for d in "$REPO_ROOT"/skills/*/; do ln -s "$d" "$H15/clean/$(basename "$d")"; ln -s "$d" "$H15/clobbered/$(basename "$d")"; done
+# 상류 형태: 복사 설치본 자리를 상류 SKILL.md 디렉터리로, 링크 설치본 자리를 .agents/skills 심링크로.
+rm "$H15/clobbered/codex-security-scan" "$H15/clobbered/codex-security-policy"
+mkdir -p "$H15/clobbered/codex-security-scan"
+printf -- '---\nname: codex-security-scan\nrequires_bin: codex-security\ncommand: codex-security scan\n---\n' \
+  >"$H15/clobbered/codex-security-scan/SKILL.md"
+printf -- '---\nname: codex-security-policy\nrequires_bin: codex-security\ncommand: codex-security policy\n---\n' \
+  >"$H15/.agents/skills/codex-security-policy/SKILL.md"
+ln -s "$H15/.agents/skills/codex-security-policy" "$H15/clobbered/codex-security-policy"
+h15_run() { # h15_run <skills dir> <출력> — 실제 설치 없이 프로브만(--check-only)
+  env -i HOME="$HOME" PATH="$PATH" CODEX_SECURITY_PLUGIN_ROOT="$PLUGIN" CODEX_SECURITY_STATE_DIR="$RUN/h15-state" \
+    PYTHON="$PYTHON_BIN" CLAUDE_SKILLS_DIR="$1" bash "$INSTALL_SH" --check-only >"$2" 2>&1
+}
+h15_run "$H15/clean" "$RUN/h15-clean.out"; H15_CLEAN_RC=$?
+h15_run "$H15/clobbered" "$RUN/h15-clob.out"; H15_CLOB_RC=$?
+if grep -q "skills add" "$RUN/h15-clean.out"; then
+  bad "H15a: 우리 스킬만 설치된 대조군에서 덮어쓰기 경고가 나옴"
+else
+  ok "H15a: 대조군(우리 스킬 링크)은 덮어쓰기 경고 없음 (exit $H15_CLEAN_RC)"
+fi
+if grep -q "codex-security-scan" "$RUN/h15-clob.out" && grep -q "codex-security-policy" "$RUN/h15-clob.out" \
+   && grep -q "skills add" "$RUN/h15-clob.out" && ! grep -q "덮어쓰였습니다: codex-security-patch" "$RUN/h15-clob.out"; then
+  ok "H15b: 덮어쓰인 두 스킬(디렉터리·심링크)을 이름으로 알림"
+else
+  bad "H15b: 덮어쓰기 경고가 기대와 다릅니다"; sed 's/^/     /' "$RUN/h15-clob.out" | tail -15
+fi
+# 종료코드 단언은 대조군이 0 일 때만 의미가 있다. 프로브가 다른 이유(rg 미확보 등)로 이미 2 를 내는
+# 환경에서는 감지 배선이 깨져도 2 가 나오므로 검증하지 않은 것으로 센다.
+if [ "$H15_CLEAN_RC" = 0 ]; then
+  expect_exit 2 "$H15_CLOB_RC" "H15c 덮어쓰인 스킬이 있으면 --check-only 는 exit 2(부분 정상, 대조군 exit 0)"
+else
+  skip "H15c: 대조군 --check-only 가 exit $H15_CLEAN_RC 라 덮어쓰기 감지의 종료코드는 검증되지 않았습니다"
 fi
 
 printf '\n=== 결과 ===\n'
