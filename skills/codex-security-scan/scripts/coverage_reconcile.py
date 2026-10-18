@@ -8,10 +8,16 @@ surface id 중복)은 중복 검사하지 않는다.
 
 R9  커버리지 정산
     `in_scope_files.txt`(리뷰 대상 목록)와 `review_log.jsonl`(실제 리뷰 기록)을
-    대조해, 리뷰 완료 파일이 목록에 미달하면 `coverage.json`의
-    `completeness`를 `partial`로 강제하고 미완 파일을 `deferred`에 기록한다.
-    `review_log.jsonl` 부재 자체가 정직성 위반이다 — 리뷰 기록 없는 스캔은
-    complete를 주장할 수 없다.
+    대조해, 리뷰 완료 파일이 목록에 미달하면 미완 파일을 `coverage.json`의
+    `deferred`에 기록한다. `review_log.jsonl` 부재 자체가 정직성 위반이다 —
+    리뷰 기록 없는 스캔은 완전 커버리지를 주장할 수 없다.
+
+    `completeness` 필드는 버전마다 다르다. npm 0.2.0 이하 coverage 스키마는
+    `completeness`(complete|partial|unknown)를 필수로 요구하고, npm 0.4.0 은 이 필드를
+    지웠다(finalizer 가 unsealed draft 에서 버린다, 상류 c380befb9 #1633). 그래서
+    `coverage.json`에 이 키가 **있을 때만** 값을 정직한 방향(`partial`)으로 내리고,
+    없으면 키를 새로 만들지 않는다. 완결성 판정은 두 경우 모두 이 스크립트가 계산한
+    `coverageComplete`(미리뷰·deferred·needs_follow_up 이 모두 0)로 보고한다.
 
 R10 finding 경로 실존
     `findings.json`의 모든 `locations[].path`(및 있으면 `codeEvidence[].path`)를
@@ -266,6 +272,8 @@ class Reconciliation:
     warnings: list[str] = field(default_factory=list)
     completeness_before: str | None = None
     completeness_after: str | None = None
+    #: coverage.json 에 completeness 키가 있었는가(npm 0.2.0 이하 형상).
+    completeness_field: bool = False
 
 
 def _needs_follow_up_surfaces(coverage: dict[str, Any]) -> list[str]:
@@ -288,7 +296,7 @@ def _upsert_deferred(coverage: dict[str, Any], unreviewed: list[str], in_scope: 
     reason = (
         f"in_scope_files.txt 의 {in_scope}개 파일 중 {len(unreviewed)}개가 "
         f"review_log.jsonl 에 리뷰 완료로 기록되지 않았습니다. "
-        "커버리지 정산(R9)이 completeness 를 partial 로 강제했습니다."
+        "커버리지 정산(R9)이 미리뷰 파일을 후속 작업으로 기록했습니다."
     )
     if truncated:
         reason += f" paths 에는 앞선 {MAX_DEFERRED_PATHS}개만 기록했습니다."
@@ -336,6 +344,8 @@ def reconcile_coverage(
 
     before = coverage.get("completeness")
     result.completeness_before = before if isinstance(before, str) else None
+    # 키가 없으면 npm 0.4.0 형상이다 — 정산도 키를 새로 만들지 않는다.
+    result.completeness_field = "completeness" in coverage
 
     if not in_scope and allow_empty_inventory:
         # diff·deep 스캔의 정당한 0건: 변경분에 source-like 파일이 없으면(문서만
@@ -396,7 +406,7 @@ def reconcile_coverage(
 
     if result.unreviewed:
         # 리뷰 로그가 뒷받침하지 않는 완결성 주장을 하향 조정한다.
-        if before != "partial":
+        if result.completeness_field and before != "partial":
             coverage["completeness"] = "partial"
             result.changes.append(
                 f"completeness: {before!r} -> 'partial' (리뷰 완료 "
@@ -416,7 +426,7 @@ def reconcile_coverage(
         follow_up = _needs_follow_up_surfaces(coverage)
         if follow_up:
             blockers.append(f"needs_follow_up surface {len(follow_up)}건 ({', '.join(follow_up)})")
-        if before == "complete" and blockers:
+        if result.completeness_field and before == "complete" and blockers:
             coverage["completeness"] = "partial"
             result.changes.append(
                 f"completeness: 'complete' -> 'partial' ({', '.join(blockers)} 이 남아 있음)"
@@ -917,7 +927,11 @@ def run(args: argparse.Namespace, out) -> tuple[int, dict[str, Any]]:
         file=out,
     )
     print(
-        f"  completeness: {recon.completeness_before!r} -> {recon.completeness_after!r}",
+        (
+            f"  completeness: {recon.completeness_before!r} -> {recon.completeness_after!r}"
+            if recon.completeness_field
+            else "  completeness: 필드 없음(npm 0.4.0 형상 — 정산도 만들지 않음)"
+        ),
         file=out,
     )
     if recon.changes:
@@ -956,14 +970,30 @@ def run(args: argparse.Namespace, out) -> tuple[int, dict[str, Any]]:
     #
     # 이 계산은 아래 경고 출력보다 **먼저** 와야 한다 — 뒤에 두면 append 한
     # 문구가 사람용 출력에는 절대 찍히지 않고 --json 요약에만 남는다.
+    #
+    # npm 0.4.0 은 completeness 를 지웠고 SARIF invocations 를 "종결 상태가 completed 가
+    # 아니거나 deferred 가 있을 때"만 만든다(상류 c380befb9). 그래서 판정 축은 두 버전
+    # 모두 같다 — 불완전한데 deferred 가 비면 SARIF 에 경고가 없다.
     deferred_entries = coverage.get("deferred")
     deferred_count = len(deferred_entries) if isinstance(deferred_entries, list) else 0
-    partial_without_deferred = recon.completeness_after != "complete" and deferred_count == 0
+    follow_up_count = len(_needs_follow_up_surfaces(coverage))
+    coverage_complete = (
+        not recon.unreviewed
+        and deferred_count == 0
+        and follow_up_count == 0
+        and (not recon.completeness_field or recon.completeness_after == "complete")
+    )
+    partial_without_deferred = not coverage_complete and deferred_count == 0
 
     all_warnings = recon.warnings + path_warnings
     if partial_without_deferred:
+        state = (
+            f"completeness 가 {recon.completeness_after!r}"
+            if recon.completeness_field
+            else f"needs_follow_up surface {follow_up_count}건이 남아 커버리지가 불완전"
+        )
         all_warnings.append(
-            f"completeness 가 {recon.completeness_after!r} 인데 coverage.deferred 가 비어 "
+            f"{state}인데 coverage.deferred 가 비어 "
             "있습니다 — 상류 SARIF 는 이 조합에서 경고를 하나도 남기지 않고 스캔을 '성공'으로 "
             "표시합니다. 최종 보고에 완결성과 미리뷰 파일 수를 반드시 명시하세요."
         )
@@ -971,7 +1001,9 @@ def run(args: argparse.Namespace, out) -> tuple[int, dict[str, Any]]:
     print("", file=out)
     print("=== 부분 커버리지 정직성 (P5-R13) ===", file=out)
     print(
-        f"  completeness={recon.completeness_after!r} · deferred={deferred_count}건"
+        f"  완전 커버리지={'예' if coverage_complete else '아니오'}"
+        + (f" · completeness={recon.completeness_after!r}" if recon.completeness_field else "")
+        + f" · deferred={deferred_count}건 · needs_follow_up={follow_up_count}건"
         f"{' · SARIF 경고 없음(보고 필수)' if partial_without_deferred else ''}",
         file=out,
     )
@@ -992,7 +1024,7 @@ def run(args: argparse.Namespace, out) -> tuple[int, dict[str, Any]]:
             "판정: 통과 — 커버리지가 리뷰 로그와 일치하고 모든 finding 경로가 유효합니다. "
             "finalize_scan_contract.py 를 진행하세요."
             + (
-                " 단, completeness 가 complete 가 아니며 deferred 가 비어 SARIF 는 이를 "
+                " 단, 커버리지가 완전하지 않은데 deferred 가 비어 SARIF 는 이를 "
                 "드러내지 않습니다 — 최종 보고에 완결성을 명시하세요."
                 if partial_without_deferred
                 else ""
@@ -1028,6 +1060,9 @@ def run(args: argparse.Namespace, out) -> tuple[int, dict[str, Any]]:
             "unreviewedCount": len(recon.unreviewed),
             "completenessBefore": recon.completeness_before,
             "completenessAfter": recon.completeness_after,
+            "completenessField": recon.completeness_field,
+            "coverageComplete": coverage_complete,
+            "needsFollowUpCount": follow_up_count,
             "deferredCount": deferred_count,
             "partialWithoutDeferred": partial_without_deferred,
             "changes": recon.changes,

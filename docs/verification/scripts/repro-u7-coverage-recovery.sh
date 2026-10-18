@@ -92,7 +92,8 @@ def extract(archive, destination):
 EOF
 
 # make_scan <이름> <in_scope 내용> <review_log 내용> <completeness> <deferred-json>
-# 정산 대상 스캔 디렉터리를 만들고 경로를 echo 한다.
+# 정산 대상 스캔 디렉터리를 만들고 경로를 echo 한다. completeness 가 `-` 이면 키를
+# 지운다(npm 0.4.0 형상 — 상류가 coverage.completeness 를 지웠다).
 make_scan() {
   local name="$1" in_scope="$2" review_log="$3" completeness="$4" deferred="$5"
   local scan="$RUN/scan-$name"
@@ -104,7 +105,10 @@ make_scan() {
 import json, pathlib, sys
 path = pathlib.Path(sys.argv[1])
 coverage = json.loads(path.read_text())
-coverage["completeness"] = sys.argv[2]
+if sys.argv[2] == "-":
+    coverage.pop("completeness", None)
+else:
+    coverage["completeness"] = sys.argv[2]
 coverage["deferred"] = json.loads(sys.argv[3])
 path.write_text(json.dumps(coverage, indent=2))
 EOF
@@ -404,6 +408,81 @@ else
     *SARIF*) bad "I5d: deferred 가 있는데 판정 줄에 완결성 신호가 붙었습니다 (I4d 가 무조건 켜진다)" ;;
     *)       ok "I5d: 대조군 — 판정 줄에 신호가 붙지 않음" ;;
   esac
+fi
+
+# ---------------------------------------------------------------------------
+# I5x. completeness 필드가 없는 형상(npm 0.4.0, 상류 c380befb9 #1633).
+#      0.4.0 coverage 스키마에는 completeness 가 없고 finalizer 가 unsealed draft 의
+#      키를 버린다. 정산은 키를 새로 만들지 않고, 완결성은 coverageComplete 로 낸다.
+#      SARIF 는 deferred 가 있을 때만 경고를 싣는다 — 판정 축은 0.2.0 과 같다.
+# ---------------------------------------------------------------------------
+step "I5x. completeness 필드 없음 (npm 0.4.0 형상)"
+# (1) 완전 리뷰 · deferred 없음 → 완전, 신호 꺼짐, 키를 만들지 않음.
+SCAN_NC_OK="$(make_scan nc-ok 'src/extract.py
+' "$REVIEWED" - '[]')"
+PY "$RECONCILE" --scan-dir "$SCAN_NC_OK" --source-root "$SRC" --json \
+  >"$RUN/i5x1.json" 2>"$RUN/i5x1.err"
+expect_exit 0 "$?" "I5x-1a 완전 리뷰 정산"
+# (2) 미리뷰 1건 → deferred 추가, 키는 여전히 없음, 신호 꺼짐(SARIF 가 경고를 싣는다).
+SCAN_NC_DEF="$(make_scan nc-def 'src/extract.py
+src/unreviewed.py
+' "$REVIEWED" - '[]')"
+PY "$RECONCILE" --scan-dir "$SCAN_NC_DEF" --source-root "$SRC" --json \
+  >"$RUN/i5x2.json" 2>"$RUN/i5x2.err"
+expect_exit 0 "$?" "I5x-2a 미리뷰가 있는 정산"
+# (3) 완전 리뷰지만 needs_follow_up surface 가 있고 deferred 가 빔 → 신호 켜짐.
+SCAN_NC_FU="$(make_scan nc-fu 'src/extract.py
+' "$REVIEWED" - '[]')"
+PY - "$SCAN_NC_FU/coverage.json" <<'EOF'
+import json, pathlib, sys
+path = pathlib.Path(sys.argv[1])
+coverage = json.loads(path.read_text())
+coverage["surfaces"].append(
+    {"id": "follow-up", "label": "Follow-up surface", "disposition": "needs_follow_up", "receiptRefs": []}
+)
+path.write_text(json.dumps(coverage, indent=2))
+EOF
+PY "$RECONCILE" --scan-dir "$SCAN_NC_FU" --source-root "$SRC" --json \
+  >"$RUN/i5x3.json" 2>"$RUN/i5x3.err"
+expect_exit 0 "$?" "I5x-3a needs_follow_up 만 남은 정산"
+PY - "$RUN" "$SCAN_NC_OK" "$SCAN_NC_DEF" "$SCAN_NC_FU" <<'EOF'
+import json, pathlib, sys
+run = pathlib.Path(sys.argv[1])
+scans = [pathlib.Path(p) for p in sys.argv[2:]]
+expected = [
+    # (라벨, coverageComplete, partialWithoutDeferred, deferredCount>0)
+    ("I5x-1", True, False, False),
+    ("I5x-2", False, False, True),
+    ("I5x-3", False, True, False),
+]
+problems = []
+for index, (label, complete, pwd, has_deferred) in enumerate(expected, start=1):
+    d = json.loads((run / f"i5x{index}.json").read_text())
+    summary = d.get("coverage") or {}
+    if summary.get("completenessField") is not False:
+        problems.append(f"{label}: completenessField={summary.get('completenessField')!r} (False 기대)")
+    if summary.get("completenessAfter") is not None:
+        problems.append(f"{label}: completenessAfter={summary.get('completenessAfter')!r} (None 기대)")
+    if summary.get("coverageComplete") is not complete:
+        problems.append(f"{label}: coverageComplete={summary.get('coverageComplete')!r} ({complete} 기대)")
+    if summary.get("partialWithoutDeferred") is not pwd:
+        problems.append(f"{label}: partialWithoutDeferred={summary.get('partialWithoutDeferred')!r} ({pwd} 기대)")
+    if bool(summary.get("deferredCount")) is not has_deferred:
+        problems.append(f"{label}: deferredCount={summary.get('deferredCount')!r}")
+    coverage = json.loads((scans[index - 1] / "coverage.json").read_text())
+    if "completeness" in coverage:
+        problems.append(f"{label}: 정산이 completeness 키를 새로 만들었습니다 — 0.2.0 형상으로 되돌립니다")
+for p in problems:
+    print(f"FAIL {p}")
+raise SystemExit(1 if problems else 0)
+EOF
+expect_exit 0 "$?" "I5x-b 요약 값과 coverage.json 형상"
+# 대조군: 사람용 출력의 신호는 needs_follow_up + deferred 0건(I5x-3)에만 붙는다.
+if grep -q "SARIF 경고 없음" "$RUN/i5x3.err" && ! grep -q "SARIF 경고 없음" "$RUN/i5x1.err"; then
+  ok "I5x-c: 사람용 출력의 신호가 needs_follow_up + deferred 0건에만 붙음"
+else
+  bad "I5x-c: 사람용 출력 신호가 기대와 다릅니다"
+  sed 's/^/     /' "$RUN/i5x3.err" | tail -5
 fi
 
 # ---------------------------------------------------------------------------
@@ -1451,6 +1530,104 @@ EOF
   else
     bad "I17g: --mode deep 거부가 기대와 다릅니다(exit $I17G_CODE, running $I17G_BEFORE -> $I17G_AFTER)"
     sed 's/^/     /' "$RUN/i17-deep.json"
+  fi
+
+  # I17h. scoped-path 스캔 등록·종결. 상류 parse_scan_recipe 는 target.kind 가 "paths" 가 아닌
+  # 레시피의 경로를 거부한다("Only scoped scan launch recipes can include target paths.",
+  # npm 0.2.0~0.4.0). 글루가 kind=repository 로 경로를 보내던 동안 `register --paths` 는 항상
+  # exit 1 이었다(2026-10-17 0.4.0 스모크 테스트). 등록 → contract → bind-repo-scopes(사본의 경로)
+  # → finalize → complete 를 끝까지 돌린다.
+  mkdir -p "$DREPO/app"
+  printf 'print(4)\n' >"$DREPO/app/c.py"
+  { dgit add -A && dgit commit -qm scoped; } >"$RUN/i17h-fixture.log" 2>&1 \
+    || { bad "I17h: 픽스처 커밋 실패"; sed 's/^/     /' "$RUN/i17h-fixture.log"; }
+  I17H="$RUN/i17-scoped"
+  mkdir -p "$I17H/scan" "$I17H/state"
+  chmod 700 "$I17H" "$I17H/scan" "$I17H/state"
+  PY - "$I17H/boot.json" "$PLUGIN" "$I17H/state" "$DREPO" "$PYTHON_BIN" "$I17H/scan" <<'EOF'
+import json, pathlib, sys
+out, plugin, state, repo, python, scan_dir = sys.argv[1:7]
+manifest = json.loads((pathlib.Path(plugin) / ".codex-plugin" / "plugin.json").read_text())
+pathlib.Path(out).write_text(json.dumps({
+    "ok": True, "pluginRoot": plugin, "pluginVersion": manifest["version"],
+    "stateDir": state, "scanDir": scan_dir, "repoRoot": repo,
+    "python": {"path": python, "version": "probe"},
+}, indent=2))
+EOF
+  # bind-repo-scopes 실행 경로: Python 하위 명령이 있으면 그것, 없으면 Node 헬퍼(npm 0.4.0).
+  i17h_bind() {
+    if grep -q '"bind-repo-scopes"' "$PLUGIN/scripts/generate_rank_input.py" 2>/dev/null; then
+      PY -I -B "$PLUGIN/scripts/generate_rank_input.py" bind-repo-scopes "$@"
+    else
+      env -i PATH=/usr/bin:/bin HOME="$HOME" CODEX_MCP_NODE_PATH="$(command -v node)" \
+        "$PLUGIN/scripts/launch_codex_security_mcp" --helper bind-repo-scopes "$@"
+    fi
+  }
+  i17h_run() {
+    PY "$GLUE" --bootstrap "$I17H/boot.json" register --paths app \
+      >"$I17H/register.json" 2>"$I17H/register.err" || return 1
+    local sid
+    sid="$(PY -c 'import json,sys; print(json.load(open(sys.argv[1]))["scanId"])' "$I17H/register.json")" || return 1
+    PY "$GLUE" --bootstrap "$I17H/boot.json" contract --scan-id "$sid" \
+      >"$I17H/contract.json" 2>"$I17H/contract.err" || return 1
+    PY - "$I17H/scan" "$I17H/contract.json" <<'EOF' || return 1
+import json, sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+scan_dir = Path(sys.argv[1])
+c = json.loads(Path(sys.argv[2]).read_text())["contract"]
+now = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+target = {"kind": c["target"]["allowedKinds"][0], "targetId": c["target"]["targetId"],
+          "displayName": c["target"]["displayName"], "revision": c["target"]["revision"]}
+# includePaths 는 bind-repo-scopes 가 채운다. 일부러 "." 로 두어 바인딩이 실제로 일어났는지 본다.
+scope = {"includePaths": ["."], "excludePaths": c["scope"]["requiredExcludePaths"] or []}
+documents = {
+    "scan-manifest.json": {"documentType": "codex-security.scan-manifest", "schemaVersion": "1.0",
+        "scan": {"id": c["scanId"], "status": "completed", "startedAt": now, "completedAt": now,
+                 "producer": c["producer"], "target": target, "scope": scope,
+                 "findingsRef": "findings.json", "coverageRef": "coverage.json"}},
+    "findings.json": {"documentType": "codex-security.findings", "schemaVersion": "1.0",
+                      "scanId": c["scanId"], "findings": []},
+    "coverage.json": {"documentType": "codex-security.coverage", "schemaVersion": "1.0",
+        "scanId": c["scanId"], "mode": "scoped_path", "completeness": "complete",
+        "inventoryStrategy": "scoped_path", **scope, "explicitExclusions": [], "deferred": [],
+        "surfaces": [{"id": "surface_app", "label": "App sources",
+                      "disposition": "no_issue_found", "receiptRefs": []}]},
+}
+for name, payload in documents.items():
+    (scan_dir / name).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+EOF
+    printf '["app"]\n' >"$I17H/scopes.json"
+    i17h_bind --scopes-file "$I17H/scopes.json" --manifest "$I17H/scan/scan-manifest.json" \
+      --coverage "$I17H/scan/coverage.json" >"$I17H/bind.out" 2>"$I17H/bind.err" || return 1
+    PY -I -B "$PLUGIN/scripts/finalize_scan_contract.py" --scan-dir "$I17H/scan" --source-root "$DREPO" \
+      >"$I17H/finalize.out" 2>"$I17H/finalize.err" || return 1
+    PY "$GLUE" --bootstrap "$I17H/boot.json" complete --scan-id "$sid" \
+      >"$I17H/complete.json" 2>"$I17H/complete.err" || return 1
+  }
+  if i17h_run; then
+    PY - "$I17H" <<'EOF'
+import json, pathlib, sys
+d = pathlib.Path(sys.argv[1])
+problems = []
+contract = json.loads((d / "contract.json").read_text())["contract"]
+if contract["scope"].get("requiredIncludePaths") != ["app"]:
+    problems.append(f"contract.scope.requiredIncludePaths={contract['scope'].get('requiredIncludePaths')!r} (['app'] 기대)")
+complete = json.loads((d / "complete.json").read_text())
+if complete.get("ok") is not True or complete.get("status") != "complete":
+    problems.append(f"complete 결과가 성공이 아닙니다: {json.dumps(complete)[:300]}")
+scope = json.loads((d / "scan" / "scan-manifest.json").read_text())["scan"]["scope"]
+if scope.get("includePaths") != ["app"]:
+    problems.append(f"봉인 매니페스트 includePaths={scope.get('includePaths')!r} (['app'] 기대)")
+for p in problems:
+    print(f"FAIL I17h: {p}")
+raise SystemExit(1 if problems else 0)
+EOF
+    expect_exit 0 "$?" "I17h scoped-path(--paths app) 등록·바인딩·봉인·종결"
+  else
+    bad "I17h: scoped-path 수명주기가 중간에 실패했습니다(--paths 가 kind=paths 레시피로 가지 않으면 register 가 거부됩니다)"
+    cat "$I17H"/*.err "$I17H"/register.json 2>/dev/null | sed 's/^/     /' | head -10; echo
   fi
 fi
 

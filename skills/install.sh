@@ -213,7 +213,8 @@ normalizer = data.get("candidateNormalizer") or {}
 full_ok = bool(search) and bool(normalizer.get("available"))
 print("\n[프로브] 실행 환경 정상" if full_ok else "\n[프로브] 부분 정상 — 저장소 전체 스캔 불가")
 print(f"  플러그인 : {plugin_root}")
-print(f"  버전     : {data.get('pluginVersion')} (출처: {data.get('pluginSource')})")
+print(f"  버전     : 매니페스트 {data.get('pluginVersion')} · npm {data.get('npmVersion') or '알 수 없음'}"
+      f" (출처: {data.get('pluginSource')})")
 print(f"  Python   : {python_info.get('path')} ({python_info.get('version')})")
 
 # 검색 명령(ripgrep). 저장소 전체 스캔·deep-lite 는 인벤토리를 상류 스크립트에 위임하므로
@@ -239,6 +240,21 @@ if normalizer.get("available"):
 else:
     print("  정규화   : 사용 불가 — 전체·diff·deep 스캔을 시작할 수 없습니다")
     print(f"             {normalizer.get('reason') or 'candidateNormalizer 없음'}")
+
+# 작업 목록 도우미(npm 0.4.0 부터 Node 헬퍼). scoped-path 바인딩과 diff 리뷰 입력 복사에 쓴다.
+# 불가여도 저장소 전체 스캔은 영향이 없으므로 종료코드를 바꾸지 않는다. 못 쓰는 경로만 알린다.
+for key, label, consumer in (
+    ("bindRepoScopes", "경로 바인딩", "scoped-path 스캔을"),
+    ("copyDeepReviewInput", "diff 입력 ", "diff 스캔을"),
+):
+    helper_info = data.get(key) or {}
+    if helper_info.get("available"):
+        kind = {"python": "Python 하위 명령", "node-helper": "Node 헬퍼"}.get(
+            helper_info.get("kind"), helper_info.get("kind"))
+        print(f"  {label}: {kind}")
+    else:
+        print(f"  {label}: 사용 불가 — {consumer} 시작할 수 없습니다")
+        print(f"             {helper_info.get('reason') or key + ' 없음'}")
 
 # Node 와 SECURITY.md 헬퍼(P6-KTD6). 불가여도 전체 스캔은 정책 없이 진행하므로
 # 종료코드를 바꾸지 않는다(P6-KTD7). 원인만 알린다.

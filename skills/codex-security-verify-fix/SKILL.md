@@ -13,15 +13,20 @@ description: >-
 # codex-security-verify-fix — 수정 검증 (읽기 전용)
 
 codex-security 플러그인의 `verify-fix` 스킬을 Claude가 직접 수행한다. 기준 실측 버전은
-**npm 0.2.0(매니페스트 0.1.95)**다. 입력으로 받은 각 finding이 **현재 체크아웃에서 실제로
+**npm 0.4.0(매니페스트 0.1.95)**다. 입력으로 받은 각 finding이 **현재 체크아웃에서 실제로
 수정됐는지**만 판정한다. 이 스킬은 **저장소를 절대 변경하지 않는다** — 수정·패치 적용이 필요하면
 `codex-security-patch`로 넘긴다.
 
-**상류 문서 변경 주의(플러그인 npm 0.1.18~0.2.0):** 상류 `skills/verify-fix/SKILL.md`는
+**상류 문서 변경 주의(플러그인 npm 0.1.18~0.4.0):** 상류 `skills/verify-fix/SKILL.md`는
 npm 0.1.18~0.1.25 구간에서 **바이트 단위로 동일했다**(내용 변경 없음). npm 0.1.25~0.1.29 구간에서는
 발동 조건만 바뀌었다(npm 0.1.26, 상류 `5452c433`). `description`이 "명시적으로 요청한 보안 수정 검증에만
 쓴다"로 좁아졌고, `## When to Use` 절이 새로 생겼다(아래 「발동 조건」). `## Objective` 이하 판정 절차와
-결과 계약은 바뀌지 않았다. npm 0.1.29~0.2.0 구간에서는 이 문서가 바뀌지 않았다. fix-finding과 달리 `artifact-storage.md`를 읽으라는 줄은 없다. 따라서 이
+결과 계약은 바뀌지 않았다. npm 0.1.29~0.2.0 구간과 0.2.0~0.4.0 구간(태그 `npm-v0.4.0` = 커밋 `559b492b2`에서 재대조)에서는
+이 문서와 공용 `references/static-finding-assessment.md`가 바뀌지 않았다. 0.4.0에서 바뀐 것은 상류 CLI가
+두 문서 앞에 붙이는 머리말 한 줄뿐이다(`8614c8cd1` #1423: "Use the bundled $codex-security:verify-fix skill.
+Its complete instructions … do not reread either file." → "Follow the bundled $codex-security:verify-fix
+instructions and shared assessment reference included below. Do not reload these instruction files.").
+뜻은 같고, 이 스킬은 두 문서를 직접 읽으므로 절차는 바뀌지 않는다. fix-finding과 달리 `artifact-storage.md`를 읽으라는 줄은 없다. 따라서 이
 스킬의 정합 작업에서 확인할 것은 상류 발동 조건 서술과, 이 문서가 참조하는 **다른 스킬의 계약
 변화**(특히 `codex-security-patch`의 승인 게이트 재구성)다. 상류만 다시 읽고 "변경 없음"으로 끝내면
 헛짚는다.

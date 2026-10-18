@@ -1,7 +1,7 @@
 // policy_draft.mjs — codex-security-policy 스킬의 결정론 부분(대상·스냅샷·출력 디렉터리·프롬프트·
 // 저장 전 검사·저장·마무리). 서브에이전트 호출과 사용자 질문은 부모 세션이 한다.
 //
-// 상류 `codex-security policy`(npm 0.2.0 = 매니페스트 0.1.95)의 호스트 쪽 동작을 **상류 dist 함수로**
+// 상류 `codex-security policy`(npm 0.4.0 = 매니페스트 0.1.95)의 호스트 쪽 동작을 **상류 dist 함수로**
 // 재현한다. 대상 해석·인벤토리·스냅샷 digest·보호 루트·출력 디렉터리 위생·stage 결과 파싱·diff
 // 미리보기는 전부 부트스트랩이 채택한 npm 패키지의 dist/ 에서 import 한 상류 함수가 한다
 // (공용 관문 ../../codex-security-scan/scripts/workflow_digest.mjs). 이 파일이 소유하는 것은
@@ -99,11 +99,17 @@ const OWNER_ANSWERS_NAME = "owner-answers.json";
 // 상류 영문 리터럴 (P6-KTD10)
 //
 // 출처: openai/codex-security  sdk/typescript/src/security-policy.ts  runSecurityPolicyStages()
-//   common 배열 762–783행, architecture 지시 816–818행, ownerContext 841–847행,
-//   threat_model 지시 909–913행, policy 지시 933–939행.
-// 복사 시점: 태그 npm-v0.2.0 = 커밋 4949af70fcfadff154f6e8fdf100faa5bf2f8169
-//   (npm @openai/codex-security 0.2.0 = 플러그인 매니페스트 0.1.95).
-// 이전 기준: 태그 npm-v0.1.29 = 커밋 6620a380f86c26d6c6428a660b2a90c3b5a1fa45(0.1.32 까지 변경 없음).
+//   common 배열 756–777행, architecture 지시 810–812행, ownerContext 835–841행,
+//   threat_model 지시 903–907행, policy 지시 927–933행.
+//   진행 표시 STAGES 는 sdk/typescript/src/security-policy-cli.ts 47–51행.
+// 복사 시점: 태그 npm-v0.4.0 = 커밋 559b492b22bb457aea8ff88c1bd41aacc2cec8bf
+//   (npm @openai/codex-security 0.4.0 = 플러그인 매니페스트 0.1.95 — 0.2.0 과 같은 매니페스트 버전).
+// 직전 기준: 태그 npm-v0.2.0 = 커밋 4949af70fcfadff154f6e8fdf100faa5bf2f8169.
+//   0.2.0 → 0.4.0 에서 바뀐 것: security-policy-cli.ts 진행 표시 STAGES 의 [1/3]·[2/3] 문구뿐이다
+//   (14c706bab #1416 fix(onboarding): improve policy onboarding for global installs — npm 0.3.0 에 포함).
+//   security-policy.ts 의 프롬프트 리터럴·오류 문구·매니페스트 필드는 0.2.0 과 같고, 바뀐 것은
+//   헬퍼 인자 조립(workbenchArgs)·zod 스키마 표기·diff 자식 프로세스 입력 오류 처리 같은 내부 구현이다.
+// 그 전 기준: 태그 npm-v0.1.29 = 커밋 6620a380f86c26d6c6428a660b2a90c3b5a1fa45(0.1.32 까지 변경 없음).
 //   0.2.0 에서 바뀐 것: policy 지시 첫 문장(위협 모델 파일 대신 매니페스트의 threatModel.content),
 //   threat_model 문서 이름(threatmodel.md)과 투영 방식, 매니페스트 status·threatModel 필드와 중간 저장.
 // TypeScript 원본은 npm 번들에 없다. 대신 컴파일된 dist/security-policy.js 에 같은 문자열이 남아
@@ -173,8 +179,8 @@ const UPSTREAM_POLICY_TAIL = [
 ];
 // security-policy-cli.ts STAGES (진행 표시용 — 부모가 사용자에게 보여 준다)
 const UPSTREAM_STAGE_LABELS = {
-  architecture: "[1/3] Understanding the system and its security boundaries",
-  threat_model: "[2/3] Building the source-backed threat model",
+  architecture: "[1/3] Reading the source",
+  threat_model: "[2/3] Writing the threat model",
   policy: "[3/3] Drafting SECURITY.md",
 };
 // 상류 오류 문구(security-policy.ts / api.ts). 사용자 보고에 원문으로 싣는다.
@@ -492,7 +498,7 @@ function renderLines(lines, values, marker) {
 }
 
 function ownerClarification(questions, answers) {
-  // security-policy.ts 848–866행 + security-policy-cli.ts 136–158행: 3개씩 묶어 묻고,
+  // security-policy.ts 816–834행 + security-policy-cli.ts 120–138행(0.4.0): 3개씩 묶어 묻고,
   // 답은 "질문\n답"을 빈 줄로 잇고, 답이 빈 묶음은 기록하지 않는다.
   const recorded = [];
   for (let index = 0; index < questions.length; index += OWNER_QUESTION_BATCH_SIZE) {
@@ -876,7 +882,7 @@ async function handlePrepare(args) {
 }
 
 // ---------------------------------------------------------------------------
-// 매니페스트·위협 모델 문서 (security-policy.ts 0.2.0 848–905행 manifest·saveManifest·saveModelDocument)
+// 매니페스트·위협 모델 문서 (security-policy.ts 0.4.0 842–899행 manifest·saveManifest·saveModelDocument, 0.2.0 과 같음)
 // ---------------------------------------------------------------------------
 function draftManifest(session, { createdAt, status, threatModelContent, reviewNotes }) {
   return {

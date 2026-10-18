@@ -764,7 +764,8 @@ RP cleanup --output-dir "$OUT11" >/dev/null
 # SEVERITY BLOCK (U8) — skills/codex-security-classify-severity
 #   상류 dist 함수(classifyScan…SeverityInternal + 가짜 Codex)로 분류·저장하고, 판정 자리만 고정 반환값
 #   (canned)으로 바꾼다. 검증 기준은 상류 TS 읽기 경로(readScanSeverityClassification — publish 가 쓰는
-#   함수)다. Python read-severity-classification 은 digest 를 거르지 않으므로 행 존재 확인에만 쓴다.
+#   함수)다. 워크벤치 read-severity-classification(0.2.0 Python / 0.4.0 Node 헬퍼)은 digest 를 거르지 않으므로
+#   행 존재 확인에만 쓴다. 저장 행 직접 확인(db_col)은 두 버전 모두 쓰는 finding_severity_assessments 를 본다.
 # ===========================================================================
 CLASSIFY="$SKILLS/codex-security-classify-severity/scripts/classify_severity.mjs"
 [ -f "$CLASSIFY" ] || bad "classify_severity.mjs 가 없다: $CLASSIFY"
@@ -842,7 +843,8 @@ db_col() { # db_col <finding_id> <column> — 저장 행의 값(없으면 빈 �
   PY -c 'import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); r=c.execute(f"SELECT {sys.argv[3]} FROM finding_severity_assessments WHERE finding_id=?",(sys.argv[2],)).fetchone(); print("" if r is None or r[0] is None else r[0])' "$SSTATE/workbench.sqlite3" "$1" "$2"
 }
 db_set() { # db_set <finding_id> <column> <value>
-  PY -c 'import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); c.execute(f"UPDATE finding_severity_assessments SET {sys.argv[3]}=? WHERE finding_id=?",(sys.argv[4],sys.argv[2])); c.commit()' "$SSTATE/workbench.sqlite3" "$1" "$2" "$3"
+  # npm 0.4.0(bf9a5bce9)부터 상류 읽기 경로는 스캔별 행(scan_severity_assessments)을 읽는다. 그 표가 있으면 같이 바꾼다.
+  PY -c 'import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); [c.execute(f"UPDATE {t} SET {sys.argv[3]}=? WHERE finding_id=?",(sys.argv[4],sys.argv[2])) for (t,) in c.execute("SELECT name FROM sqlite_master WHERE type=\"table\" AND name IN (\"finding_severity_assessments\",\"scan_severity_assessments\")").fetchall()]; c.commit()' "$SSTATE/workbench.sqlite3" "$1" "$2" "$3"
 }
 # canned <prepare.json> <findingId> <answer-json> — 그 finding 의 answerFile 에 고정 반환값을 쓴다
 canned() {

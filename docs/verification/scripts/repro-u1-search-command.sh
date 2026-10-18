@@ -1211,6 +1211,57 @@ else
   bad "H14a-4: threatModelMarkdown=$H14A4_GOT, 스키마 기대=$H14A4_WANT"
 fi
 
+# H14a-5. npm 패키지 version(npmVersion). 매니페스트 버전은 npm 0.1.26~0.4.0 이 모두 0.1.95 라서
+#         사람이 읽는 구분 축은 이 값뿐이다. 기대값은 package.json 을 직접 읽어 정한다.
+H14A5_WANT="$(PY - "$PLUGIN" <<'EOF'
+import json, pathlib, sys
+root = pathlib.Path(sys.argv[1])
+pkg = root.parent / "package.json"
+want = None
+if root.name == "_bundled_plugin" and pkg.is_file():
+    data = json.loads(pkg.read_text())
+    if data.get("name") == "@openai/codex-security":
+        want = data.get("version")
+print(want)
+EOF
+)"
+H14A5_GOT="$(jget "$RUN/h14a.json" 'd.get("npmVersion")')"
+if [ -n "$H14A5_WANT" ] && [ "$H14A5_GOT" = "$H14A5_WANT" ]; then
+  ok "H14a-5: npmVersion=$H14A5_GOT (package.json 과 같음)"
+else
+  bad "H14a-5: npmVersion=$H14A5_GOT, package.json 기대=$H14A5_WANT"
+fi
+
+# H14a-6. coverage 완결성 필드. npm 0.2.0 이하 coverage 스키마는 completeness 를 요구하고,
+#         npm 0.4.0 은 지웠다(상류 c380befb9 #1633). 기대값은 스키마를 직접 읽어 정한다.
+H14A6_WANT="$(PY -c 'import json,sys; print("completeness" in json.load(open(sys.argv[1]))["properties"])' "$PLUGIN/schemas/coverage.schema.json")"
+H14A6_GOT="$(jget "$RUN/h14a.json" 'd.get("coverageCompleteness")')"
+if [ -n "$H14A6_WANT" ] && [ "$H14A6_GOT" = "$H14A6_WANT" ]; then
+  ok "H14a-6: coverageCompleteness=$H14A6_GOT (coverage 스키마와 같음)"
+else
+  bad "H14a-6: coverageCompleteness=$H14A6_GOT, 스키마 기대=$H14A6_WANT"
+fi
+
+# H14a-7. 작업 목록 도우미. npm 0.4.0 은 generate_rank_input.py 의 bind-repo-scopes·
+#         copy-deep-review-input 을 지우고 런처 `--helper` 로 옮겼다(상류 f894583a3 #1607).
+for H14A7_CMD in bind-repo-scopes copy-deep-review-input; do
+  if grep -q "\"$H14A7_CMD\"" "$PLUGIN/scripts/generate_rank_input.py" 2>/dev/null; then
+    H14A7_KIND=python
+  else
+    H14A7_KIND=node-helper
+  fi
+  case "$H14A7_CMD" in
+    bind-repo-scopes) H14A7_KEY=bindRepoScopes ;;
+    *) H14A7_KEY=copyDeepReviewInput ;;
+  esac
+  H14A7="$(jget "$RUN/h14a.json" 'd.get("'"$H14A7_KEY"'") == {"available": True, "kind": "'"$H14A7_KIND"'", "reason": None}')"
+  if [ "$H14A7" = "True" ]; then
+    ok "H14a-7: $H14A7_KEY.kind=$H14A7_KIND"
+  else
+    bad "H14a-7: $H14A7_KEY 기대 kind=$H14A7_KIND, 실제 $(jget "$RUN/h14a.json" 'd.get("'"$H14A7_KEY"'")')"
+  fi
+done
+
 # H14b. 헬퍼 파일이 없는 플러그인 사본(상류 소스 체크아웃 형상)이면 불가 + "헬퍼 파일 없음".
 #       sdk 도 null 이어야 한다(형제 dist/ 가 없다).
 NOHELPER="$RUN/src-checkout/plugins/codex-security"
@@ -1283,6 +1334,29 @@ else
   bad "H14b-3: $(jget "$RUN/h14b3.json" 'd.get("candidateNormalizer")')"
 fi
 rm -f "$NOHELPER/scripts/normalize_candidates.py"
+
+# H14b-8. 같은 헬퍼 없는 사본: 작업 목록 도우미는 불가, npmVersion 은 null(npm 레이아웃 아님),
+#         coverage 스키마가 없으면 coverageCompleteness 는 true(0.2.0 이하 필수 필드를 쓰는 쪽).
+H14B8="$(jget "$RUN/h14b.json" 'all((d.get(k) or {}).get("available") is False and (d.get(k) or {}).get("kind") is None and str((d.get(k) or {}).get("reason") or "").startswith(n + " 불가") for k, n in (("bindRepoScopes", "bind-repo-scopes"), ("copyDeepReviewInput", "copy-deep-review-input"))) and d.get("npmVersion") is None and d.get("coverageCompleteness") is True')"
+if [ "$H14B8" = "True" ]; then
+  ok "H14b-8: 도우미 불가·npmVersion=null·coverageCompleteness=true(스키마 없음)"
+else
+  bad "H14b-8: $(jget "$RUN/h14b.json" '[d.get("bindRepoScopes"), d.get("copyDeepReviewInput"), d.get("npmVersion"), d.get("coverageCompleteness")]')"
+fi
+# H14b-9. 헬퍼가 없어도 generate_rank_input.py 에 하위 명령이 있으면 python 이다(npm 0.2.0 소스 형상).
+#         completeness 가 없는 coverage 스키마면 coverageCompleteness 는 false 다(npm 0.4.0 형상).
+mkdir -p "$NOHELPER/schemas"
+printf 'bind = subparsers.add_parser(\n    "bind-repo-scopes",\n)\n' >"$NOHELPER/scripts/generate_rank_input.py"
+printf '{"properties": {"deferred": {}}}\n' >"$NOHELPER/schemas/coverage.schema.json"
+NBOOT_PLUGIN="$NOHELPER" nboot "$RUN/h14b9.json" "$NODE_DIR:$EMPTY_BIN"
+expect_exit 0 "$?" "H14b-9 bind-repo-scopes 하위 명령만 있는 사본으로 부트스트랩"
+H14B9="$(jget "$RUN/h14b9.json" 'd.get("bindRepoScopes") == {"available": True, "kind": "python", "reason": None} and (d.get("copyDeepReviewInput") or {}).get("kind") is None and d.get("coverageCompleteness") is False')"
+if [ "$H14B9" = "True" ]; then
+  ok "H14b-9: 하위 명령별로 판정(bind=python, copy=불가)·completeness 없는 스키마는 false"
+else
+  bad "H14b-9: $(jget "$RUN/h14b9.json" '[d.get("bindRepoScopes"), d.get("copyDeepReviewInput"), d.get("coverageCompleteness")]')"
+fi
+rm -rf "$NOHELPER/schemas" "$NOHELPER/scripts/generate_rank_input.py"
 
 # H14c. PATH 의 `node` 가 대상 저장소 안이면 거부하고 다음 후보를 쓴다.
 mkdir -p "$NT/node_modules/.bin"

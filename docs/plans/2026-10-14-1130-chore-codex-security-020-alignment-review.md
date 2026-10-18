@@ -188,6 +188,9 @@ TypeScript 이관, `triage-finding/evals` 삭제, 의존성 범프.
 상태이므로 픽스처 깊이를 올리거나 단언 방식을 바꿔야 한다. `v0.1.32` 검증 기록에는 통과로 적혀 있으니
 당시 Python 버전을 확인한다.
 
+> **해소(2026-10-17).** 원인은 `json.loads`가 `repr`보다 먼저 재귀 한도에 걸리는 것이었다. Q2를 Q2a~Q2c로
+> 나눠 고쳤다. `2026-10-17-1430-chore-codex-security-040-alignment.md` §4 참고.
+
 ## 7. 실측 로그
 
 - 설치: `/tmp/cs020-g`(전역 prefix), `/tmp/cs020-npm`(로컬). npm 래퍼 `/tmp/cs020-bin/npm`.
