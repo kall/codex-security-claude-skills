@@ -12,7 +12,7 @@ description: >-
 
 npm CLI의 `codex-security policy`는 OpenAI 모델을 세 번 호출해 SECURITY.md 초안을 만든다.
 구독 사용자는 이 명령을 쓸 수 없다. 이 스킬은 모델 호출 세 번을 **읽기 전용 격리 서브에이전트**로
-바꾸고, 나머지 호스트 동작은 상류 코드로 재현한다. 기준 실측 버전은 **npm 0.2.0(매니페스트 0.1.95)**다.
+바꾸고, 나머지 호스트 동작은 상류 코드로 재현한다. 기준 실측 버전은 **npm 0.4.0(매니페스트 0.1.95)**다.
 
 - **초안만 만든다(P6-KTD9).** CLI `policy`와 같다. 상류 plugin `define-security-policy/SKILL.md`
   4절(승인 후 저장소 편집)은 CLI에 없는 단계라 이 스킬 범위 밖이다(후속 작업으로 연기). 사용자가
@@ -35,9 +35,11 @@ npm CLI의 `codex-security policy`는 OpenAI 모델을 세 번 호출해 SECURIT
   부록 4번) 상류 호출로 바꿨다. 재구현하면 링크·Git 메타데이터·숫자 표기 규칙이 조용히 어긋난다.
   상류 소스 체크아웃에는 `dist/`가 없으므로 이 스킬을 쓸 수 없다.
 - **단계 프롬프트는 영문 리터럴로 고정한다(P6-KTD10).** 원문은 `sdk/typescript/src/security-policy.ts`
-  `runSecurityPolicyStages()`(762–939행)이고, 태그 `npm-v0.2.0` = 커밋
-  `4949af70fcfadff154f6e8fdf100faa5bf2f8169`에서 복사했다. 이전 기준은 `npm-v0.1.29`(커밋 `6620a380`)였고
-  `npm-v0.1.32`까지 바뀌지 않았다. 0.2.0에서는 policy 단계 첫 문장이 위협 모델 파일 대신 매니페스트의
+  `runSecurityPolicyStages()`(756–933행)와 `security-policy-cli.ts`의 진행 표시 `STAGES`(47–51행)이고,
+  태그 `npm-v0.4.0` = 커밋 `559b492b22bb457aea8ff88c1bd41aacc2cec8bf`에서 복사했다. 직전 기준
+  `npm-v0.2.0`(커밋 `4949af70`)과 비교하면 진행 표시 `[1/3]`·`[2/3]` 문구만 바뀌었다
+  (`14c706bab` #1416, npm 0.3.0부터). 단계 프롬프트·오류 문구·매니페스트 필드는 같다. 그 전 기준은 `npm-v0.1.29`(커밋
+  `6620a380`)였고 `npm-v0.1.32`까지 바뀌지 않았다. 0.2.0에서는 policy 단계 첫 문장이 위협 모델 파일 대신 매니페스트의
   `threatModel.content`를 읽으라고 바뀌었다. **npm 0.1.32 이하 설치본에서도 이 스킬은 0.2.0 흐름을 쓴다.**
   그래서 policy 단계 첫 문장이 그 버전의 상류 프롬프트와 다르고(서브에이전트는 매니페스트의 모델을 읽으므로
   초안 작성은 같게 동작한다), finalizer에 `--write-threat-model`이 없어 `threatmodel.md`가 생기지 않는다
@@ -77,7 +79,7 @@ Git worktree 루트**로 명시한다.
 | 조건 | 사용자 안내(한국어) |
 | --- | --- |
 | `ok: false` | `stage`·`error`를 그대로 전한다 |
-| `securityMdHelper.available: false` | `securityMdHelper.reason`을 전한다. "헬퍼 파일 없음"이면 상류 소스 체크아웃이다 — `npm install -g @openai/codex-security`(npm 0.1.27 이상, 권장 0.2.0) 설치본을 쓰라고 안내 |
+| `securityMdHelper.available: false` | `securityMdHelper.reason`을 전한다. "헬퍼 파일 없음"이면 상류 소스 체크아웃이다 — `npm install -g @openai/codex-security`(npm 0.1.27 이상, 권장 0.4.0) 설치본을 쓰라고 안내 |
 | `sdk.dist: null` | `sdk.reason`을 전한다. 상류 함수가 든 `dist/`가 없다 — 위와 같은 설치 안내 |
 | `node: null` | "신뢰할 수 있는 Node 없음"과 `securityMdHelper.reason` |
 
@@ -109,7 +111,7 @@ env -i <trusted_child_env> <node> <policy_script> <하위 명령> …
 - 출력은 JSON 1개다(`prompt`만 원문 텍스트). exit 0 = 성공, 2 = 거부·실패(`error`와 상류 원문
   `upstreamError`가 실림), 1 = 사용법 오류.
 
-**시작 고지**: 플러그인 경로와 `pluginVersion`(기준 0.1.95, npm 0.2.0 — 다르면 "플러그인 버전이
+**시작 고지**: 플러그인 경로와 `pluginVersion`(기준 0.1.95, npm 0.4.0 — 다르면 "플러그인 버전이
 기준과 다름 — 상류 계약이 바뀌었을 수 있음" 경고), 대상 저장소, 컴포넌트, 그리고 **"이 스킬은
 저장소 파일을 바꾸지 않는다"**를 알린다.
 
@@ -145,7 +147,7 @@ env -i <trusted_child_env> <node> <policy_script> prepare --sdk-dist <sdk_dist> 
 ## 2단계 — 세 단계 서브에이전트
 
 단계 순서는 `architecture` → `threat_model` → `policy`다. 단계마다 `stageLabels`의 상류 진행 문구
-(`[1/3] Understanding the system and its security boundaries` 등)를 사용자에게 보여 준다.
+(`[1/3] Reading the source` 등. 0.2.0까지는 `[1/3] Understanding the system and its security boundaries`)를 사용자에게 보여 준다.
 
 1. **프롬프트 생성**:
    ```bash
@@ -182,7 +184,7 @@ env -i <trusted_child_env> <node> <policy_script> prepare --sdk-dist <sdk_dist> 
    env -i <trusted_child_env> <node> <policy_script> save-stage --output-dir <outputDir 인용본> --stage <단계> --python <python_command>
    ```
 
-   threat_model 단계는 문서를 직접 쓰지 않는다(상류 0.2.0과 같다). 먼저 `policy-draft.json`에
+   threat_model 단계는 문서를 직접 쓰지 않는다(상류 0.2.0 이후와 같다). 먼저 `policy-draft.json`에
    `status`(`threat_model_ready`, blocked면 `blocked`)와 `threatModel`(`format: "markdown"`, `content`,
    `scope`, `origin: "generated"`)을 쓰고, 플러그인 finalizer(`finalize_scan_contract.py
    --write-threat-model`)로 `threatmodel.md`를 투영한다. `--python`은 이 투영에 쓴다. 투영이 실패하면
@@ -309,7 +311,9 @@ Claude Code 서브에이전트이므로 그 사실을 그대로 적는다. `reas
 2. diff 미리보기와 소유자 검토 목록. 검토 목록의 새 제외 항목·수용 위험·심각도 변경은 **소유자 승인이
    필요한 결정**이다. 생성된 위협 시나리오는 승인도, 확정된 취약점도 아니다.
 3. 미해결로 남은 소유자 질문.
-4. 적용 방법: 초안을 검토한 뒤 사용자가 `targetPath`로 직접 복사한다. 승인 후 저장소에 적용하는 단계는
+4. 적용 방법: 초안을 검토한 뒤 사용자가 **`SECURITY.md`만** `targetPath`로 직접 복사한다(상류 0.4.0
+   CLI 끝 문구 "Review the draft, then copy only SECURITY.md to the Policy target shown."과 같다 —
+   아키텍처·위협 모델·매니페스트는 복사하지 않는다). 승인 후 저장소에 적용하는 단계는
    이 스킬 범위 밖이다(후속 작업으로 연기).
 5. **비동등성 고지**: 상류 `policy`는 모델을 OS 수준 권한 프로필(읽기 경로 한정, Git 메타데이터 deny,
    네트워크 차단, 쓰기 불가)로 실행한다. 이 스킬은 서브에이전트 도구 제한, 프롬프트 수준 읽기 범위

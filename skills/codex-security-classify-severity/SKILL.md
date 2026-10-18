@@ -10,9 +10,9 @@ description: >-
 
 # codex-security-classify-severity — 루브릭 기반 심각도 재분류
 
-npm 0.1.29 CLI의 `codex-security classify-severity --rubric`은 finding마다 OpenAI 모델을 한 번 호출한다.
+상류 npm CLI의 `codex-security classify-severity --rubric`은 finding마다 OpenAI 모델을 한 번 호출한다.
 구독 사용자는 이 명령을 쓸 수 없다. 이 스킬은 **모델 호출 자리만** 도구 없는 격리 서브에이전트로 바꾸고,
-나머지는 모두 상류 코드로 실행한다. 기준 실측 버전은 **npm 0.2.0(매니페스트 0.1.95)**다.
+나머지는 모두 상류 코드로 실행한다. 기준 실측 버전은 **npm 0.4.0(매니페스트 0.1.95)**다. npm 0.2.0도 같은 스크립트로 동작한다(`repro-u8` S 블록 확인).
 
 - **스캔 산출물은 바꾸지 않는다.** 봉인된 `scan-manifest.json`·`findings.json`·`coverage.json`은 그대로다.
   상류와 같이 `severity-classification.json` 한 파일만 스캔 디렉터리에 원자적으로 쓴다.
@@ -37,8 +37,18 @@ npm 0.1.29 CLI의 `codex-security classify-severity --rubric`은 finding마다 O
   늘어 위 행 번호가 1씩 밀렸고 내용은 같다. 태그 `npm-v0.2.0`(커밋 `4949af70fcfadff154f6e8fdf100faa5bf2f8169`)에서는 세 파일 모두 리팩터만 있었다(옵션 타입 상속,
   `findingEntry`·`workbenchEnvironment` 추출). 그래서 행 번호가 바뀌었다 — `classify-scan-severity.ts`는 98–150행,
   `scan-comparison.ts`의 `options.codex` 분기는 528·556·568행이다. 주입 경로와 지시 8문단은 같다(`repro-u8` S12).
+  태그 `npm-v0.4.0`(커밋 `559b492b22bb457aea8ff88c1bd41aacc2cec8bf`)에서도 주입 경로와 지시 8문단은 같다.
+  행 번호만 바뀌었다 — `classify-severity.ts` 36·102·164–174행, `scan-comparison.ts` 149·540–541·688–708행,
+  `classify-scan-severity.ts` 98·125행. 스키마는 `z.strictObject`·`SCAN_SEVERITIES`로 표기만 바뀌었다(같은 7키,
+  같은 레벨 5개). 지식 베이스는 `readKnowledgeBaseDocuments`로 읽는다.
+- **0.3.0의 저장 계층 변경**(상류 커밋 `bf9a5bce9` "move severity persistence to Node"): 워크벤치 `begin`/`save`/
+  `read-severity-classification`이 Python `workbench_severity.py`에서 플러그인 Node 헬퍼(`mcp/helpers.mjs`)로
+  옮겨졌다. `begin`은 이제 캐시 행(`finding_severity_assessments`)을 스캔별 행(`scan_severity_assessments`)으로
+  복사하고 스캔별 행을 돌려준다. `save`도 두 표에 같이 쓰고, publish 읽기 경로는 스캔별 행을 읽는다.
+  `SeverityStore.checkpoint(scanId, findingIds, reprocess)` 호출 형태는 같아서 이 스킬은 버전을 가리지 않고
+  상류 `SeverityStore`를 그대로 부른다.
 - **상류가 하는 일**(재구현 없음): 스캔 해석과 봉인 확인, finding 선택(`selectClassificationFindings`),
-  루브릭·지식 베이스 읽기(`prepareKnowledgeBase`), 세 digest(`workflowDigest`), 저장 평가 재사용 규칙,
+  루브릭·지식 베이스 읽기(0.2.0 `prepareKnowledgeBase` / 0.4.0 `readKnowledgeBaseDocuments`), 세 digest(`workflowDigest`), 저장 평가 재사용 규칙,
   프롬프트 조립, 7키 strict 스키마와 결정 일관성 검사, 워크벤치 `begin`/`save`(`SeverityStore`),
   `severity-classification.json` 원자적 기록, 루브릭 없는 상속 경로(CLI).
 - **이 스킬이 하는 일**(우리 계약): 판정을 서브에이전트로 넘기려고 흐름을 `prepare` → 판정 → `apply`로
@@ -108,7 +118,7 @@ env -i <trusted_child_env> <node> <classify_script> <하위 명령> --sdk-dist <
 - 출력은 JSON 1개다(`prompt`만 원문 텍스트). exit 0 = 성공, 2 = 거부·실패(`error`와 상류 원문
   `upstreamError`가 실림), 1 = 사용법 오류.
 
-**시작 고지**: 플러그인 경로와 `pluginVersion`(기준 0.1.95, npm 0.2.0 — 다르면 "플러그인 버전이 기준과
+**시작 고지**: 플러그인 경로와 `pluginVersion`(기준 0.1.95, npm 0.4.0 — 다르면 "플러그인 버전이 기준과
 다름 — 상류 계약이 바뀌었을 수 있음" 경고), 스캔 입력, 루브릭 유무, 그리고 **"스캔 산출물과 저장소 파일은
 바꾸지 않고 `severity-classification.json`과 워크벤치 평가만 쓴다"**를 알린다.
 
@@ -145,9 +155,11 @@ env -i <trusted_child_env> <node> <classify_script> prepare --sdk-dist <sdk_dist
 ```
 
 `prepare`는 **워크벤치에 아무것도 쓰지 않는다.** 상류 분류를 가짜 Codex(프롬프트 기록)와 읽기 전용
-체크포인트로 한 번 돌린다. 저장 평가는 `scripts/saved_assessments.py`가 읽기 전용 연결로 읽고, 상류
-`matchingAssessments` 규칙(루브릭·지식 베이스 digest가 같은 행만)으로 거른다. 상류 `begin`은 스캔 선택 행을
-덮어쓰는 쓰기라서 여기서 부르지 않는다. 그러면 사용자가 판정 단계에서 멈춰도 이전 분류가 그대로 남는다.
+체크포인트로 한 번 돌린다. 상류 `begin`은 스캔 선택 행을 덮어쓰는(0.3.0부터는 스캔별 행 복사도 하는) 쓰기라서
+실제 워크벤치 DB에는 부르지 않는다. 대신 상류 플러그인 `scripts/snapshot_sqlite.py`로 DB를 상태 디렉터리 안의
+임시 사본(`.severity-readonly-XXXXXX`, 0700)에 복사하고, 그 사본에 상류 `SeverityStore.checkpoint().load`를
+그대로 부른다. 재사용 규칙(루브릭·지식 베이스 digest가 같은 행만, 0.3.0부터의 스캔별 행 우선)은 설치된 상류
+버전의 것이 그대로 쓰인다. 사본은 끝나면 지운다. 그러면 사용자가 판정 단계에서 멈춰도 이전 분류가 그대로 남는다.
 
 결과 JSON에서 쓰는 값:
 

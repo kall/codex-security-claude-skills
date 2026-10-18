@@ -44,6 +44,8 @@ export const UPSTREAM_MODULES = Object.freeze([
   // U8 심각도 재분류: 분류·체크포인트·결과 파일·읽기 경로를 상류 함수 그대로 쓴다.
   "classify-severity.js",
   "classify-scan-severity.js",
+  // prepare 의 읽기 전용 load: 워크벤치 DB 사본에 상류 SeverityStore.checkpoint().load 를 그대로 부른다.
+  "severity-store.js",
   "saved-scan.js",
   "contract.js",
 ]);

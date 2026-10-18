@@ -1,7 +1,7 @@
 // classify_severity.mjs — codex-security-classify-severity 스킬의 결정론 부분.
 // 서브에이전트 판정(finding당 1회)과 사용자 보고는 부모 세션이 한다.
 //
-// 상류 `codex-security classify-severity`(npm 0.1.29 = 매니페스트 0.1.95)를 **상류 dist 함수 그대로** 돌린다.
+// 상류 `codex-security classify-severity`(기준 npm 0.4.0, 0.2.0 도 지원)를 **상류 dist 함수 그대로** 돌린다.
 // 모델 호출 자리(runReadOnlyCodex → startReadOnlyCodexThread 의 `options.codex`)에만 가짜 Codex 를 넣는다.
 //   근거(주입 가능성): sdk/typescript/src/classify-severity.ts
 //     36행  ClassifySeverityOptions.codex ("@internal Test client for the shared read-only runtime")
@@ -14,14 +14,18 @@
 //   sdk/typescript/src/classify-scan-severity.ts 101–153행  classifyScanDirectorySeverityInternal 이
 //     같은 options 로 classifySeverityInternal 을 부르고 SeverityStore 체크포인트·원자적 파일 기록을 한다.
 //   (태그 npm-v0.1.29 = 커밋 6620a380f86c26d6c6428a660b2a90c3b5a1fa45 에서 확인)
+//   재대조(태그 npm-v0.4.0 = 커밋 559b492b22bb457aea8ff88c1bd41aacc2cec8bf): 주입 구조는 같고 행 번호만 바뀌었다 —
+//     classify-severity.ts 36행 codex, 102행 classifySeverityInternal, 164–174행 runReadOnlyCodex 호출
+//     scan-comparison.ts 149행 ReadOnlyCodexOptions.codex, 540–541행 options.codex.startThread, 688–708행 runReadOnlyCodex
+//     classify-scan-severity.ts 98행 classifyScanDirectorySeverityInternal, 125행 store.checkpoint(…)
 //
 // 그래서 이 파일이 **소유하지 않는 것**(상류 코드가 한다): 스캔 해석·봉인 확인, finding 선택 규칙,
-// 루브릭·지식 베이스 읽기(prepareKnowledgeBase), rubric/knowledgeBase/finding digest(workflowDigest),
+// 루브릭·지식 베이스 읽기(0.2.0 prepareKnowledgeBase / 0.4.0 readKnowledgeBaseDocuments), rubric/knowledgeBase/finding digest(workflowDigest),
 // 저장 평가 재사용 규칙, 상류 프롬프트 조립, 7키 strict 스키마와 일관성 검사, 워크벤치 begin/save,
 // severity-classification.json 원자적 기록, 루브릭 없는 상속 경로(CLI 위임).
 // 이 파일이 **소유하는 것**(우리 계약): 판정을 서브에이전트로 넘기는 두 단계 분할(prepare → apply),
 // 난수 표식 신뢰/미신뢰 구획, 프롬프트 크기 상한, 텍스트 전용 지식 베이스, 1회 재판정 규칙,
-// prepare 를 읽기 전용으로 두는 규칙(saved_assessments.py).
+// prepare 를 읽기 전용으로 두는 규칙(워크벤치 DB 사본에 상류 load — readOnlyLoad).
 //
 // 실행 형태(P6-KTD6) — 셰뱅 없음, 반드시:
 //   env -i <trusted_child_env> <node> <이 파일> <subcommand> --key value …
@@ -45,9 +49,8 @@
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { constants as fsConstants } from "node:fs";
-import { chmod, lstat, mkdir, open, readFile, readdir, realpath, rename, rm } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, open, readFile, readdir, realpath, rename, rm } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 
 import {
   GatewayError,
@@ -64,9 +67,6 @@ import {
   stripSingleFence,
 } from "../../codex-security-scan/scripts/workflow_digest.mjs";
 
-const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
-const SAVED_ASSESSMENTS_SCRIPT = join(SCRIPT_DIR, "saved_assessments.py");
-
 // ---------------------------------------------------------------------------
 // 상수
 // ---------------------------------------------------------------------------
@@ -78,6 +78,8 @@ const MAX_ANSWER_BYTES = 256 * 1024;
 const WORK_CATEGORY = "severity-work";
 const WORK_PREFIX = "codex-security-severity-";
 const SESSION_NAME = "session.json";
+// 읽기 전용 load 가 상태 디렉터리 안에 잠시 만드는 워크벤치 DB 사본 디렉터리(readOnlyLoad 가 지운다).
+const SNAPSHOT_PREFIX = ".severity-readonly-";
 const DOCUMENT_ONLY_TEXT = new Set([".pdf", ".docx"]);
 
 // ---------------------------------------------------------------------------
@@ -89,6 +91,9 @@ const DOCUMENT_ONLY_TEXT = new Set([".pdf", ".docx"]);
 //   (npm @openai/codex-security 0.1.29 = 플러그인 매니페스트 0.1.95).
 // 재대조: 태그 npm-v0.1.32 = 커밋 7c19cce7224af29628cd10c218444d5c0e8fdd1c — classify-severity.ts 변경 없음.
 // 재대조: 태그 npm-v0.2.0 = 커밋 4949af70fcfadff154f6e8fdf100faa5bf2f8169 — 리팩터만(지시 8문단은 184–191행, 같음).
+// 재대조: 태그 npm-v0.4.0 = 커밋 559b492b22bb457aea8ff88c1bd41aacc2cec8bf — 지시 8문단은 166–173행, 같음.
+//   바뀐 것은 스키마 표기(z.strictObject·SCAN_SEVERITIES — 같은 7키·같은 레벨 5개), 지식 베이스 읽기 함수
+//   (readKnowledgeBaseDocuments), runReadOnlyCodex 에 command 표식 추가뿐이다. 오류 문구(UPSTREAM_MESSAGES)도 같다.
 // 이 리터럴은 프롬프트를 **만드는 데 쓰지 않는다.** 프롬프트는 상류 런타임이 조립한 원문을 가짜 Codex 로
 // 받아 쓴다. 리터럴은 받은 원문의 지시부가 우리가 검토한 문장과 **문자 단위로 같은지** 확인하는 데만
 // 쓴다. 다르면(상류가 문장을 바꾸거나 지시부에 데이터를 넣기 시작하면) 신뢰 구획에 무엇이 들어가는지
@@ -381,27 +386,46 @@ function selectFindings(scanSeverity, findings, findingIds) {
   return scanSeverity.selectClassificationFindings(findings, findingIds);
 }
 
-/** severity-store.ts matchingAssessments(142–163행)와 같은 규칙. 스키마 파서는 상류 export 를 쓴다. */
-function matchingAssessments(classifySeverity, stored, result) {
-  return classifySeverity.severityClassificationSchema.parse({
-    ...result,
-    assessments: stored
-      .filter(
-        (row) => row.rubricSha256 === result.rubricSha256 && row.knowledgeBaseSha256 === result.knowledgeBaseSha256,
-      )
-      .map(({ assessedAt: _assessedAt, rubricSha256: _rubric, knowledgeBaseSha256: _knowledge, ...assessment }) => assessment),
-  }).assessments;
-}
-
-async function savedAssessmentRows(sdkDist, environment, python, findingIds) {
+/**
+ * prepare·apply 사전 확인용 **읽기 전용** load.
+ *
+ * 왜 필요한가: 상류 `SeverityStore.checkpoint().load` 는 워크벤치 `severity-classification` 의 `begin` 으로
+ * 저장 행을 받는다. `begin` 은 스캔의 선택 행(`scan_severity_classifications`)을 새 선택·digest 로 덮어쓰고
+ * (npm 0.4.0 부터는) 캐시 행을 스캔 행(`scan_severity_assessments`)으로 복사하는 **쓰기**다. prepare 가 이것을
+ * 실제 DB 에 부르면, 사용자가 서브에이전트 단계에서 멈췄을 때 이전의 완료된 분류가 publish 에서
+ * `incomplete` 로 바뀐다. 실제 `begin`·`save` 는 apply 에서 상류 코드(SeverityStore)가 한다.
+ *
+ * 재구현하지 않는다: 워크벤치 DB 를 상류 플러그인 `scripts/snapshot_sqlite.py`(읽기 전용 원본 연결 +
+ * SQLite backup)로 임시 상태 디렉터리에 복사하고, 그 사본을 가리키는 환경으로 상류
+ * `SeverityStore.checkpoint(scanId, findingIds, reprocess).load(result)` 를 **그대로** 부른다. 그래서 begin
+ * 조회(0.2.0 Python `workbench_severity` / 0.4.0 Node `mcp/helpers.mjs`)·digest 필터(matchingAssessments ·
+ * matchingClassification)·스캔 행 우선 규칙은 설치된 상류 버전의 것이 그대로 쓰인다. 사본은 끝나면 지운다.
+ *   근거: sdk/typescript/src/severity-store.ts checkpoint().load (태그 npm-v0.4.0 = 커밋
+ *   559b492b2 에서 확인. 0.2.0 → 0.4.0 은 bf9a5bce9 "move severity persistence to Node" 로 begin 구현이
+ *   Python 에서 Node 로 옮겨졌고, load 의 호출 형태 checkpoint(scanId, findingIds, reprocess) 는 같다)
+ */
+async function readOnlyLoad(sdkDist, { environment, python, scanDir, scanId, findingIds, reprocess }, result) {
+  if (reprocess) return []; // 상류 load 도 reprocess 면 [] 를 돌려준다
   const runtime = await loadUpstream(sdkDist, "runtime.js");
-  const stdout = await runPython(
-    python,
-    [SAVED_ASSESSMENTS_SCRIPT, await runtime.bundledPluginRoot(), runtime.codexSecurityStateDirectory(environment)],
-    JSON.stringify({ findingIds }),
-    environment,
-  );
-  return JSON.parse(stdout).assessments;
+  const severityStore = await loadUpstream(sdkDist, "severity-store.js");
+  const stateDirectory = runtime.codexSecurityStateDirectory(environment);
+  const database = join(stateDirectory, "workbench.sqlite3");
+  // 상류 SeverityStore.read 와 같이 DB 가 없으면 저장 평가도 없다(사본을 만들지 않는다).
+  if ((await lstat(database).catch(() => null)) === null) return [];
+  const snapshotDir = await mkdtemp(join(stateDirectory, SNAPSHOT_PREFIX));
+  try {
+    await chmod(snapshotDir, 0o700);
+    await runPython(
+      python,
+      [join(await runtime.bundledPluginRoot(), "scripts", "snapshot_sqlite.py"), database, join(snapshotDir, "workbench.sqlite3")],
+      "",
+      environment,
+    );
+    const store = new severityStore.SeverityStore({ ...environment, CODEX_SECURITY_STATE_DIR: snapshotDir }, scanDir);
+    return await store.checkpoint(scanId, findingIds, false).load(result);
+  } finally {
+    await rm(snapshotDir, { recursive: true, force: true });
+  }
 }
 
 function commonArgs(args) {
@@ -419,15 +443,16 @@ function selectionArgs(args) {
 
 /**
  * 저장 없이 상류 분류를 한 번 돌린다(prepare 와 apply 사전 확인이 같이 쓴다).
- * 체크포인트는 읽기 전용(load: saved_assessments.py + 상류 규칙 필터)·무저장(save)이고,
+ * 체크포인트는 읽기 전용(load: 워크벤치 DB 사본에 상류 SeverityStore load — readOnlyLoad)·무저장(save)이고,
  * 가짜 Codex 는 상류가 조립한 프롬프트와 출력 스키마를 기록한 뒤 버릴 자리값을 돌려준다.
  * 상류 classifySeverityInternal 이 digest 계산·재사용 판단·프롬프트 조립을 그대로 한다.
  */
-async function dryRunCapture(sdkDist, { environment, python, findings, rubricPath, knowledgeBasePaths, reprocess }) {
+async function dryRunCapture(
+  sdkDist,
+  { environment, python, scanDir, scanId, findings, rubricPath, knowledgeBasePaths, reprocess },
+) {
   const classifySeverity = await loadUpstream(sdkDist, "classify-severity.js");
-  const stored = reprocess
-    ? []
-    : await savedAssessmentRows(sdkDist, environment, python, findings.map((finding) => finding.findingId));
+  const findingIds = findings.map((finding) => finding.findingId);
   const captured = [];
   let outputSchema = null;
   const recorder = {
@@ -454,7 +479,8 @@ async function dryRunCapture(sdkDist, { environment, python, findings, rubricPat
     },
   };
   const checkpoint = {
-    load: async (result) => (reprocess ? [] : matchingAssessments(classifySeverity, stored, result)),
+    load: async (result) =>
+      readOnlyLoad(sdkDist, { environment, python, scanDir, scanId, findingIds, reprocess }, result),
     save: async () => undefined,
   };
   const result = await classifySeverity.classifySeverityInternal(
@@ -499,6 +525,8 @@ async function handlePrepare(args) {
   const { captured, outputSchema, result: dryRun } = await dryRunCapture(sdkDist, {
     environment,
     python,
+    scanDir: scan.scanDir,
+    scanId: scan.scanId,
     findings,
     rubricPath,
     knowledgeBasePaths,
@@ -695,6 +723,8 @@ async function handleApply(args) {
   const check = await dryRunCapture(session.sdkDist, {
     environment,
     python: session.python,
+    scanDir: scanNow.scanDir,
+    scanId: scanNow.scanId,
     findings: selectFindings(scanSeverityCheck, scanNow.findings, session.findingIds ?? undefined),
     rubricPath: session.rubricPath,
     knowledgeBasePaths: session.knowledgeBasePaths,
@@ -867,7 +897,7 @@ async function handleInherit(args) {
     throw new GatewayError(
       "--sdk-cli 가 없다. 부트스트랩 결과의 sdk.cli 가 null 이면 CLI 가 없는 설치(상류 소스 체크아웃 등)다. " +
         "루브릭 없는 분류는 상류 CLI 에 위임하므로 진행할 수 없다 — `npm install -g @openai/codex-security` " +
-        "(npm 0.1.26 이상, 권장 0.2.0) 설치본으로 부트스트랩을 다시 실행하라.",
+        "(npm 0.1.26 이상, 권장 0.4.0) 설치본으로 부트스트랩을 다시 실행하라.",
     );
   }
   const sdkCli = await realpath(args.sdkCli);
