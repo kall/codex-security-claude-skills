@@ -13,8 +13,8 @@
 - `codex-security-scan-match/` — 스캔 간 파인딩 매칭 (`scripts/validate_matches.py`)
 - `codex-security-deep-scan/` — 다중 패스 심층 스캔의 축소판(deep-lite)
 - `codex-security-policy/` — SECURITY.md 초안 작성, 저장소 무변경 (`scripts/policy_draft.mjs`)
-- `codex-security-classify-severity/` — 루브릭 기반 심각도 재분류 (`scripts/classify_severity.mjs`,
-  `scripts/saved_assessments.py`)
+- `codex-security-classify-severity/` — 루브릭 기반 심각도 재분류 (`scripts/classify_severity.mjs`. 저장 평가는
+  상류 `scripts/snapshot_sqlite.py`로 만든 워크벤치 DB 임시 사본에서 상류 `SeverityStore`로 읽는다)
 - `install.sh` — 전역 스킬 디렉터리로 설치하는 스크립트
 
 > 스킬 9종의 전체 설치·사용 가이드(사전 요구사항, 환경변수, 스킬별 사용 예시, 워크벤치 이력 통합,
@@ -49,8 +49,9 @@ bash skills/install.sh --link --force   # 기존 설치본 덮어쓰기
 따라서 **업스트림 OpenAI 지원 대상이 아니다.** 스킬 실행 중 발생하는 문제는 이 저장소에서 다룬다.
 
 재사용하는 자산은 번들 플러그인의 결정적(deterministic) 부분 — 워크벤치 스크립트, 계약 검증,
-리포트/SARIF 생성, JSON 스키마, npm 배포본 `dist/`가 export하는 결정론 함수(digest·정책 스냅샷·
-심각도 분류 저장) — 이며, TypeScript SDK/CLI 코드는 수정하지 않는다.
+리포트/SARIF 생성, JSON 스키마, 플러그인 Node 헬퍼(후보 정규화·스코프 결합·diff 리뷰 입력 복사),
+npm 배포본 `dist/`가 export하는 결정론 함수(digest·정책 스냅샷·심각도 분류 저장) — 이며,
+TypeScript SDK/CLI 코드는 수정하지 않는다.
 
 ## 이력 호환 범위
 
