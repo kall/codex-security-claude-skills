@@ -1395,3 +1395,53 @@ Python 3.14.8, Node v22.23.2. SKIP은 0건이다. 0.1.29의 NOTE 항목은 0.1.3
 
 - `--require-search` 부트스트랩, 인벤토리, 랭킹 파이프라인 7단계(`make-repo-rank-input` → `make-rank-shards` → `make-rank-pool-plan` → `validate-rank-shard` → `validate-rank-worker` → `merge-rank-outputs` → `select-deep-review-input`), 두 입력 정규화(후보 3건), 정산·봉인·검증이 모두 성공했다.
 - **기존 결함 발견**: 스킬 문서대로 `register --mode deep`으로 등록하면 `complete`가 `Deep Scan discovery orchestration must finish and persist its manifest before the parent scan can be completed.`로 거부되고 행은 `running`으로 남았다. 상류는 mode=deep 스캔을 종결하기 전에 공식 deep 코디네이터의 실행 기록(`deep_scan_runs`)을 요구한다. 이 검사는 npm 0.1.29부터 있었고, deep-lite의 워크벤치 종결은 처음부터 실행된 적이 없었다(phase4 기록). deep-lite를 표준 모드로 등록하도록 고쳤다(`repro-u7` I17g). 고친 절차로 다시 돌린 결과 `complete` 성공, `mode standard`, `threatModelAvailable: true`, finding 3건이다.
+
+## 부록 — npm 0.4.0(매니페스트 0.1.95) 재실측 (2026-10-17)
+
+기준선을 npm 0.2.0에서 상류 태그 `npm-v0.4.0`(커밋 `559b492b22bb457aea8ff88c1bd41aacc2cec8bf`)으로 올리면서 재실측한 결과다. 위 본문과 이전 부록은 시점 고정 기록이라 고치지 않는다. 상류 변경과 스킬 수정의 상세는 `docs/plans/2026-10-17-1430-chore-codex-security-040-alignment.md`다.
+
+### 실측 대상 패키지
+
+npm 0.2.0·0.3.0·0.4.0을 레지스트리에서 각각 `/tmp/cs0X0-g`에 격리 설치하고, 버전마다 `--prefix`를 고정한 `npm` 래퍼를 두었다. 사용자 전역 설치본(0.3.0)과 기본 상태 디렉터리는 쓰지 않았다. **PATH는 `mise exec` 안쪽에서 붙여야 한다** — 바깥에 두면 mise가 자기 Node bin을 맨 앞에 다시 붙여 전역 설치본이 채택된다. 자기채점 스크립트는 `CODEX_SECURITY_PLUGIN_DIR`·`CODEX_SECURITY_PLUGIN_ROOT`를 명시하므로 이 영향을 받지 않았다(u1 H14a-5의 `npmVersion`, u4 L0의 헬퍼 `kind`가 각 사본과 일치).
+
+### 정합 작업 전 (수정 전 스킬, npm 0.4.0)
+
+`repro-u1`·`repro-u7`은 exit 0이었다. `repro-u4`는 F 블록(coverage `completeness` 제거) 3건과 I 블록(diff 인벤토리 확장자 필터 제거) 6건, `repro-u8`은 P7(policy 진행 문구)과 S 블록(심각도 저장 계층 이동) 다수, `repro-u5`는 기존 결함 Q2b가 실패했다. **녹색이던 u1·u7은 `bind-repo-scopes`·`copy-deep-review-input`의 Node 헬퍼 이동과 deep-lite 랭킹 헬퍼 은퇴를 잡지 못했다** — 이 경로를 상류 사본에 대고 실행하는 단언이 없었다.
+
+### 정합 작업 뒤 재검증
+
+| 스크립트 | npm 0.4.0 | npm 0.3.0 | npm 0.2.0 |
+| --- | --- | --- | --- |
+| `repro-u4.sh` | exit 0, OK 80 | exit 0, OK 80 | exit 0, OK 71 (I17~I20·L3 NOTE) |
+| `repro-u1-search-command.sh` | exit 0, OK 95 | exit 0, OK 95 | exit 0, OK 95 |
+| `repro-u7-coverage-recovery.sh` | exit 0, OK 70 | exit 0, OK 70 | exit 0, OK 70 |
+| `repro-u5-match-validator.sh` | exit 0, OK 714 | exit 0, OK 714 | exit 0, OK 714 |
+| `repro-u8-policy-severity.sh` | exit 0, OK 284 | exit 0, OK 284 | exit 1, OK 283, FAIL 1 (P7 — 진행 문구가 0.3.0에서 바뀜. 의도된 드리프트 검출) |
+| `repro-u3.sh` 요약 | S5 0, S6 0, S9 1, S9b 0 | 같음 | 같음 |
+
+Python 3.14.8, Node v22.23.2. SKIP은 0건이다. 변이 확인: `repro-u7` I5x는 completeness 가드를 지우면 실패하고, I17h는 글루의 `register --paths` 수정을 되돌리면 실패한다. `repro-u5` Q2c는 `repr` 재귀 방어를 지우면 실패한다.
+
+### 종단간 스모크 테스트 (npm 0.4.0)
+
+합성 저장소(Flask 앱, SQL 주입·명령 주입, `SECURITY.md`)에 스킬 문서를 처음부터 끝까지 따라 실행했다. 위협 모델·원시 후보·정본 JSON·판정은 Claude가 맡는 부분이라 직접 작성했다. 대상 저장소는 끝까지 `git status`가 깨끗했다.
+
+| 스킬 | 결과 |
+| --- | --- |
+| scan(전체) | 부트스트랩(`node-helper` 3종, `coverageCompleteness: false`) → 정규화 → 정산(미리뷰 1건 → `deferred`, `coverageComplete: false`) → 봉인 → 계약 검증 → 워크벤치 `complete`. SARIF `invocations`에 deferred 경고 1건, 완결성 프로퍼티 없음. `export --artifact threat-model` 성공. 새 finding 계약은 문서만 보고 한 번에 통과 |
+| scan(경로 지정 `app`) | **결함 1** 발견 후 수정: register → contract(`requiredIncludePaths ["app"]`) → Node `bind-repo-scopes` → 봉인 → `complete` |
+| diff-scan | `make-diff-rank-input` 3행(삭제 파일·`notes.txt` 포함) → Node `copy-deep-review-input` → 봉인 → `complete` |
+| deep-scan(deep-lite) | 레거시 랭킹 명령 exit 2 확인 → 독립 2패스 raw 4파일 → 정규화 "4 rows into 3 rows" → 봉인 → `complete`(standard 등록) |
+| classify-severity | prepare(pending 2) → apply(`saved`, `publishReadable: true`, 0600) → 상류 `publish … --dry-run`에 심각도 절·우선순위 반영. 재실행 시 `reused` 2건. inherit 성공 |
+| policy | threat_model 단계까지. `status: threat_model_ready`, `threatmodel.md` 투영 |
+| validate | 단독 모드 `--output-schema` 검사: 맞는 JSON exit 0, 틀린 JSON exit 2 |
+
+발견한 결함과 처리:
+
+1. **(높음, 0.2.0부터) 경로 지정 스캔의 워크벤치 등록이 항상 실패했다.** 글루가 `target.kind: "repository"`에 `paths`를 실어 상류 `parse_scan_recipe`가 `Only scoped scan launch recipes can include target paths.`로 거부했다. `kind: "paths"`로 고치고 `repro-u7` I17h를 더했다. deep `--mode deep` 사례와 같은 "단언 없는 호출 경로" 결함이다.
+2. **(중간)** 5단계 문서에 `coverage.surfaces[]`의 `id`·`receiptRefs` 필수가 없어 finalize가 두 번 실패했다. 상류 `final-report.md`의 "워크벤치가 ID를 준다"는 MCP 경로 서술이다. 필수 필드와 오류 문구 2개를 문서에 더했다.
+3. **(낮음)** 정본 JSON 메타 필드(`scanId`, `coverage.mode`·`inventoryStrategy`, `scan.target` 등)의 출처 표를 더했다.
+4. **(낮음)** 일부 Python 명령형에 `PYTHONDONTWRITEBYTECODE=1`·`env -i`가 빠져 플러그인 `__pycache__`가 생겼다. 명령형을 맞췄다.
+5. **(낮음, 0.2.0부터)** 원시 후보 행 스키마 출처를 `schemas/definitions/discovery-candidate.schema.json`으로 바로잡았다.
+6. **(사소)** diff-scan PATH 서술, deep-scan의 preflight 서술을 정리했다.
+
+확인하지 못한 것: 실제 서브에이전트 호출, diff `--working-tree` 등록, policy `policy` 단계·`finish`, validate ledger 모드, patch·verify-fix·scan-match 종단, 워크벤치 `complete` 실패 분기, 인증이 필요한 명령.
