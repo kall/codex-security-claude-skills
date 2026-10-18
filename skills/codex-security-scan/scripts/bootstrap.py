@@ -17,6 +17,12 @@
   6. 후보 정규화 경로(`candidateNormalizer`) — Python 스크립트 또는 5번의 Node 헬퍼.
      이것도 관측이다. 불가일 때 멈출지는 스킬이 정한다.
   7. 정본 위협 모델의 markdown 형식 지원(`threatModelMarkdown`) — 플러그인 스키마로 판별한다.
+  8. 버전별 계약 차이 관측(전부 파일로 판별한다. 매니페스트 버전은 npm 0.1.26~0.4.0 이
+     모두 0.1.95 라 구분하지 못한다):
+     - `npmVersion` — 플러그인 루트의 형제 package.json 의 version(npm 설치본일 때만).
+     - `coverageCompleteness` — coverage 스키마에 `completeness` 가 있는가(npm 0.2.0 이하).
+     - `bindRepoScopes`·`copyDeepReviewInput` — 작업 목록 도우미의 실행 경로(Python 스크립트
+       하위 명령 또는 5번의 Node 헬퍼). npm 0.4.0 은 Python 하위 명령을 지웠다.
 
 이 JSON이 이후 모든 단계(register-cli-scan, 산출물 작성, finalize)의 경로
 source-of-truth 다. 스킬 문서는 이 스크립트를 한 번 호출하고 그 결과만 사용한다.
@@ -117,6 +123,17 @@ MANIFEST_SCHEMA_RELATIVE = Path("schemas") / "scan-manifest.schema.json"
 # npm 패키지 레이아웃: <패키지>/_bundled_plugin 의 형제가 dist/ 와 bin/ 이다.
 SDK_DIST_MARKER = "finding-workflow.js"
 SDK_CLI_RELATIVE = Path("bin") / "codex-security.mjs"
+# npm 패키지 매니페스트. 플러그인 매니페스트 버전(0.1.95)과 다른 축이다.
+PACKAGE_JSON_NAME = "package.json"
+MAX_PACKAGE_JSON_SIZE = 1024 * 1024
+# 커버리지 완결성. npm 0.2.0 이하 coverage 스키마는 `completeness`(complete|partial|unknown)
+# 를 필수로 요구한다. npm 0.4.0 은 이 필드를 지웠고 finalizer 가 unsealed draft 에서 이 키를
+# 버린다(상류 c380befb9 #1633).
+COVERAGE_SCHEMA_RELATIVE = Path("schemas") / "coverage.schema.json"
+# 작업 목록 도우미. npm 0.2.0 이하는 generate_rank_input.py 하위 명령이고, npm 0.4.0 은
+# 그 하위 명령을 지우고 같은 런처의 `--helper <이름>` 으로 옮겼다(상류 f894583a3 #1607).
+RANK_SCRIPT_RELATIVE = Path("scripts") / "generate_rank_input.py"
+MAX_RANK_SCRIPT_SIZE = 4 * 1024 * 1024
 
 # 자식 환경은 **허용 목록**으로 짠다. 거부 목록은 구조가 틀렸다 — 위협면이
 # "우리가 부르는 서드파티 바이너리(git/npm/python/rg)가 읽는 임의의 환경변수"
@@ -394,6 +411,10 @@ SUCCESS_KEYS = (
     "candidateNormalizer",
     "threatModelMarkdown",
     "sdk",
+    "npmVersion",
+    "coverageCompleteness",
+    "bindRepoScopes",
+    "copyDeepReviewInput",
     "scanDir",
     "scansRoot",
     "stateDir",
@@ -1523,6 +1544,89 @@ def supports_markdown_threat_model(plugin_root: Path, target_repo: Path) -> bool
     )
 
 
+def coverage_requires_completeness(plugin_root: Path, target_repo: Path) -> bool:
+    """coverage 스키마가 `completeness` 를 선언하면 참(npm 0.2.0 이하).
+
+    읽지 못하면 참을 돌려준다. 0.2.0 이하 스키마는 이 필드를 필수로 요구하므로
+    모르면 쓰는 쪽이 안전하다. 0.4.0 finalizer 는 unsealed draft 의 이 키를 버린다.
+    """
+    schema = plugin_root / COVERAGE_SCHEMA_RELATIVE
+    if within_target(target_repo, schema) or not is_regular_file(schema):
+        return True
+    try:
+        properties = json.loads(schema.read_text(encoding="utf-8"))["properties"]
+    except (OSError, UnicodeDecodeError, ValueError, KeyError, TypeError):
+        return True
+    return isinstance(properties, dict) and "completeness" in properties
+
+
+def resolve_npm_version(plugin_root: Path, target_repo: Path) -> str | None:
+    """npm 패키지 version. 플러그인 루트가 `<패키지>/_bundled_plugin` 일 때만 읽는다.
+
+    매니페스트 버전(pluginVersion)은 npm 0.1.26~0.4.0 이 모두 0.1.95 라서 이 값이
+    사람이 읽는 유일한 구분 축이다. 동작 분기에는 쓰지 않는다(분기는 파일 존재 프로브).
+    """
+    if plugin_root.name != "_bundled_plugin":
+        return None
+    package_json = plugin_root.parent / PACKAGE_JSON_NAME
+    if within_target(target_repo, package_json) or not is_regular_file(package_json):
+        return None
+    try:
+        if package_json.stat().st_size > MAX_PACKAGE_JSON_SIZE:
+            return None
+        data = json.loads(package_json.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError):
+        return None
+    if not isinstance(data, dict) or data.get("name") != NPM_PACKAGE:
+        return None
+    version = data.get("version")
+    if not isinstance(version, str) or not version.strip() or not env_value_safe(version):
+        return None
+    return version
+
+
+def rank_script_has_command(plugin_root: Path, target_repo: Path, command: str) -> bool:
+    """generate_rank_input.py 에 `command` 하위 명령이 등록돼 있으면 참.
+
+    스크립트를 실행하지 않고 소스의 add_parser 인자 문자열로만 판별한다.
+    """
+    script = plugin_root / RANK_SCRIPT_RELATIVE
+    if within_target(target_repo, script) or not is_regular_file(script):
+        return False
+    try:
+        if script.stat().st_size > MAX_RANK_SCRIPT_SIZE:
+            return False
+        source = script.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return False
+    return re.search(r"add_parser\(\s*[\"']" + re.escape(command) + r"[\"']", source) is not None
+
+
+def resolve_worklist_helper(
+    plugin_root: Path, target_repo: Path, helper: dict, command: str
+) -> dict:
+    """{"available","kind","reason"}. 실패하지 않는다.
+
+    kind 가 python 이면 `<python_command> <plugin_dir>/scripts/generate_rank_input.py <command>`,
+    node-helper 면 SECURITY.md 헬퍼와 같은 런처·Node 로 `--helper <command>` 를 쓴다.
+    Python 하위 명령이 있으면 그것을 고른다(그 버전의 상류 문서가 가리키는 경로다).
+    Node 헬퍼에 그 명령이 있는지는 실행하지 않고는 알 수 없으므로, Python 하위 명령이
+    없는 사본(npm 0.4.0)에서만 헬퍼 경로로 판정한다.
+    """
+    if rank_script_has_command(plugin_root, target_repo, command):
+        return {"available": True, "kind": "python", "reason": None}
+    if helper["available"]:
+        return {"available": True, "kind": "node-helper", "reason": None}
+    return {
+        "available": False,
+        "kind": None,
+        "reason": (
+            f"{command} 불가 — {RANK_SCRIPT_RELATIVE} 에 하위 명령이 없고(npm 0.4.0 부터 "
+            f"Node 헬퍼로 이동) Node 헬퍼도 쓸 수 없음: {helper['reason']}"
+        ),
+    }
+
+
 def resolve_sdk(plugin_root: Path, target_repo: Path) -> dict:
     """npm 패키지의 dist/ 와 CLI 스크립트. {"dist","cli","reason"}. 실패하지 않는다.
 
@@ -2024,6 +2128,14 @@ def main(argv: list[str]) -> int:
     normalizer = resolve_candidate_normalizer(plugin_root_path, target_repo, helper)
     markdown_threat_model = supports_markdown_threat_model(plugin_root_path, target_repo)
     sdk = resolve_sdk(plugin_root_path, target_repo)
+    npm_version = resolve_npm_version(plugin_root_path, target_repo)
+    coverage_completeness = coverage_requires_completeness(plugin_root_path, target_repo)
+    bind_repo_scopes = resolve_worklist_helper(
+        plugin_root_path, target_repo, helper, "bind-repo-scopes"
+    )
+    copy_deep_review_input = resolve_worklist_helper(
+        plugin_root_path, target_repo, helper, "copy-deep-review-input"
+    )
 
     # emit() 의 errors="replace" 는 **진단·메시지 필드의 최후 안전망**이다. 경로
     # 축에는 적용돼선 안 된다 — 치환하면 ok:true 페이로드에 존재하지 않는 경로가
@@ -2134,6 +2246,17 @@ def main(argv: list[str]) -> int:
             "threatModelMarkdown": markdown_threat_model,
             # npm 패키지의 dist/(상류 JS 함수)와 CLI 스크립트. 소스 체크아웃이면 null.
             "sdk": sdk,
+            # npm 패키지 version(사람이 읽는 구분 축). 소스 체크아웃·비 npm 사본이면 null.
+            # 동작 분기에는 쓰지 않는다 — 분기는 아래 파일 프로브로 한다.
+            "npmVersion": npm_version,
+            # 참이면 coverage.json 에 completeness 를 쓴다(npm 0.2.0 이하 스키마의 필수 필드).
+            # 거짓이면 쓰지 않는다(npm 0.4.0 은 필드를 지웠고 finalizer 가 버린다).
+            "coverageCompleteness": coverage_completeness,
+            # scoped-path 바인딩·diff 작업 목록 복사 도우미의 실행 경로. kind 가 python 이면
+            # generate_rank_input.py 하위 명령, node-helper 면 securityMdHelper 의 런처·Node 로
+            # `--helper <이름>`. 불가이면 kind 는 null 이고 사유는 reason 에 있다.
+            "bindRepoScopes": bind_repo_scopes,
+            "copyDeepReviewInput": copy_deep_review_input,
             # 셸 명령에 보간되는 값은 **전부** 인용된 형태를 함께 낸다. 한 축만
             # 인용하면 계약이 반쪽이다 — `trustedChildEnv` 를 인용한 뒤에도 같은
             # 명령줄의 `PATH="<pathEnv>"`·`mkdir -p "<scanDir>/…"` 로 `$()` 가
