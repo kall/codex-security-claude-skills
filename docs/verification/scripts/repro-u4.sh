@@ -188,46 +188,76 @@ env -u CODEX_SECURITY_STARTED_AT "$PYTHON_BIN" "$FINALIZE" --scan-dir "$SCAN" --
 expect_exit 2 "$?" "E finalize (실패 기대)"
 
 # ---------------------------------------------------------------------------
-# F. SARIF 성공 판정 형상 (0.1.25 에서 의미가 바뀜)
+# F. SARIF 성공 판정 형상 (npm 0.1.25 에서 의미가 바뀌고 npm 0.4.0 에서 다시 바뀜)
 #
+# coverage 스키마에 completeness 가 있는 사본(npm 0.2.0 이하):
 #   completeness=complete  -> invocations 키가 아예 생성되지 않는다
 #   completeness=partial   -> executionSuccessful=true (종결 상태만 반영) +
 #                             properties.codexSecurityCoverageCompleteness=partial
 #   partial + deferred=[]  -> 경고가 0건이라 SARIF 만으로는 불완전을 알 수 없다
+#
+# completeness 가 없는 사본(npm 0.4.0, 상류 c380befb9 #1633):
+#   finalizer 가 unsealed draft 의 completeness 키를 버리고, invocations 는
+#   "종결 상태가 completed 가 아니거나 deferred 가 있을 때"만 만든다.
+#   codexSecurityCoverageCompleteness 프로퍼티는 없다.
+#   deferred 0건 + needs_follow_up surface -> invocations 없음(SARIF 만으로는 불완전을 모름)
+#
+# 어느 형상인지는 버전 문자열이 아니라 플러그인 스키마로 고른다(매니페스트 버전은
+# npm 0.1.26~0.4.0 이 모두 0.1.95 다). 스킬 bootstrap 의 coverageCompleteness 와 같은 축이다.
 # ---------------------------------------------------------------------------
-step "F. SARIF 성공 판정 형상 (complete / partial / partial+deferred 없음)"
-# sarif_shape <label> <completeness> <deferred-json> <invocations 유무> <기대 completeness> <기대 경고건수>
-# 세 케이스가 서로 다른 값을 단언해야 한다 — 같은 것만 검사하면 케이스가 늘어도
-# 판별력이 늘지 않는다. 특히 경고 건수는 partial 두 케이스를 가르는 유일한 축이다.
+step "F. SARIF 성공 판정 형상 (완전 / deferred 있음 / deferred 없는 불완전)"
+COVERAGE_COMPLETENESS="$(PY -c 'import json,sys
+try:
+    props = json.load(open(sys.argv[1]))["properties"]
+except Exception:
+    print("unknown"); raise SystemExit
+print("yes" if "completeness" in props else "no")' "$PLUGIN/schemas/coverage.schema.json")"
+echo "     coverage 스키마의 completeness: $COVERAGE_COMPLETENESS"
+# sarif_shape <label> <completeness|-> <deferred-json> <follow-up surface yes|no>
+#             <invocations 유무> <기대 completeness 프로퍼티|none> <기대 경고건수>
+# completeness 가 `-` 이면 키를 지운다. 케이스마다 다른 값을 단언해야 한다 — 같은 것만
+# 검사하면 케이스가 늘어도 판별력이 늘지 않는다.
 sarif_shape() {
-  local label="$1" completeness="$2" deferred="$3" expect_inv="$4"
-  local expect_completeness="$5" expect_warnings="$6"
+  local label="$1" completeness="$2" deferred="$3" follow_up="$4" expect_inv="$5"
+  local expect_completeness="$6" expect_warnings="$7"
   local scan="$RUN/scan-f-$label"
   mkdir -p "$scan"
   cp "$FIXTURES"/scan-manifest.json "$FIXTURES"/findings.json "$FIXTURES"/coverage.json "$scan/"
-  PY - "$scan/coverage.json" "$completeness" "$deferred" <<'EOF'
+  PY - "$scan/coverage.json" "$completeness" "$deferred" "$follow_up" <<'EOF'
 import json, pathlib, sys
 path = pathlib.Path(sys.argv[1])
 coverage = json.loads(path.read_text())
-coverage["completeness"] = sys.argv[2]
+if sys.argv[2] == "-":
+    coverage.pop("completeness", None)
+else:
+    coverage["completeness"] = sys.argv[2]
 coverage["deferred"] = json.loads(sys.argv[3])
+if sys.argv[4] == "yes":
+    coverage["surfaces"].append(
+        {"id": "surface_follow_up", "label": "Follow-up surface",
+         "disposition": "needs_follow_up", "receiptRefs": []}
+    )
 path.write_text(json.dumps(coverage, indent=2))
 # 픽스처 변형이 실제로 적용됐는지 되읽어 확인한다 — 적용 실패를 통과로 세면
-# 세 케이스가 모두 같은 입력을 검사하게 된다.
+# 케이스가 모두 같은 입력을 검사하게 된다.
 back = json.loads(path.read_text())
-if back["completeness"] != sys.argv[2] or back["deferred"] != json.loads(sys.argv[3]):
+if back.get("completeness", "-") != sys.argv[2] or back["deferred"] != json.loads(sys.argv[3]):
     print(f"FAIL: 픽스처 변형이 적용되지 않았습니다: {path}")
     raise SystemExit(1)
 EOF
   expect_exit 0 "$?" "F/$label 픽스처 변형 적용"
   CODEX_SECURITY_STARTED_AT=2026-07-30T09:00:00Z PY "$FINALIZE" \
-    --scan-dir "$scan" --source-root "$SRC" >/dev/null 2>&1
-  expect_exit 0 "$?" "F/$label finalize"
-  PY - "$scan" "$expect_inv" "$label" "$expect_completeness" "$expect_warnings" <<'EOF'
+    --scan-dir "$scan" --source-root "$SRC" >"$RUN/f-$label.out" 2>&1
+  local rc=$?
+  expect_exit 0 "$rc" "F/$label finalize"
+  [ "$rc" = 0 ] || sed 's/^/     /' "$RUN/f-$label.out" | tail -3
+  PY - "$scan" "$expect_inv" "$label" "$expect_completeness" "$expect_warnings" "$COVERAGE_COMPLETENESS" <<'EOF'
 import json, pathlib, sys
-run = json.loads((pathlib.Path(sys.argv[1]) / "exports" / "results.sarif").read_text())["runs"][0]
+scan = pathlib.Path(sys.argv[1])
+run = json.loads((scan / "exports" / "results.sarif").read_text())["runs"][0]
 expect_inv = sys.argv[2] == "yes"
 label, expect_completeness, expect_warnings = sys.argv[3], sys.argv[4], int(sys.argv[5])
+schema_has_completeness = sys.argv[6] == "yes"
 invocations = run.get("invocations")
 completeness = run.get("properties", {}).get("codexSecurityCoverageCompleteness")
 problems = []
@@ -245,6 +275,10 @@ if invocations is not None:
     detail = f"executionSuccessful=true, completeness={completeness!r}, 경고 {len(warnings)}건"
 else:
     detail = f"invocations 키 없음, completeness={completeness!r}"
+# 봉인된 coverage.json 의 completeness: 0.4.0 사본은 draft 에 있어도 버린다.
+sealed = json.loads((scan / "coverage.json").read_text())
+if not schema_has_completeness and "completeness" in sealed:
+    problems.append(f"봉인된 coverage.json 에 completeness 가 남음: {sealed['completeness']!r}")
 for p in problems:
     print(f"FAIL F/{label}: {p}")
 if problems:
@@ -253,13 +287,32 @@ print(f"     {detail}")
 EOF
   expect_exit 0 "$?" "F/$label SARIF 형상"
 }
-# complete: invocations 키가 아예 없다 → completeness 프로퍼티도 없다.
-sarif_shape complete complete '[]' no none 0
-# partial + deferred 1건: executionSuccessful=true 인데 경고 1건이 실린다.
-sarif_shape partial partial '[{"id":"unreviewed-in-scope-files","reason":"미리뷰 12개"}]' yes partial 1
-# partial + deferred 없음: 경고가 0건이라 SARIF 만으로는 불완전을 알 수 없다.
-# 이 0 이 위 1 과 다르다는 것이 이 케이스의 존재 이유다.
-sarif_shape partial-nodeferred partial '[]' yes partial 0
+case "$COVERAGE_COMPLETENESS" in
+  yes)
+    # complete: invocations 키가 아예 없다 → completeness 프로퍼티도 없다.
+    sarif_shape complete complete '[]' no no none 0
+    # partial + deferred 1건: executionSuccessful=true 인데 경고 1건이 실린다.
+    sarif_shape partial partial '[{"id":"unreviewed-in-scope-files","reason":"미리뷰 12개"}]' no yes partial 1
+    # partial + deferred 없음: 경고가 0건이라 SARIF 만으로는 불완전을 알 수 없다.
+    # 이 0 이 위 1 과 다르다는 것이 이 케이스의 존재 이유다.
+    sarif_shape partial-nodeferred partial '[]' no yes partial 0
+    ;;
+  no)
+    # 완전: completeness 키 없음 · deferred 없음 → invocations 없음.
+    sarif_shape complete - '[]' no no none 0
+    # deferred 1건 → invocations 가 생기고 경고 1건. 완결성 프로퍼티는 없다.
+    sarif_shape deferred - '[{"id":"unreviewed-in-scope-files","reason":"미리뷰 12개"}]' no yes none 1
+    # needs_follow_up surface 만 있고 deferred 없음 → invocations 없음. SARIF 는 불완전을
+    # 드러내지 않는다 — 정산의 partialWithoutDeferred 가 이 형상을 잡는다(repro-u7 I5x-3).
+    sarif_shape followup-nodeferred - '[]' yes no none 0
+    # 0.2.0 형상 draft(completeness 키가 남음)도 봉인된다 — finalizer 가 키를 버린다.
+    # 스킬이 버전을 잘못 판정해도 봉인이 깨지지 않는다는 근거다.
+    sarif_shape legacy-key partial '[{"id":"unreviewed-in-scope-files","reason":"미리뷰 12개"}]' no yes none 1
+    ;;
+  *)
+    bad "F: coverage 스키마를 읽지 못해 형상을 고를 수 없습니다: $PLUGIN/schemas/coverage.schema.json"
+    ;;
+esac
 
 # ---------------------------------------------------------------------------
 # G. 인벤토리 정확성 — 상류 출력이 아니라 손으로 열거한 기대 집합과 대조한다.
@@ -548,7 +601,19 @@ fi
 #   diff 인벤토리는 .github/workflows/* 를 제외 규칙에서 빼서 유지한다.
 #   .github 의 다른 파일(dependabot.yml)은 계속 제외된다 — 음성 대조군이다.
 #   기대 집합은 손으로 열거한다(P5-KTD3). 상류 출력끼리 비교하지 않는다.
+#
+#   npm 0.4.0(상류 f894583a3 #1607 등, 확장자 집합 제거는 0.3.0 #1347)은 확장자 필터를
+#   지웠다. diff 인벤토리와 랭킹 입력은 **바이너리가 아닌 변경 파일 전부**다(파일 이름·
+#   확장자·디렉터리와 무관, 삭제 파일은 base 쪽 내용으로 판정). 그래서 .github/dependabot.yml
+#   과 .txt 가 들어간다. 이 사본은 rank_preview.py 에 TEXT_CODE_EXTENSIONS 가 없는 것으로
+#   알아보고, 바이너리 파일을 새 음성 대조군으로 쓴다(I17~I20).
 # ---------------------------------------------------------------------------
+# 확장자 필터 유무(npm 0.2.0 이하 = yes, npm 0.4.0 = no).
+if grep -q "TEXT_CODE_EXTENSIONS" "$PLUGIN/scripts/rank_preview.py" 2>/dev/null; then
+  TEXT_EXT_FILTER=yes
+else
+  TEXT_EXT_FILTER=no
+fi
 # npm 0.2.0 판별(I13~I16·K2·K3): 스키마의 scan.threatModel 에 markdown 대안이 있는가(상류 #1133).
 MD_SUPPORTED="$(PY - "$PLUGIN/schemas/scan-manifest.schema.json" <<'EOF'
 import json, sys
@@ -557,6 +622,7 @@ print("yes" if any((a.get("properties") or {}).get("format") == {"const": "markd
 EOF
 )"
 step "I. diff 인벤토리·랭킹 입력: 새 확장자와 .github/workflows"
+echo "     확장자 필터(rank_preview.TEXT_CODE_EXTENSIONS): $TEXT_EXT_FILTER"
 RANK_SCRIPT="$PLUGIN/scripts/generate_rank_input.py"
 GIT_BIN="$(command -v git || true)"
 if [ -z "$GIT_BIN" ]; then
@@ -622,8 +688,15 @@ EOF
     fi
   }
 
-  printf '%s\n' .github/workflows/ci.yml main.tf src/a.cjs src/b.cts src/c.mts src/control.py \
-    | LC_ALL=C sort > "$RUN/diff1.expected"
+  if [ "$TEXT_EXT_FILTER" = "yes" ]; then
+    printf '%s\n' .github/workflows/ci.yml main.tf src/a.cjs src/b.cts src/c.mts src/control.py \
+      | LC_ALL=C sort > "$RUN/diff1.expected"
+    I2_DESC="diff 인벤토리에 .cjs·.cts·.mts·.tf 와 .github/workflows/ci.yml 이 들어가고 .github/dependabot.yml 은 빠짐"
+  else
+    printf '%s\n' .github/dependabot.yml .github/workflows/ci.yml main.tf src/a.cjs src/b.cts src/c.mts src/control.py \
+      | LC_ALL=C sort > "$RUN/diff1.expected"
+    I2_DESC="diff 인벤토리에 변경 텍스트 파일 전부(.github/dependabot.yml 포함)가 들어감 — npm 0.4.0"
+  fi
   printf '%s\n' .github/workflows/ci.yml > "$RUN/diff2.expected"
 
   diff_inventory "$DBASE" "$DMID" "$RUN/diff1.inv"
@@ -631,8 +704,7 @@ EOF
   expect_exit 0 "$i_rc" "I1 diff 인벤토리 생성 (새 확장자 커밋)"
   [ "$i_rc" != "0" ] && sed 's/^/     /' "$RUN/diff1.inv.err"
   LC_ALL=C sort "$RUN/diff1.inv" 2>/dev/null > "$RUN/diff1.inv.actual"
-  compare_set "I2" "$RUN/diff1.expected" "$RUN/diff1.inv.actual" \
-    "diff 인벤토리에 .cjs·.cts·.mts·.tf 와 .github/workflows/ci.yml 이 들어가고 .github/dependabot.yml 은 빠짐"
+  compare_set "I2" "$RUN/diff1.expected" "$RUN/diff1.inv.actual" "$I2_DESC"
 
   diff_rank_input "$DBASE" "$DMID" "$RUN/diff1.rank.jsonl"
   expect_exit 0 "$?" "I3 diff 랭킹 입력 생성 (새 확장자 커밋)"
@@ -664,12 +736,17 @@ EOF
   dgit add -A >/dev/null && dgit commit -qm exts2 >/dev/null
   DHEAD3="$(dgit rev-parse HEAD)"
   if grep -q "def committed_diff_snapshot_digest" "$PLUGIN/scripts/workbench_target.py" 2>/dev/null; then
-    printf '%s\n' src/d.m src/e.sol src/f.svelte | LC_ALL=C sort > "$RUN/diff3.expected"
+    if [ "$TEXT_EXT_FILTER" = "yes" ]; then
+      printf '%s\n' src/d.m src/e.sol src/f.svelte | LC_ALL=C sort > "$RUN/diff3.expected"
+      I10_DESC="diff 인벤토리에 .m·.sol·.svelte 가 들어가고 .txt 는 빠짐"
+    else
+      printf '%s\n' notes.txt src/d.m src/e.sol src/f.svelte | LC_ALL=C sort > "$RUN/diff3.expected"
+      I10_DESC="diff 인벤토리에 .m·.sol·.svelte 와 .txt 가 모두 들어감 — npm 0.4.0"
+    fi
     diff_inventory "$DHEAD" "$DHEAD3" "$RUN/diff3.inv"
     expect_exit 0 "$?" "I9 diff 인벤토리 생성 (0.1.31~0.1.32 확장자 커밋)"
     LC_ALL=C sort "$RUN/diff3.inv" 2>/dev/null > "$RUN/diff3.inv.actual"
-    compare_set "I10" "$RUN/diff3.expected" "$RUN/diff3.inv.actual" \
-      "diff 인벤토리에 .m·.sol·.svelte 가 들어가고 .txt 는 빠짐"
+    compare_set "I10" "$RUN/diff3.expected" "$RUN/diff3.inv.actual" "$I10_DESC"
     diff_rank_input "$DHEAD" "$DHEAD3" "$RUN/diff3.rank.jsonl"
     expect_exit 0 "$?" "I11 diff 랭킹 입력 생성 (0.1.31~0.1.32 확장자 커밋)"
     LC_ALL=C sort "$RUN/diff3.rank.jsonl.paths" 2>/dev/null > "$RUN/diff3.rank.actual"
@@ -692,12 +769,17 @@ EOF
   dgit add -A >/dev/null && dgit commit -qm exts3 >/dev/null
   DHEAD4="$(dgit rev-parse HEAD)"
   if [ "$MD_SUPPORTED" = "yes" ]; then
-    printf '%s\n' src/g.hh src/h.hxx src/i.ejs src/j.erb src/k.phtml src/l.vy | LC_ALL=C sort > "$RUN/diff4.expected"
+    if [ "$TEXT_EXT_FILTER" = "yes" ]; then
+      printf '%s\n' src/g.hh src/h.hxx src/i.ejs src/j.erb src/k.phtml src/l.vy | LC_ALL=C sort > "$RUN/diff4.expected"
+      I14_DESC="diff 인벤토리에 .hh·.hxx·.ejs·.erb·.phtml·.vy 가 들어가고 .txt 는 빠짐"
+    else
+      printf '%s\n' notes2.txt src/g.hh src/h.hxx src/i.ejs src/j.erb src/k.phtml src/l.vy | LC_ALL=C sort > "$RUN/diff4.expected"
+      I14_DESC="diff 인벤토리에 .hh·.hxx·.ejs·.erb·.phtml·.vy 와 .txt 가 모두 들어감 — npm 0.4.0"
+    fi
     diff_inventory "$DHEAD3" "$DHEAD4" "$RUN/diff4.inv"
     expect_exit 0 "$?" "I13 diff 인벤토리 생성 (0.2.0 확장자 커밋)"
     LC_ALL=C sort "$RUN/diff4.inv" 2>/dev/null > "$RUN/diff4.inv.actual"
-    compare_set "I14" "$RUN/diff4.expected" "$RUN/diff4.inv.actual" \
-      "diff 인벤토리에 .hh·.hxx·.ejs·.erb·.phtml·.vy 가 들어가고 .txt 는 빠짐"
+    compare_set "I14" "$RUN/diff4.expected" "$RUN/diff4.inv.actual" "$I14_DESC"
     diff_rank_input "$DHEAD3" "$DHEAD4" "$RUN/diff4.rank.jsonl"
     expect_exit 0 "$?" "I15 diff 랭킹 입력 생성 (0.2.0 확장자 커밋)"
     LC_ALL=C sort "$RUN/diff4.rank.jsonl.paths" 2>/dev/null > "$RUN/diff4.rank.actual"
@@ -705,6 +787,29 @@ EOF
       "diff 랭킹 입력이 diff 인벤토리와 같은 기대 집합"
   else
     printf 'NOTE I13~I16: 이 플러그인 사본은 npm 0.2.0 이전이라 0.2.0 확장자 단언 대상이 아닙니다\n'
+  fi
+
+  # 커밋 5: 확장자 필터가 없는 사본(npm 0.4.0)의 새 경계. 바이너리 파일(NUL 바이트)은
+  # 확장자와 무관하게 빠지고, 삭제된 텍스트 파일은 base 쪽 내용으로 판정해 들어간다.
+  # 확장자 필터가 있는 사본은 이 두 규칙을 계약으로 내세우지 않으므로 단언하지 않는다.
+  printf 'text\0binary\n' > "$DREPO/src/blob.py"
+  dgit rm -q src/control.py >/dev/null
+  dgit add -A >/dev/null && dgit commit -qm binary-and-delete >/dev/null
+  DHEAD5="$(dgit rev-parse HEAD)"
+  if [ "$TEXT_EXT_FILTER" = "no" ]; then
+    printf '%s\n' src/control.py > "$RUN/diff5.expected"
+    diff_inventory "$DHEAD4" "$DHEAD5" "$RUN/diff5.inv"
+    expect_exit 0 "$?" "I17 diff 인벤토리 생성 (바이너리 추가·텍스트 삭제 커밋)"
+    LC_ALL=C sort "$RUN/diff5.inv" 2>/dev/null > "$RUN/diff5.inv.actual"
+    compare_set "I18" "$RUN/diff5.expected" "$RUN/diff5.inv.actual" \
+      "diff 인벤토리에서 바이너리(.py 확장자라도)는 빠지고 삭제된 텍스트 파일은 들어감"
+    diff_rank_input "$DHEAD4" "$DHEAD5" "$RUN/diff5.rank.jsonl"
+    expect_exit 0 "$?" "I19 diff 랭킹 입력 생성 (바이너리 추가·텍스트 삭제 커밋)"
+    LC_ALL=C sort "$RUN/diff5.rank.jsonl.paths" 2>/dev/null > "$RUN/diff5.rank.actual"
+    compare_set "I20" "$RUN/diff5.expected" "$RUN/diff5.rank.actual" \
+      "diff 랭킹 입력이 diff 인벤토리와 같은 기대 집합"
+  else
+    printf 'NOTE I17~I20: 이 플러그인 사본은 확장자 필터가 있어(npm 0.2.0 이하) 바이너리·삭제 단언 대상이 아닙니다\n'
   fi
 fi
 
@@ -948,6 +1053,122 @@ else
     bad "K4 $NORM_KIND 출력이 기준 원장과 다릅니다"
     diff "$RUN/norm-expected.jsonl" "$RUN/norm-out.jsonl" | sed 's/^/     /' | head -20
   fi
+fi
+
+# ---------------------------------------------------------------------------
+# L. 작업 목록 도우미 경로와 새 finding 계약 (npm 0.4.0)
+#
+#   L1. bind-repo-scopes — npm 0.2.0 이하는 generate_rank_input.py 하위 명령, npm 0.4.0 은
+#       그 하위 명령을 지우고 런처의 `--helper bind-repo-scopes` 로 옮겼다(상류 f894583a3 #1607).
+#       스킬은 bootstrap 의 bindRepoScopes.kind 로 고른다. 여기서는 그 kind 를 그대로 받아
+#       스킬 문서의 명령형으로 실행하고, manifest·coverage 의 includePaths 가 바뀌는지 본다.
+#   L2. copy-deep-review-input — 같은 이동. diff-scan 이 copyDeepReviewInput.kind 로 고른다.
+#       입력은 I 블록이 만든 실제 diff 랭킹 입력이다.
+#   L3. 새 finding 은 scan-draft 스키마로 검증된다(상류 c380befb9 #1633). 구 별칭
+#       `root_cause` 는 수리되지 않고 거부된다 — 리페어 루프가 고칠 오류 문구를 고정한다.
+#       스키마의 finding 정의가 `root_cause: false` 인 사본에서만 단언한다.
+# ---------------------------------------------------------------------------
+step "L. 작업 목록 도우미 경로(bootstrap kind)와 새 finding 계약"
+# run_worklist_helper <kind> <명령> <인자...> — 스킬 문서의 두 명령형을 그대로 쓴다.
+run_worklist_helper() {
+  local kind="$1" command="$2"
+  shift 2
+  case "$kind" in
+    python)
+      PY "$PLUGIN/scripts/generate_rank_input.py" "$command" "$@" ;;
+    node-helper)
+      env -i PATH=/usr/bin:/bin HOME="$HOME" CODEX_MCP_NODE_PATH="$NODE_FOR_HELPER" \
+        "$PLUGIN/scripts/launch_codex_security_mcp" --helper "$command" "$@" ;;
+    *) return 99 ;;
+  esac
+}
+if [ ! -s "$RUN/boot.json" ]; then
+  skip "L1·L2: G 블록의 bootstrap 출력이 없어 kind 를 알 수 없습니다"
+else
+  BIND_KIND="$(PY -c 'import json,sys; print((json.load(open(sys.argv[1])).get("bindRepoScopes") or {}).get("kind"))' "$RUN/boot.json")"
+  COPY_KIND="$(PY -c 'import json,sys; print((json.load(open(sys.argv[1])).get("copyDeepReviewInput") or {}).get("kind"))' "$RUN/boot.json")"
+  # kind 판정이 사본과 맞는지 손으로 대조한다(Python 하위 명령이 남아 있으면 python).
+  if grep -q '"bind-repo-scopes"' "$PLUGIN/scripts/generate_rank_input.py" 2>/dev/null; then
+    WANT_KIND=python
+  else
+    WANT_KIND=node-helper
+  fi
+  if [ "$BIND_KIND" = "$WANT_KIND" ] && [ "$COPY_KIND" = "$WANT_KIND" ]; then
+    ok "L0: bootstrap 의 bindRepoScopes·copyDeepReviewInput kind=$BIND_KIND (사본과 일치)"
+  else
+    bad "L0: bootstrap kind 가 사본과 다릅니다 — bind=$BIND_KIND copy=$COPY_KIND 기대=$WANT_KIND"
+  fi
+  SCAN_L="$RUN/scan-l"
+  mkdir -p "$SCAN_L"
+  cp "$FIXTURES"/scan-manifest.json "$FIXTURES"/coverage.json "$SCAN_L/"
+  printf '["src/app.py", "lib"]\n' > "$RUN/l-scopes.json"
+  run_worklist_helper "$BIND_KIND" bind-repo-scopes --scopes-file "$RUN/l-scopes.json" \
+    --manifest "$SCAN_L/scan-manifest.json" --coverage "$SCAN_L/coverage.json" \
+    >"$RUN/l1.out" 2>&1
+  l1_rc=$?
+  expect_exit 0 "$l1_rc" "L1 bind-repo-scopes($BIND_KIND)"
+  [ "$l1_rc" = 0 ] || sed 's/^/     /' "$RUN/l1.out" | tail -3
+  if PY - "$SCAN_L" <<'EOF'
+import json, pathlib, sys
+scan = pathlib.Path(sys.argv[1])
+manifest = json.loads((scan / "scan-manifest.json").read_text())
+coverage = json.loads((scan / "coverage.json").read_text())
+want = ["src/app.py", "lib"]
+got = (manifest["scan"]["scope"].get("includePaths"), coverage.get("includePaths"))
+raise SystemExit(0 if got == (want, want) else 1)
+EOF
+  then
+    ok "L1 manifest·coverage 의 includePaths 가 요청 경로로 바뀜"
+  else
+    bad "L1 includePaths 가 요청 경로로 바뀌지 않았습니다"
+  fi
+  if [ -s "$RUN/diff1.rank.jsonl" ]; then
+    run_worklist_helper "$COPY_KIND" copy-deep-review-input \
+      --rank-input "$RUN/diff1.rank.jsonl" --out "$RUN/l2.deep.jsonl" >"$RUN/l2.out" 2>&1
+    l2_rc=$?
+    expect_exit 0 "$l2_rc" "L2 copy-deep-review-input($COPY_KIND)"
+    [ "$l2_rc" = 0 ] || sed 's/^/     /' "$RUN/l2.out" | tail -3
+    if PY - "$RUN/diff1.rank.jsonl" "$RUN/l2.deep.jsonl" <<'EOF'
+import json, sys
+def paths(name):
+    return [json.loads(line)["path"] for line in open(name, encoding="utf-8") if line.strip()]
+raise SystemExit(0 if paths(sys.argv[1]) == paths(sys.argv[2]) and paths(sys.argv[1]) else 1)
+EOF
+    then
+      ok "L2 deep_review_input 이 랭킹 입력의 모든 행을 같은 순서로 담음"
+    else
+      bad "L2 deep_review_input 의 경로가 랭킹 입력과 다릅니다"
+    fi
+  else
+    skip "L2: I 블록의 diff 랭킹 입력이 없어 copy-deep-review-input 을 검증할 수 없습니다"
+  fi
+fi
+ROOT_CAUSE_REJECTED="$(PY -c 'import json,sys
+d = json.load(open(sys.argv[1]))
+print("yes" if d.get("$defs", {}).get("finding", {}).get("properties", {}).get("root_cause") is False else "no")' \
+  "$PLUGIN/schemas/tools/scan-draft.schema.json" 2>/dev/null || echo no)"
+if [ "$ROOT_CAUSE_REJECTED" = "yes" ]; then
+  SCAN_L3="$RUN/scan-l3"
+  mkdir -p "$SCAN_L3"
+  cp "$FIXTURES"/scan-manifest.json "$FIXTURES"/findings.json "$FIXTURES"/coverage.json "$SCAN_L3/"
+  PY - "$SCAN_L3/findings.json" <<'EOF'
+import json, pathlib, sys
+path = pathlib.Path(sys.argv[1])
+doc = json.loads(path.read_text())
+doc["findings"][0]["root_cause"] = {"summary": "legacy alias"}
+path.write_text(json.dumps(doc, indent=2))
+EOF
+  CODEX_SECURITY_STARTED_AT=2026-07-30T09:00:00Z PY "$FINALIZE" \
+    --scan-dir "$SCAN_L3" --source-root "$SRC" >"$RUN/l3.out" 2>&1
+  l3_rc=$?
+  expect_exit 2 "$l3_rc" "L3 구 별칭 root_cause 가 든 finding 봉인 (거부 기대)"
+  if grep -q "Scan result contains invalid findings; repair the finding records before completion. findings.findings\[0\].root_cause: unexpected schema property" "$RUN/l3.out"; then
+    ok "L3 오류 문구가 스킬 리페어 루프의 인용과 같음"
+  else
+    bad "L3 오류 문구가 다릅니다: $(tail -1 "$RUN/l3.out")"
+  fi
+else
+  printf 'NOTE L3: 이 사본의 scan-draft 스키마는 root_cause 를 금지하지 않습니다(npm 0.2.0 이하) — 해당 없음\n'
 fi
 
 printf '\n=== 결과 ===\n'

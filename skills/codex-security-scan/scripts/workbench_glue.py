@@ -232,7 +232,9 @@ def cmd_register(boot: dict, args: argparse.Namespace) -> int:
         "repository": boot["repoRoot"],
         "mode": args.mode,
         "config": {},
-        "target": {"kind": "repository", "paths": paths},
+        # 상류 parse_scan_recipe 는 kind 가 "paths" 가 아닌 레시피의 경로를 거부한다
+        # ("Only scoped scan launch recipes can include target paths.", npm 0.2.0~0.4.0).
+        "target": {"kind": "paths" if paths else "repository", "paths": paths},
     }
     if args.mode == "diff":
         # 상류 레시피의 mode 는 standard·deep 만 받는다(상류 최초 태그부터. 0.1.25·0.1.32 실측:

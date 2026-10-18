@@ -18,7 +18,10 @@ codex-security 플러그인의 `security-diff-scan` 스킬을 Claude가 직접 �
 **상류 저장 정책(`references/artifact-storage.md`)은 적용하지 않는다(P6-KTD8).** 근거와 범위는 Phase 1
 SKILL.md의 prompt-only 절이 정본이다. 이 스킬이 읽는 `skills/threat-model/SKILL.md`·
 `skills/validation/SKILL.md`·`skills/attack-path-analysis/SKILL.md`가 그 정책을 가리켜도 멈추지 않고
-터미널 정본 경로를 계속한다.
+터미널 정본 경로를 계속한다. npm 0.4.0 `skills/security-diff-scan/SKILL.md`는 터미널 절차를 지우고
+MCP가 없으면 "report the blocker; do not author canonical files through a shell"이라고 쓴다. 이 문장도
+같은 근거로 적용하지 않는다. 0.4.0에서도 diff 인벤토리 스크립트·finalizer·`complete-scan`은 이 경로를
+받아들인다(`repro-u4.sh` I 블록, `repro-u7` I17).
 
 ## 대상 해석 (R8)
 
@@ -32,7 +35,8 @@ SKILL.md의 prompt-only 절이 정본이다. 이 스킬이 읽는 `skills/threat
 
 1. `bootstrap.py --target-repo <저장소 루트>`로 pluginRoot·python·scanDir을 얻는다(Phase 1 0단계).
    Phase 1 0단계의 **후보 정규화 확인**을 그대로 적용한다 — `candidateNormalizer.available`이 `false`면
-   중단한다(npm 0.2.0 소스 체크아웃 등).
+   중단한다(npm 0.2.0 이후 소스 체크아웃 등). `copyDeepReviewInput.available`이 `false`여도 중단한다
+   (2단계의 필수 호출을 할 수 없다).
 2. **워크벤치 등록(Phase 2)**: `workbench_glue.py register`에 diff 대상을 인자로 준다(R10).
    ```bash
    # refs (커밋/브랜치)
@@ -76,14 +80,19 @@ SKILL.md의 prompt-only 절이 정본이다. 이 스킬이 읽는 `skills/threat
 2. **Discovery — diff 범위**: 인벤토리를 diff-rank-input으로 생성한다.
    ```bash
    # refs (커밋/브랜치)
-   <python> <plugin_dir>/scripts/generate_rank_input.py make-diff-rank-input --repo <repo_root> --base <base> --mode revisions --head <head> --out <scan_dir>/artifacts/02_discovery/rank_input.jsonl
+   env -i <trusted_child_env> <python> <plugin_dir>/scripts/generate_rank_input.py make-diff-rank-input --repo <repo_root> --base <base> --mode revisions --head <head> --out <scan_dir>/artifacts/02_discovery/rank_input.jsonl
    # working-tree (로컬 패치)
-   <python> <plugin_dir>/scripts/generate_rank_input.py make-diff-rank-input --repo <repo_root> --base <base> --mode local-patch --out <scan_dir>/artifacts/02_discovery/rank_input.jsonl
+   env -i <trusted_child_env> <python> <plugin_dir>/scripts/generate_rank_input.py make-diff-rank-input --repo <repo_root> --base <base> --mode local-patch --out <scan_dir>/artifacts/02_discovery/rank_input.jsonl
    ```
-   이어서 리뷰 입력을 파생한다(필수 호출):
+   이어서 리뷰 입력을 파생한다(필수 호출). 0단계 `copyDeepReviewInput.kind`로 명령을 고른다. 인자는 같다.
    ```bash
-   <python> <plugin_dir>/scripts/generate_rank_input.py copy-deep-review-input --rank-input <scan_dir>/artifacts/02_discovery/rank_input.jsonl --out <scan_dir>/artifacts/02_discovery/deep_review_input.jsonl
+   # kind = python (npm 0.2.0 이하)
+   env -i <trusted_child_env> <python> <plugin_dir>/scripts/generate_rank_input.py copy-deep-review-input --rank-input <scan_dir>/artifacts/02_discovery/rank_input.jsonl --out <scan_dir>/artifacts/02_discovery/deep_review_input.jsonl
+   # kind = node-helper (npm 0.3.0 이후 — Python 하위 명령은 지워졌다, 상류 #839)
+   env -i <trusted_child_env> CODEX_MCP_NODE_PATH=<node> <security_md_launcher> --helper copy-deep-review-input --rank-input <scan_dir>/artifacts/02_discovery/rank_input.jsonl --out <scan_dir>/artifacts/02_discovery/deep_review_input.jsonl
    ```
+   Node 헬퍼는 `make-diff-rank-input`이 만든 행(`path`·`area`·`preview`)을 그대로 받는다. 행을 손으로
+   만들거나 고치지 않는다. 두 경로 모두 랭킹 입력의 모든 행을 같은 순서로 옮긴다(`repro-u4.sh` L2).
    diff 범위 인벤토리(`in_scope_files.txt`)도 **플러그인 스크립트로** 만든다. Phase 1의 `rg --files`
    전체 목록을 쓰면 안 된다(범위가 저장소 전체가 된다):
    ```bash
@@ -105,37 +114,43 @@ SKILL.md의 prompt-only 절이 정본이다. 이 스킬이 읽는 `skills/threat
    타지 않는다(실측: 오염된 설정에서도, PATH에 `rg`가 아예 없어도 결과가 같다). 전체 스캔
    인벤토리 호출과 형태를 맞춰 두는 방어 조치이며, 근거는 Phase 1 SKILL.md 2단계가 정본이다.
 
-   `<trusted_path_env>` = bootstrap이 반환한 **`trustedPathEnv`**(대상 저장소 내부 항목을 제거한
-   PATH). **PATH를 이 값으로 교체한다 — `$PATH`를 이어 붙이지 않는다.** diff 모드는 ripgrep을
-   쓰지 않으므로 `--require-search`는 붙이지 않지만, `committed_changed_paths`가 **`git`을 PATH에서
-   해석해 `cwd=대상 저장소`로 실행**하므로 정화된 PATH가 필요하다. 원시 `$PATH`를 물려주면 대상
+   **PATH는 `<trusted_child_env>` 안에 이미 있다.** `trustedChildEnvShell`의 `PATH`는 bootstrap의
+   **`trustedPathEnv`**(대상 저장소 내부 항목을 제거한 PATH)이고 `PYTHONDONTWRITEBYTECODE=1`도 들어 있다.
+   그래서 위 diff 명령형에는 `PATH=`를 따로 붙이지 않는다. `$PATH`를 이어 붙이거나 `env -i` 밖에서 호출하지
+   않는다. diff 모드는 ripgrep을 쓰지 않으므로 `--require-search`는 붙이지 않지만, diff 인벤토리와 랭킹
+   입력이 **`git`을 PATH에서 해석해 `cwd=대상 저장소`로 실행**하므로 정화된 PATH가 필요하다. 원시 `$PATH`를 물려주면 대상
    저장소가 커밋한 `./node_modules/.bin/git`이 실행된다(실측). 전체 스캔과 같은 이유이며 정본
    서술은 Phase 1 SKILL.md 2단계에 있다(P5-KTD2).
 
-   **diff 인벤토리에 들어가는 파일(npm 0.2.0 기준).** diff 인벤토리와 diff 랭킹 입력은 같은 규칙을
+   **diff 인벤토리에 들어가는 파일(npm 0.4.0 기준).** diff 인벤토리와 diff 랭킹 입력은 같은 규칙을
    쓴다(`repro-u4.sh` I 블록).
-   - 확장자는 `rank_preview.TEXT_CODE_EXTENSIONS`로 거른다. npm 0.1.27~0.1.29에서 `.cjs`·`.cts`·
-     `.mts`·`.tf`가, npm 0.1.31에서 `.m`이, npm 0.1.32에서 `.sol`·`.svelte`가, npm 0.2.0에서 `.hh`·`.hxx`
-     (C++ 헤더)·`.ejs`·`.erb`·`.phtml`(템플릿)·`.vy`(Vyper)가 추가됐다. 이 확장자 목록은 diff 인벤토리와 랭킹 입력(diff·저장소 모두)에만 쓰인다. 전체 스캔
-     인벤토리는 확장자 필터가 없는 `rg --files`라 0.1.25에서도 이 파일들을 포함했다.
-   - `.github/workflows/*` 변경은 제외 규칙(`path_is_diff_excluded`)에서 빠져 인벤토리에 남는다.
-     `.github`의 다른 파일(예: `dependabot.yml`)은 여전히 제외된다.
+   - **바이너리가 아닌 변경 파일 전부**다. 파일 이름·확장자·디렉터리로 거르지 않는다(상류
+     `skills/security-diff-scan/SKILL.md`: "changed text files regardless of filename, extension, or
+     directory"). 그래서 `.github/dependabot.yml`·`notes.txt`도 들어간다. 바이너리 판정은 내용(NUL 바이트)
+     으로 하므로 `.py` 확장자라도 바이너리면 빠진다(`repro-u4.sh` I17~I20). 삭제된 파일은 base 쪽 내용으로
+     판정해 들어간다. 커밋 diff는 head 커밋의 blob으로, 로컬 패치는 워킹트리 파일로 판정하고 심링크는
+     뺀다.
+   - 이전 규칙(npm 0.2.0 이하): 확장자를 `rank_preview.TEXT_CODE_EXTENSIONS`로 거르고(0.2.0에서
+     `.hh`·`.hxx`·`.ejs`·`.erb`·`.phtml`·`.vy`까지), `.github`는 `workflows/*`만 남겼다. 이 집합과 제외
+     규칙은 npm 0.3.0(#1347)에서 지워졌다. 같은 diff라도 0.2.0과 0.4.0의 커버리지 분모가 다르다.
+   - 상류는 경로가 아니라 동작과 도달성으로 보안 관련성을 판단하라고 쓴다(빌드·배포·CI 사용 포함).
+     목록에 든 문서·설정 파일도 리뷰 대상이며, 보안과 무관하면 리뷰 로그에 `reviewed`로 남긴다.
    - diff에 이름에 `\n`·`\r`이 든 경로가 있으면 인벤토리가
      `Git changes contain a path that cannot fit in the file inventory`로 실패한다. 이 동작은
      0.1.25에도 있었다. 그 경로는 Phase 1 SKILL.md 2단계의 탐색 명령(`<스코프>`는 `.`)으로 찾아
      사용자에게 보여 준다. 이름을 바꾸기 전에는 이 diff를 스캔할 수 없다.
 
-   변경된 source-like 파일만 리뷰한다. 후보는 Phase 1 2단계 5번의 정규화 명령(`candidateNormalizer.kind`로
+   인벤토리의 변경 파일만 리뷰한다. 후보는 Phase 1 2단계 5번의 정규화 명령(`candidateNormalizer.kind`로
    고름)으로 단일 원장에 병합하되, **diff 스캔은 `--allow-missing-in-scope`를 반드시 붙인다**. 두 경로 모두
    이 인자를 받는다:
    ```bash
    # kind = python (npm 0.1.32 이하)
-   <python> <plugin_dir>/scripts/normalize_candidates.py --input <raw1.jsonl> [...] --out <scan_dir>/artifacts/02_discovery/candidate_ledger.jsonl --repo-root <repo_root> --in-scope-files <scan_dir>/artifacts/02_discovery/in_scope_files.txt --allow-missing-in-scope
-   # kind = node-helper (npm 0.2.0)
+   PYTHONDONTWRITEBYTECODE=1 <python> <plugin_dir>/scripts/normalize_candidates.py --input <raw1.jsonl> [...] --out <scan_dir>/artifacts/02_discovery/candidate_ledger.jsonl --repo-root <repo_root> --in-scope-files <scan_dir>/artifacts/02_discovery/in_scope_files.txt --allow-missing-in-scope
+   # kind = node-helper (npm 0.2.0부터)
    env -i <trusted_child_env> CODEX_MCP_NODE_PATH=<node> <security_md_launcher> --helper normalize-candidates --input <raw1.jsonl> [...] --out <scan_dir>/artifacts/02_discovery/candidate_ledger.jsonl --repo-root <repo_root> --in-scope-files <scan_dir>/artifacts/02_discovery/in_scope_files.txt --allow-missing-in-scope
    ```
    diff 인벤토리에는 **삭제된 경로**가 포함되며(예: `git rm` 된 파일), 이 플래그가 없으면
-   정규화가 exit 2로 실패한다(실측). 문구는 npm 0.1.32 이하 Python이 `in-scope file row N: [Errno 2] No such file or directory: '<경로>'`, npm 0.2.0 Node 헬퍼가 `in-scope file row N: ENOENT: no such file or directory, realpath '<경로>'`다. 플래그를 붙여도
+   정규화가 exit 2로 실패한다(실측). 문구는 npm 0.1.32 이하 Python이 `in-scope file row N: [Errno 2] No such file or directory: '<경로>'`, npm 0.2.0 Node 헬퍼가 `in-scope file row N: ENOENT: no such file or directory, realpath '<경로>'`다(npm 0.4.0도 같다). 플래그를 붙여도
    후보 location 파일의 실존 검사는 그대로 수행된다.
 
    **삭제된 파일에 대한 finding 처리**: head 시점에 존재하지 않는 경로만 `locations`에 갖는
@@ -156,8 +171,13 @@ SKILL.md의 prompt-only 절이 정본이다. 이 스킬이 읽는 `skills/threat
 (리페어 루프 R12) → `workbench_glue.py complete`(게이트 실패 3선택지 분기). Phase 1·2 SKILL.md의
 해당 절차를 그대로 따른다.
 
-- **정산은 `--json`과 함께 호출한다** — 최종 보고가 `coverage.completenessAfter`·`deferredCount`·
-  `partialWithoutDeferred` 키를 인용한다. `--json`이면 JSON은 stdout, 사람용 요약은 stderr로 나간다.
+- **`bind-repo-scopes`가 필요하면** Phase 1 6단계의 `bindRepoScopes.kind` 분기를 따른다. npm 0.3.0부터
+  `generate_rank_input.py bind-repo-scopes`가 없다(Node 헬퍼로 이동).
+- **커버리지 완결성**: `coverage.completeness`는 Phase 1 5단계 규칙(`coverageCompleteness`)을 따른다.
+  npm 0.3.0부터는 쓰지 않고, 남은 작업은 `deferred`와 `needs_follow_up` surface로만 표현한다.
+- **정산은 `--json`과 함께 호출한다** — 최종 보고가 `coverage.coverageComplete`·`deferredCount`·
+  `needsFollowUpCount`·`partialWithoutDeferred` 키를 인용한다. `--json`이면 JSON은 stdout, 사람용 요약은
+  stderr로 나간다.
 - **빈 인벤토리**: diff 범위에 리뷰 대상 파일이 없는 것(문서만 바뀐 커밋 등)은 diff 스캔에서
   정직한 상태다. 그 경우에만 `--allow-empty-inventory`를 붙인다 — 통과시켜도 경고는 남는다.
   인벤토리 생성 자체가 실패해서 비었을 가능성이 있으면 붙이지 말고 상류 스크립트의 종료 상태를
