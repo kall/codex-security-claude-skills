@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
 """매칭 카탈로그·호스트 조정 검증기 (Phase 4 U1 / Phase 5 U2 / Phase 6 U5).
 
-상류 npm 0.1.29 의 스캔 매칭 호스트 조정을 표준 라이브러리만으로 옮긴다. 정본:
+상류 npm 0.1.29~0.4.0 의 스캔 매칭 호스트 조정을 표준 라이브러리만으로 옮긴다. 정본:
   - `sdk/typescript/src/finding-catalogue.ts` — groupFindings / findingCatalogue / compactFinding
   - `sdk/typescript/src/scan-comparison.ts` — matchScanFindingsInternal / reconcileComparison /
-    validateComparison / validateComparisonInput / unionFindingGroups
+    validateComparison / validateComparisonInput
   (upstream tag npm-v0.1.29, commit 6620a380f86c26d6c6428a660b2a90c3b5a1fa45.
    npm-v0.1.32 = 7c19cce7 에서 재대조: 조정 로직 변경 없음.
    npm-v0.2.0 = 4949af70 에서 재대조: 리팩터만 — union-find 를 findingGroupRoots 로 추출,
-   그룹 수집을 Map.groupBy 로. 그룹 순서(루트의 첫 등장 순)와 조정 결과는 같다)
+   그룹 수집을 Map.groupBy 로. 그룹 순서(루트의 첫 등장 순)와 조정 결과는 같다.
+   npm-v0.4.0 = 559b492b2 에서 재대조: comparisonPrompt()·reconcileComparison·카탈로그 규칙은 같다.
+   2b759675b(#1364)가 validateComparison 의 enforceConfirmedIdentities 분기를 지웠다 — 조정 결과에서
+   도달할 수 없던 분기라 조정 결과는 같다. 이 파일도 그 분기와 unionFindingGroups 사용을 지웠다.
+   1d54bd702(#1548)는 SDK runtime.ts 의 save-scan-comparison --help 프로브(stdin·related 지원
+   여부)를 지우고 현재 프로토콜(--matches-json-stdin + related)을 요구한다)
 판정 규칙(서브에이전트 프롬프트 문장)은 SKILL.md 가, 검증·조정 규칙은 이 코드가 소유한다(P5-KTD4).
 
 흐름(상류 matchScanFindingsInternal 과 같은 순서, P6-KTD3):
@@ -21,11 +26,11 @@
        a. 스키마 검사(상류 comparisonSchema .strict() + 우리 선택 키 두 개)
        b. 선택 키 분리: priorGroupConcerns(보고 전용, P6-KTD4) / evidenceNeeded(비어 있지 않으면
           저장 없이 중단, P6-KTD5) — 둘 다 저장 페이로드에 싣지 않는다
-       c. 느슨한 단계: 카탈로그 기준 validateComparison(enforceConfirmedIdentities=false)
+       c. 느슨한 단계: 카탈로그 기준 validateComparison
        d. before 대표 ID → 그룹의 모든 occurrence 로 펼침
        e. reconcileComparison: 느슨한 검증 → 신원 그룹 병합(한 그룹에 걸친 매칭은 하나로,
-          신원 전용 그룹은 상류 기본 사유로) → 같은 그룹 안 uncertain·related 제거 → 강제 단계
-          (enforceConfirmedIdentities=true)
+          신원 전용 그룹은 상류 기본 사유로) → 같은 그룹 안 uncertain·related 제거 → 최종 단계
+          (조정 결과를 전체 입력 기준으로 같은 validateComparison 에 다시 넣는다)
        f. `workbench_db.py save-scan-comparison --matches-json-stdin` 이 받는 페이로드를 낸다
   3. measure — 조립한 프롬프트의 Unicode 코드포인트 수를 한도와 비교한다(P6-KTD5, R13).
 
@@ -68,7 +73,7 @@ _MATCH_KEYS = {"beforeOccurrenceIds", "afterOccurrenceIds", "confidence", "reaso
 _PAIR_KEYS = {"beforeOccurrenceId", "afterOccurrenceId", "reason"}
 _CONCERN_KEYS = {"issueId", "reason"}
 _LOOSE = "[느슨한 단계] "
-_ENFORCED = "[강제 단계] "
+_FINAL = "[최종 단계] "
 _SUBCOMMANDS = {"catalogue", "finalize", "measure"}
 
 
@@ -427,60 +432,25 @@ def finding_catalogue(findings: list[dict], known_groups: list[list[str]]) -> di
 # ---------------------------------------------------------------------------
 
 
-def union_finding_groups(groups: list[list[str]]) -> list[list[str]]:
-    """상류 unionFindingGroups — findingId 그룹들을 union-find 로 병합한다(공백 ID 제외)."""
-    parents: dict[str, str] = {}
-
-    def representative(identity: str) -> str:
-        root = identity
-        while parents[root] != root:
-            root = parents[root]
-        current = identity
-        while parents[current] != current:
-            parents[current], current = root, parents[current]
-        return root
-
-    for group in groups:
-        identities = [identity for identity in group if identity.strip()]
-        if not identities:
-            continue
-        first, rest = identities[0], identities[1:]
-        parents.setdefault(first, first)
-        first_root = representative(first)
-        for identity in rest:
-            parents.setdefault(identity, identity)
-            parents[representative(identity)] = first_root
-
-    united: dict[str, list[str]] = {}
-    for identity in list(parents):
-        united.setdefault(representative(identity), []).append(identity)
-    return list(united.values())
-
-
-def _finding_ids(rows: list[dict]) -> dict[str, str]:
-    return {
-        row["occurrenceId"]: row["findingId"] for row in rows if _stable_id(row.get("findingId"))
-    }
-
-
 def validate_comparison(
     before: list[dict],
     after: list[dict],
     known_groups: list[list[str]],
     response: dict,
     *,
-    enforce: bool,
     stage: str,
     hints: dict[str, str] | None = None,
 ) -> None:
     """상류 validateComparison(allowHistoricalUncertainty=false). 위반 시 ValueError.
 
-    `enforce` 는 상류 enforceConfirmedIdentities 다. 느슨한 단계(False)는 서브에이전트
-    반환을 카탈로그 기준으로, 강제 단계(True)는 조정이 끝난 결과를 전체 입력 기준으로 본다.
+    느슨한 단계는 서브에이전트 반환을 카탈로그 기준으로, 최종 단계는 조정이 끝난 결과를
+    전체 입력 기준으로 본다. 두 단계의 규칙은 같다(상류 0.4.0). 0.2.0 까지 있던
+    enforceConfirmedIdentities 전용 분기(기확정 그룹 흩어짐·부분 매칭·양쪽 미매칭, 같은
+    findingId 의 uncertain, 같은 기확정 그룹의 related)는 상류 2b759675b(#1364)에서 지워졌다.
+    조정이 신원 그룹을 먼저 병합하므로 조정 결과에서는 도달할 수 없는 분기였다.
     """
     before_ids = {row["occurrenceId"] for row in before}
     after_ids = {row["occurrenceId"] for row in after}
-    finding_ids = _finding_ids(before + after)
     matched_before: dict[str, int] = {}
     matched_after: dict[str, int] = {}
 
@@ -507,47 +477,13 @@ def validate_comparison(
                     )
                 used[occurrence] = group
 
-    confirmed = union_finding_groups(
-        known_groups + [[finding_id] for finding_id in dict.fromkeys(finding_ids.values())]
-    )
-    if enforce:
-        occurrences_by_finding: dict[str, list[str]] = {}
-        for occurrence, finding_id in finding_ids.items():
-            occurrences_by_finding.setdefault(finding_id, []).append(occurrence)
-        for known in confirmed:
-            known_occurrences = [
-                occurrence
-                for finding_id in known
-                for occurrence in occurrences_by_finding.get(finding_id, [])
-            ]
-            matched_groups = {
-                matched_before.get(occurrence, matched_after.get(occurrence))
-                for occurrence in known_occurrences
-                if occurrence in matched_before or occurrence in matched_after
-            }
-            unmatched = any(
-                occurrence not in matched_before and occurrence not in matched_after
-                for occurrence in known_occurrences
-            )
-            both_sides = any(o in before_ids for o in known_occurrences) and any(
-                o in after_ids for o in known_occurrences
-            )
-            if (
-                len(matched_groups) > 1
-                or (len(matched_groups) == 1 and unmatched)
-                or (both_sides and not matched_groups)
-            ):
-                raise ValueError(f"{stage}기확정 finding 그룹과 모순되는 매칭입니다: {sorted(known)}")
-
     uncertain_pairs: set[tuple[str, str]] = set()
     for candidate in response["uncertain"]:
         b, a = candidate["beforeOccurrenceId"], candidate["afterOccurrenceId"]
-        before_finding, after_finding = finding_ids.get(b), finding_ids.get(a)
         if (
             b not in before_ids
             or b in matched_before
             or a not in after_ids
-            or (enforce and before_finding is not None and before_finding == after_finding)
             or a in matched_after
         ):
             raise ValueError(f"{stage}유효하지 않은 uncertain 쌍입니다: ({_short(b)}, {_short(a)})")
@@ -555,21 +491,14 @@ def validate_comparison(
             raise ValueError(f"{stage}중복된 uncertain 쌍입니다: ({_short(b)}, {_short(a)})")
         uncertain_pairs.add((b, a))
 
-    known_group_by_finding = {
-        finding_id: index for index, group in enumerate(confirmed) for finding_id in group
-    }
     related_pairs: set[tuple[str, str]] = set()
     for candidate in response.get("related", []):
         b, a = candidate["beforeOccurrenceId"], candidate["afterOccurrenceId"]
         before_group = matched_before.get(b)
-        before_finding, after_finding = finding_ids.get(b), finding_ids.get(a)
-        known_before = None if before_finding is None else known_group_by_finding.get(before_finding)
-        known_after = None if after_finding is None else known_group_by_finding.get(after_finding)
         if (
             b not in before_ids
             or a not in after_ids
             or (before_group is not None and before_group == matched_after.get(a))
-            or (enforce and known_before is not None and known_before == known_after)
             or (b, a) in uncertain_pairs
             or (b, a) in related_pairs
         ):
@@ -584,7 +513,7 @@ def reconcile_comparison(
     response: dict,
 ) -> tuple[dict, bool]:
     """상류 reconcileComparison — (저장 결과, 신원만으로 완결 여부)."""
-    validate_comparison(before, after, known_groups, response, enforce=False, stage=_LOOSE)
+    validate_comparison(before, after, known_groups, response, stage=_LOOSE)
     before_ids = {row["occurrenceId"] for row in before}
     after_ids = {row["occurrenceId"] for row in after}
     groups = group_findings(
@@ -631,7 +560,7 @@ def reconcile_comparison(
     comparison: dict = {"matches": matches, "uncertain": separate(response["uncertain"])}
     if "related" in response:
         comparison["related"] = separate(response["related"])
-    validate_comparison(before, after, known_groups, comparison, enforce=True, stage=_ENFORCED)
+    validate_comparison(before, after, known_groups, comparison, stage=_FINAL)
     return comparison, len(matches) == len(groups)
 
 
@@ -908,7 +837,7 @@ def command_finalize(args: argparse.Namespace) -> int:
             "priorGroupConcerns": concern_report,
         })
     # 느슨한 단계: 카탈로그(대표 카드 + after 카드) 기준.
-    validate_comparison(cards, after_cards, [], result, enforce=False, stage=_LOOSE, hints=hints)
+    validate_comparison(cards, after_cards, [], result, stage=_LOOSE, hints=hints)
 
     def expand(occurrence: str) -> list[str]:
         return [row["occurrenceId"] for row in catalogue[occurrence]["occurrences"]]
@@ -981,7 +910,7 @@ def _parser() -> argparse.ArgumentParser:
     catalogue.add_argument("--catalogue-out", required=True, help="카탈로그 JSON(미신뢰 블록 본문)을 쓸 파일")
     catalogue.add_argument("--payload-out", help="완결이면 저장 페이로드를 쓸 파일")
     catalogue.set_defaults(handler=command_catalogue)
-    finalize = sub.add_parser("finalize", help="서브에이전트 반환 → 느슨한 검증 → 펼침·병합 → 강제 검증")
+    finalize = sub.add_parser("finalize", help="서브에이전트 반환 → 느슨한 검증 → 펼침·병합 → 최종 검증")
     finalize.add_argument("--input-json", required=True, help="compare-scans matchingInputs (`-` 는 stdin)")
     finalize.add_argument("--matches-json", required=True, help="서브에이전트 반환 JSON (`-` 는 stdin)")
     finalize.add_argument("--payload-out", help="저장 페이로드를 쓸 파일")

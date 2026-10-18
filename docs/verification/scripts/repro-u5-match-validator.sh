@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# U5 재현 스크립트: 매칭 검증기(validate_matches.py)가 상류 0.1.29 호스트 조정
+# U5 재현 스크립트: 매칭 검증기(validate_matches.py)가 상류 0.1.29~0.4.0 호스트 조정
 # (sdk/typescript/src/scan-comparison.ts 의 matchScanFindingsInternal /
 #  reconcileComparison / validateComparison, finding-catalogue.ts 의 groupFindings /
 #  findingCatalogue / compactFinding) 을 그대로 재현하는지 자기 채점한다.
@@ -9,6 +9,7 @@
 #   S    상류 dist 실측 대조 — 가짜 codex 로 matchScanFindingsInternal 을 돌린 결과와 비교
 #   T    프롬프트 한도 측정(measure) — 동등성 한도와 실행 한도
 #   U    워크벤치 왕복 — 봉인 스캔 3개로 catalogue → finalize → save-scan-comparison
+#   V    0.4.0 정합 — validateComparison 강제 분기 삭제(2b759675b)와 병합에 의한 모순 해소
 #
 # 종료코드: 0 = 전부 통과 / 2 = INCOMPLETE(전제 부족: node·상류 dist·플러그인 없음) / 1 = 단언 실패.
 # exit 2 는 통과가 아니다.
@@ -880,31 +881,88 @@ case "$out" in
     bad "Q1b: 절단 표식이 없습니다 (${q1_len}자) — 픽스처가 길이 한도에 도달하지 못했거나 한도가 사라졌습니다" ;;
 esac
 
-# Q2: 깊게 중첩된 값 → repr 재귀 폭주에도 JSON 봉투가 유지된다.
-#     json.loads 는 통과하지만 repr 이 실패하는 깊이를 쓴다.
-PY - "$RUN/input-deep-row.json" <<'EOF'
+# Q2: 깊게 중첩된 값 → 어떤 깊이에서도 JSON 봉투(exit 1 + {"ok": false})가 유지된다.
+#
+#     0.2.0 때부터 실패하던 옛 Q2b 는 "JSON 으로는 읽히지만 repr 이 재귀 한도에 걸리는
+#     깊이"를 전제했다. 실측하면 그런 깊이가 없다. CPython 3.12+ 는 json 스캐너가 repr
+#     보다 먼저 한도에 걸린다(3.12.15: 5천 중첩은 둘 다 통과, 1만은 json.loads 가
+#     RecursionError. 3.14.8: 5만은 둘 다 통과, 8만은 json.loads 가 RecursionError).
+#     그래서 종단 픽스처로는 _safe_repr 의 RecursionError 분기에 닿을 수 없다. 단언을
+#     둘로 나눈다.
+#       Q2a/Q2b — 종단: 어느 지원 버전에서나 읽히는 깊이(900)는 _side 거부 문장으로, 파서
+#                 한도를 넘는 깊이(100만)는 main() 의 중첩 한도 분기로 각각 봉투를 유지한다.
+#                 (길이 절단은 Q1 이 고정한다.)
+#       Q2c     — 단위: repr 이 RecursionError 를 내는 값을 _side 거부 경로에 직접 넣어
+#                 _safe_repr 방어가 발동하고 ValueError(재판정 사유)로 끝나는지 본다.
+PY - "$RUN/input-deep-row.json" "$RUN/input-deeper-row.json" <<'EOF'
 import sys
-n = 50000
-deep = "[" * n + "]" * n
-open(sys.argv[1], "w", encoding="utf-8").write(
-    '{"matchingInputs":{"before":[' + deep + '],'
-    '"after":[{"occurrenceId":"a1","findingId":"g1"}]}}'
-)
+for path, n in ((sys.argv[1], 900), (sys.argv[2], 1000000)):
+    deep = "[" * n + "]" * n
+    open(path, "w", encoding="utf-8").write(
+        '{"matchingInputs":{"before":[' + deep + '],'
+        '"after":[{"occurrenceId":"a1","findingId":"g1"}]}}'
+    )
 EOF
 need_fixture "$RUN/input-deep-row.json"
+need_fixture "$RUN/input-deeper-row.json"
 out="$(PY "$VALIDATOR" finalize --input-json "$RUN/input-deep-row.json" --matches-json "$RUN/no-match.json" 2>&1)"
 code=$?
 expect_exit 1 "$code" "Q2 깊게 중첩된 행은 거부"
-# `"ok": false` 는 입력 파싱 실패 등 **모든** 거부 경로가 낸다 — 5만 중첩을 평범한
-# 불량 행으로 바꿔도 초록이었다(실측). 방어의 고유 문구를 함께 요구한다. 그리고
-# 파이프로 grep -q 에 넘기지 않는다(u7 이 같은 커밋에서 제거한 SIGPIPE/pipefail 함정).
+# `"ok": false` 는 모든 거부 경로가 낸다. 이 행이 파서를 지나 실제로 occurrenceId 검사(_side)에
+# 닿았는지까지 요구한다. 파이프로 grep -q 에 넘기지 않는다(SIGPIPE/pipefail 함정).
 case "$out" in
-  *'"ok": false'*"repr 재귀 한도 초과"*)
-    ok "Q2b: JSON 봉투 유지 + repr 재귀 방어가 실제로 발동" ;;
+  *'"ok": false'*"'before'[0] 에 문자열 occurrenceId 가 없습니다: [[[["*)
+    ok "Q2a: 읽히는 깊이 — JSON 봉투 유지, _side 거부 경로 도달" ;;
+  *"repr 재귀 한도 초과"*)
+    ok "Q2a: 읽히는 깊이 — 이 Python 은 repr 이 먼저 한도에 걸렸고 _safe_repr 방어가 발동" ;;
   *)
-    bad "Q2b: 봉투 또는 repr 재귀 방어 근거가 없습니다 — 픽스처가 repr 경로에 도달하지 못했거나 방어가 사라졌습니다"
-    printf '     %s\n' "${out%%$'\n'*}" ;;
+    bad "Q2a: 봉투 또는 _side 거부 근거가 없습니다"
+    printf '     %s\n' "${out:0:300}" ;;
 esac
+out="$(PY "$VALIDATOR" finalize --input-json "$RUN/input-deeper-row.json" --matches-json "$RUN/no-match.json" 2>&1)"
+code=$?
+expect_exit 1 "$code" "Q2 파서 한도를 넘는 행은 거부"
+case "$out" in
+  '{"ok": false, "error": "입력 읽기/파싱 실패(중첩 한도): '*)
+    ok "Q2b: 파서 한도 초과 — 트레이스백 없이 중첩 한도 봉투" ;;
+  *)
+    bad "Q2b: 중첩 한도 봉투가 아닙니다"
+    printf '     %s\n' "${out:0:300}" ;;
+esac
+PY - "$VALIDATOR" <<'EOF'
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("validate_matches", sys.argv[1])
+vm = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(vm)
+
+
+class ReprBomb:
+    def __repr__(self) -> str:
+        raise RecursionError("maximum recursion depth exceeded while getting the repr of an object")
+
+
+failures = 0
+marker = vm._safe_repr(ReprBomb())
+if marker != "<ReprBomb: repr 재귀 한도 초과>":
+    print(f"FAIL Q2c _safe_repr 표식: {marker!r}"); failures += 1
+try:
+    vm._side({"before": [ReprBomb()]}, "before")
+    print("FAIL Q2c _side 가 거부하지 않았습니다"); failures += 1
+except ValueError as error:
+    good = "문자열 occurrenceId 가 없습니다" in str(error) and "repr 재귀 한도 초과" in str(error)
+    print(("OK   " if good else "FAIL ") + f"Q2c: repr 재귀 방어 발동 → ValueError(재판정 사유): {error}")
+    failures += 0 if good else 1
+except RecursionError as error:
+    print(f"FAIL Q2c: repr 재귀가 ValueError 생성 전에 새어 나왔습니다: {error}"); failures += 1
+# 대조군: 방어가 없으면(repr 직접 호출) 같은 값이 RecursionError 를 낸다 — 픽스처가 실제로 그 경로를 친다.
+try:
+    repr(ReprBomb())
+    print("FAIL Q2c 대조군: repr 이 실패하지 않았습니다 — 픽스처가 재귀 경로를 치지 않습니다"); failures += 1
+except RecursionError:
+    print("OK   Q2c 대조군: 방어 없는 repr 은 RecursionError")
+raise SystemExit(1 if failures else 0)
+EOF
+[ $? = 0 ] || FAILED=$((FAILED + 1))
 
 # ---------------------------------------------------------------------------
 # 상류 전제 탐색 — S(dist 대조)와 U(워크벤치 왕복)에만 쓴다. 없으면 두 블록을
@@ -946,7 +1004,7 @@ fi
 #      신원 그룹 카드 포함 + 새 ID 합류 reconcile/cross-side-alias-extended
 #      한 그룹에 걸친 두 매칭 병합 ..... reconcile/later-side-aliases-merge-two-matches
 #      그룹 안 uncertain·related 제거 . reconcile/cross-side-alias-*, same-stable-finding-uncertain-dropped
-#      강제 단계 잔여 모순 거부 ........ reconcile/known-*-uncertain-residual
+#      최종 단계 잔여 모순 거부 ........ reconcile/known-*-uncertain-residual
 #      priorGroupConcerns 분리 (AE3) .. extensions/prior-group-concerns
 #      evidenceNeeded → 페이로드 없음 . extensions/evidence-needed
 #      기존 거부 4종 + P5 규칙 ......... rejections/rejects-table (+ 위 A~H)
@@ -1319,15 +1377,20 @@ out="$(PY "$VALIDATOR" measure --prompt-file "$RUN/prompt-half.txt" --prompt-fil
 expect_exit 3 "$?" "T7c 합계가 한도를 1자 넘으면 exit 3"
 
 # ---------------------------------------------------------------------------
-# V. 강제 단계 직접 호출 — reconcile 을 거친 결과에서는 enforceConfirmedIdentities 전용
-#    분기(기확정 그룹 흩어짐·부분 매칭·양쪽 미매칭, 같은 findingId 의 uncertain, 같은
-#    기확정 그룹의 related)에 도달할 수 없다. 병합이 그 모순을 먼저 없애기 때문이다.
-#    상류는 이 분기를 방어선으로 남겨 두었으므로 우리도 남기고, 함수를 직접 불러 고정한다.
-#    (전체 흐름만 보면 이 분기를 지워도 초록불이다 — 변이 시험으로 확인.)
+# V. 0.4.0 정합 — enforceConfirmedIdentities 분기 삭제 (상류 2b759675b, #1364)
+#    0.2.0 까지 상류 validateComparison 에는 조정 뒤에만 켜는 강제 분기(기확정 그룹
+#    흩어짐·부분 매칭·양쪽 미매칭, 같은 findingId 의 uncertain, 같은 기확정 그룹의
+#    related)가 있었다. reconcile 의 신원 그룹 병합이 그 모순을 먼저 없애므로 도달할 수
+#    없었고, 0.4.0 은 그 분기를 지웠다. 검증기도 지웠다. 여기서는 두 가지를 고정한다.
+#      - validate_comparison 은 단일 규칙이다(enforce 인자 없음). 옛 강제 분기 입력은
+#        validate_comparison 단독으로는 통과한다(0.4.0 상류와 같다).
+#      - 같은 입력을 reconcile_comparison 에 넣으면 병합이 모순을 해소한다 — 흩어진 그룹은
+#        한 매칭으로 합쳐지고, 양쪽 미매칭 그룹은 신원 사유로 매칭되고, 같은 그룹의
+#        uncertain·related 는 빠진다. 이것이 분기를 지워도 결과가 같은 근거다.
 # ---------------------------------------------------------------------------
-step "V. 강제 단계 분기 직접 검증 (validate_comparison enforce=True)"
+step "V. 0.4.0 정합 — 강제 분기 삭제와 병합에 의한 모순 해소"
 PY - "$VALIDATOR" <<'PYEOF'
-import importlib.util, sys
+import importlib.util, inspect, sys
 spec = importlib.util.spec_from_file_location("validate_matches", sys.argv[1])
 vm = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(vm)
@@ -1335,39 +1398,49 @@ before = [{"occurrenceId": "b1", "findingId": "f1"}, {"occurrenceId": "b2", "fin
 after = [{"occurrenceId": "a1", "findingId": "g1"}, {"occurrenceId": "a2", "findingId": "g2"}]
 m = lambda b, a: {"beforeOccurrenceIds": b, "afterOccurrenceIds": a, "confidence": "high", "reason": "r"}
 p = lambda b, a: {"beforeOccurrenceId": b, "afterOccurrenceId": a, "reason": "r"}
-cases = [
-    ("V1 기확정 그룹이 두 매칭 그룹으로 흩어짐", [["f1", "f2"]],
-     {"matches": [m(["b1"], ["a1"]), m(["b2"], ["a2"])], "uncertain": []}, "기확정 finding 그룹과 모순"),
-    ("V2 기확정 그룹 일부만 매칭", [["f1", "f2"]],
-     {"matches": [m(["b1"], ["a1"])], "uncertain": []}, "기확정 finding 그룹과 모순"),
-    ("V3 기확정 그룹이 양쪽에 있는데 미매칭", [["f1", "g1"]],
-     {"matches": [], "uncertain": []}, "기확정 finding 그룹과 모순"),
-    # 같은 기확정 그룹의 related·같은 findingId 의 uncertain 전용 분기는 상류에서도 그룹 검사
-    # 뒤에 있어 먼저 그룹 검사에 걸린다(양쪽 미매칭 = 모순). 순서가 상류와 같은지만 고정한다.
-    ("V4 같은 기확정 그룹의 related 는 그룹 검사가 먼저 거부", [["f2", "g2"]],
-     {"matches": [m(["b1"], ["a1"])], "uncertain": [], "related": [p("b2", "a2")]}, "기확정 finding 그룹과 모순"),
-]
+groups = lambda c: sorted(sorted(x["beforeOccurrenceIds"] + x["afterOccurrenceIds"]) for x in c["matches"])
 failures = 0
-for label, known, response, reason in cases:
-    try:
-        vm.validate_comparison(before, after, known, response, enforce=True, stage=vm._ENFORCED)
-        print(f"FAIL {label}: 강제 단계가 거부하지 않았습니다"); failures += 1
-    except ValueError as error:
-        good = reason in str(error) and str(error).startswith("[강제 단계]")
-        print(("OK   " if good else "FAIL ") + f"{label}: {error}"); failures += 0 if good else 1
-    try:
-        vm.validate_comparison(before, after, known, response, enforce=False, stage=vm._LOOSE)
-        print(f"OK   {label} 대조군: 느슨한 단계는 통과")
-    except ValueError as error:
-        print(f"FAIL {label} 대조군: 느슨한 단계가 거부했습니다: {error}"); failures += 1
-same = [{"occurrenceId": "b", "findingId": "s"}], [{"occurrenceId": "a", "findingId": "s"}]
-try:
-    vm.validate_comparison(*same, [], {"matches": [], "uncertain": [p("b", "a")]}, enforce=True, stage=vm._ENFORCED)
-    print("FAIL V5 같은 findingId 의 uncertain: 거부하지 않았습니다"); failures += 1
-except ValueError as error:
-    good = "기확정 finding 그룹과 모순" in str(error)
-    print(("OK   " if good else "FAIL ") + f"V5 같은 findingId 의 uncertain 은 그룹 검사가 먼저 거부: {error}")
+
+
+def check(label, good, detail):
+    global failures
+    print(("OK   " if good else "FAIL ") + f"{label}: {detail}")
     failures += 0 if good else 1
+
+
+params = inspect.signature(vm.validate_comparison).parameters
+check("V0 validate_comparison 에 enforce 인자가 없다", "enforce" not in params, list(params))
+check("V0 단계 표식은 느슨한/최종 두 개", (vm._LOOSE, vm._FINAL) == ("[느슨한 단계] ", "[최종 단계] "),
+      [vm._LOOSE, vm._FINAL])
+cases = [
+    ("V1 기확정 그룹이 두 매칭 그룹으로 흩어짐", before, after, [["f1", "f2"]],
+     {"matches": [m(["b1"], ["a1"]), m(["b2"], ["a2"])], "uncertain": []},
+     lambda c: groups(c) == [["a1", "a2", "b1", "b2"]]),
+    ("V2 기확정 그룹 일부만 매칭", before, after, [["f1", "f2"]],
+     {"matches": [m(["b1"], ["a1"])], "uncertain": []},
+     lambda c: groups(c) == [["a1", "b1", "b2"]]),
+    ("V3 기확정 그룹이 양쪽에 있는데 미매칭", before, after, [["f1", "g1"]],
+     {"matches": [], "uncertain": []},
+     lambda c: c["matches"] == [{**m(["b1"], ["a1"]), "reason": vm.IDENTITY_REASON}]),
+    ("V4 같은 기확정 그룹의 related", before, after, [["f2", "g2"]],
+     {"matches": [m(["b1"], ["a1"])], "uncertain": [], "related": [p("b2", "a2")]},
+     lambda c: c["related"] == [] and groups(c) == [["a1", "b1"], ["a2", "b2"]]),
+    ("V5 같은 findingId 의 uncertain", [{"occurrenceId": "b", "findingId": "s"}],
+     [{"occurrenceId": "a", "findingId": "s"}], [],
+     {"matches": [], "uncertain": [p("b", "a")]},
+     lambda c: c["uncertain"] == [] and groups(c) == [["a", "b"]]),
+]
+for label, b, a, known, response, expected in cases:
+    try:
+        vm.validate_comparison(b, a, known, response, stage=vm._FINAL)
+        check(label, True, "validate_comparison 단독 통과(0.4.0 상류와 같음)")
+    except ValueError as error:
+        check(label, False, f"옛 강제 분기가 남아 거부했습니다: {error}")
+    try:
+        comparison, _ = vm.reconcile_comparison(b, a, known, response)
+        check(label + " → 조정", expected(comparison), f"병합이 모순을 해소: {groups(comparison)}")
+    except ValueError as error:
+        check(label + " → 조정", False, f"조정이 거부했습니다: {error}")
 raise SystemExit(1 if failures else 0)
 PYEOF
 [ $? = 0 ] || FAILED=$((FAILED + 1))

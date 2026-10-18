@@ -1,5 +1,5 @@
 {
-  "description": "최종 조정(펼침 → 신원 그룹 병합 → 그룹 내 uncertain·related 제거 → 강제 검증) 픽스처. 대부분 상류 테스트 케이스를 옮겼다. 응답은 서브에이전트가 대표 카드 ID 로 반환한 JSON 이다.",
+  "description": "최종 조정(펼침 → 신원 그룹 병합 → 그룹 내 uncertain·related 제거 → 최종 검증) 픽스처. 대부분 상류 테스트 케이스를 옮겼다. 응답은 서브에이전트가 대표 카드 ID 로 반환한 JSON 이다.",
   "fixtures": [
     {
       "name": "split-confirmed-historical-group",
@@ -775,7 +775,7 @@
       },
       "cases": [
         {
-          "label": "신원으로 이미 매칭된 before 를 다른 그룹과 uncertain 으로 묶은 잔여 모순은 강제 단계에서 거부",
+          "label": "신원으로 이미 매칭된 before 를 다른 그룹과 uncertain 으로 묶은 잔여 모순은 최종 단계에서 거부",
           "response": {
             "matches": [],
             "uncertain": [
@@ -788,7 +788,7 @@
           },
           "expect": {
             "exit": 1,
-            "reason": "[강제 단계] 유효하지 않은 uncertain 쌍입니다: (old, other)"
+            "reason": "[최종 단계] 유효하지 않은 uncertain 쌍입니다: (old, other)"
           },
           "upstream": {
             "error": "Scan comparison returned an invalid uncertain pair."
@@ -851,7 +851,7 @@
       },
       "cases": [
         {
-          "label": "신원으로 이미 매칭된 after 를 uncertain 으로 재사용한 잔여 모순은 강제 단계에서 거부",
+          "label": "신원으로 이미 매칭된 after 를 uncertain 으로 재사용한 잔여 모순은 최종 단계에서 거부",
           "response": {
             "matches": [],
             "uncertain": [
@@ -864,7 +864,7 @@
           },
           "expect": {
             "exit": 1,
-            "reason": "[강제 단계] 유효하지 않은 uncertain 쌍입니다: (other, new)"
+            "reason": "[최종 단계] 유효하지 않은 uncertain 쌍입니다: (other, new)"
           },
           "upstream": {
             "error": "Scan comparison returned an invalid uncertain pair."
