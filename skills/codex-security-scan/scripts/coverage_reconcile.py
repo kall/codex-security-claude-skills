@@ -344,7 +344,7 @@ def reconcile_coverage(
 
     before = coverage.get("completeness")
     result.completeness_before = before if isinstance(before, str) else None
-    # 키가 없으면 npm 0.4.0 형상이다 — 정산도 키를 새로 만들지 않는다.
+    # 키가 없으면 npm 0.3.0 이후 형상이다 — 정산도 키를 새로 만들지 않는다.
     result.completeness_field = "completeness" in coverage
 
     if not in_scope and allow_empty_inventory:
@@ -930,7 +930,7 @@ def run(args: argparse.Namespace, out) -> tuple[int, dict[str, Any]]:
         (
             f"  completeness: {recon.completeness_before!r} -> {recon.completeness_after!r}"
             if recon.completeness_field
-            else "  completeness: 필드 없음(npm 0.4.0 형상 — 정산도 만들지 않음)"
+            else "  completeness: 필드 없음(npm 0.3.0 이후 형상 — 정산도 만들지 않음)"
         ),
         file=out,
     )

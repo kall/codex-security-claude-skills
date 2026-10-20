@@ -241,7 +241,7 @@ else:
     print("  정규화   : 사용 불가 — 전체·diff·deep 스캔을 시작할 수 없습니다")
     print(f"             {normalizer.get('reason') or 'candidateNormalizer 없음'}")
 
-# 작업 목록 도우미(npm 0.4.0 부터 Node 헬퍼). scoped-path 바인딩과 diff 리뷰 입력 복사에 쓴다.
+# 작업 목록 도우미(npm 0.3.0 부터 Node 헬퍼). scoped-path 바인딩과 diff 리뷰 입력 복사에 쓴다.
 # 불가여도 저장소 전체 스캔은 영향이 없으므로 종료코드를 바꾸지 않는다. 못 쓰는 경로만 알린다.
 for key, label, consumer in (
     ("bindRepoScopes", "경로 바인딩", "scoped-path 스캔을"),

@@ -59,6 +59,7 @@ MCP가 없으면 "report the blocker; do not author canonical files through a sh
    | `diffTarget.baseRevision`·`diffTarget.headRevision` | `scan.target.baseRevision`·`headRevision`(해석된 커밋 SHA) |
    | `diffTarget.snapshotDigest` | `scan.target.snapshotDigest` |
    | `diffTarget.kind` | `coverage.mode` — `range` → `branch_diff`, `commit` → `commit`, `working_tree` → `working_tree` |
+   | (diff 종류와 무관) | `coverage.inventoryStrategy` = `diff`. 상류 스키마 enum은 `repository \| scoped_path \| diff \| directory \| custom`이다. `git_diff`를 쓰면 finalize가 `coverage.schema.inventoryStrategy: unsupported value 'git_diff'`로 거부한다(2026-10-20 0.5.0 스모크) |
 
    `snapshotDigest`는 글루가 상류 규칙으로 계산한다. working_tree는 등록 시점 `contentDigest`다. 커밋 diff는
    `sha256("codex-security-diff/v1\0<kind>\0<base>\0<head>")`이고, 상류 `workbench_target.committed_diff_snapshot_digest()`와
@@ -197,6 +198,10 @@ MCP가 없으면 "report the blocker; do not author canonical files through a sh
 - **shallow clone에서 base 해석 실패**: `git fetch --unshallow` 또는 필요한 base를 fetch하라는 한국어
   안내로 종료한다.
 - **detached HEAD**: working-tree 스캔은 정상 등록된다(HEAD를 base로 사용).
+- **루트 커밋(부모 없는 커밋)을 diff 대상으로 지정**: 워크벤치에 등록할 수 없다. 글루 `register`는
+  `refs|working_tree`만 받고, 상류 CLI 레시피도 base를 로컬 커밋으로만 받는다(빈 트리나 `<루트>^`를 주면
+  `Base revision does not resolve to a local Git commit`). 상류 #1716(npm 0.5.0)의 빈 트리 처리는 MCP
+  `commit` 경로에만 적용된다. 저장소 전체 스캔(Phase 1)을 쓰라고 안내하고 종료한다.
 
 ## 하드 규칙
 

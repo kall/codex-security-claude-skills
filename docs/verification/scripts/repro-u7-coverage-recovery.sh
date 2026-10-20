@@ -93,7 +93,7 @@ EOF
 
 # make_scan <이름> <in_scope 내용> <review_log 내용> <completeness> <deferred-json>
 # 정산 대상 스캔 디렉터리를 만들고 경로를 echo 한다. completeness 가 `-` 이면 키를
-# 지운다(npm 0.4.0 형상 — 상류가 coverage.completeness 를 지웠다).
+# 지운다(npm 0.3.0 이후 형상 — 상류가 coverage.completeness 를 지웠다).
 make_scan() {
   local name="$1" in_scope="$2" review_log="$3" completeness="$4" deferred="$5"
   local scan="$RUN/scan-$name"
@@ -416,7 +416,7 @@ fi
 #      키를 버린다. 정산은 키를 새로 만들지 않고, 완결성은 coverageComplete 로 낸다.
 #      SARIF 는 deferred 가 있을 때만 경고를 싣는다 — 판정 축은 0.2.0 과 같다.
 # ---------------------------------------------------------------------------
-step "I5x. completeness 필드 없음 (npm 0.4.0 형상)"
+step "I5x. completeness 필드 없음 (npm 0.3.0 이후 형상)"
 # (1) 완전 리뷰 · deferred 없음 → 완전, 신호 꺼짐, 키를 만들지 않음.
 SCAN_NC_OK="$(make_scan nc-ok 'src/extract.py
 ' "$REVIEWED" - '[]')"

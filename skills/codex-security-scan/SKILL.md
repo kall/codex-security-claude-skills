@@ -110,12 +110,12 @@ fallbacks"보다 우선한다고 쓰기 때문이다. 그래서 상류 문서가
      대상 저장소 밖의 Git을 고른다(상류 `50b0e186`). 이 변수는 `env -i`로 구성한 자식 환경에 들어가지
      않고, `workbench_glue.py`도 상속값을 지운다(`repro-u7` I18). 상류 SDK도 사용자 값을 쓰지 않는다.
    - **시작 고지**: 선택된 플러그인의 절대 경로, `pluginVersion`, `npmVersion`을 사용자에게 알린다.
-     `pluginVersion`이 이 번역 지침 작성 기준(**매니페스트 0.1.95**, npm 0.4.0)과 다르면 "플러그인 버전이
+     `pluginVersion`이 이 번역 지침 작성 기준(**매니페스트 0.1.95**, npm 0.5.0)과 다르면 "플러그인 버전이
      매핑 기준과 다름 — 워크플로 지시가 바뀌었을 수 있음"을 경고한다. 이 값은 매니페스트
-     버전이며 npm 패키지 버전과 다른 축이다(npm 0.4.0 = 매니페스트 0.1.95).
-     `npmVersion`이 `null`이 아니고 `0.4.0`과 다르면 같은 경고를 낸다. `null`(소스 체크아웃 등)이면
+     버전이며 npm 패키지 버전과 다른 축이다(npm 0.5.0 = 매니페스트 0.1.95).
+     `npmVersion`이 `null`이 아니고 `0.5.0`과 다르면 같은 경고를 낸다. `null`(소스 체크아웃 등)이면
      npm 버전을 알 수 없다고만 적는다. `npmVersion`은 고지용이다. 동작 분기는 아래 파일 프로브로 한다.
-   - **표기 규약**: 이 저장소의 문서는 두 축을 **항상 이름으로 구분해** 쓴다 — `npm 0.4.0`,
+   - **표기 규약**: 이 저장소의 문서는 두 축을 **항상 이름으로 구분해** 쓴다 — `npm 0.5.0`,
      `매니페스트 0.1.95`. 축 없이 "플러그인 0.1.x"로 쓰지 않는다. 두 축의 숫자 범위가 겹쳐서
      (npm 0.1.20과 매니페스트 0.1.20이 둘 다 존재) 축을 생략하면 어느 쪽인지 알 수 없다.
    - **경고로 구분되지 않는 구간(P6-KTD1)**: npm 0.1.26~0.4.0은 모두 매니페스트 0.1.95다. 그래서
@@ -133,7 +133,7 @@ fallbacks"보다 우선한다고 쓰기 때문이다. 그래서 상류 문서가
        없고 Node 헬퍼로 옮겨졌다(상류 #839·#843). `bindRepoScopes.kind`·`copyDeepReviewInput.kind`가
        `python`이면 0.2.0 이하, `node-helper`면 0.3.0 이후 경로다.
 
-     검증된 조합인 npm 0.4.0 설치를 권장한다. npm 0.2.0도 동작한다(자기채점 스크립트가 두 버전을
+     검증된 조합인 npm 0.5.0 설치를 권장한다. npm 0.2.0도 동작한다(자기채점 스크립트가 두 버전을
      모두 검사한다). npm 0.1.32 이하는 0.2.0 기준 검토 때 확인한 경로를 남겨 두었지만 이번에 다시
      검증하지 않았다. 버전별 동작은 해당 절에 적었다.
    - **후보 정규화 확인**: `candidateNormalizer.available`이 `false`이면 **중단**한다. 후보가 1건이라도
@@ -147,7 +147,9 @@ fallbacks"보다 우선한다고 쓰기 때문이다. 그래서 상류 문서가
      내부 사본 거부, Python 미달, scan-dir 문제).
 
 2. **경량 능력 확인(3줄, config_preflight 대체)** — Phase 0에서 `config_preflight.py`는 Claude
-   Code 조건에서 영구 `incomplete`(exit 2)임이 실증되어 폐기했다. 대신:
+   Code 조건에서 영구 `incomplete`(exit 2)임이 실증되어 폐기했다. 상류도 npm 0.5.0에서 이 preflight를
+   은퇴시키고(`config_preflight.py`·`capability-profiles.toml` 삭제, #1609) `references/scan-runtime.md`의 같은
+   취지 지침(실제 spawn 결과만 위임 근거, 위임 불가 시 부모 단독 수행)으로 바꿨다. 대신:
    - (a) 서브에이전트(Task/Agent) 위임이 가능한가? — 표준 스캔은 단일 에이전트 전제라 없어도
      되지만, 위임했다고 주장하려면 **실제 spawn 성공 결과가 있어야 한다**(없으면 부모 단독 수행).
    - (b) `git`이 있는가? 검색 명령(ripgrep)은 0단계 부트스트랩이 이미 해석했다 — `searchCommand`가
@@ -559,6 +561,11 @@ npm 0.4.0 `final-report.md`는
      필수 필드").
    - `coverage.schema.surfaces[N].receiptRefs: missing required schema property` → 영수증이 없어도
      `receiptRefs: []`를 쓴다.
+   - `coverage.schema.inventoryStrategy: unsupported value '<값>'` → 전체 `repository`, 경로 지정 `scoped_path`,
+     diff `diff` 중 하나로.
+   - `findings.findings[N].codeEvidence[M].path: expected a safe repository-relative POSIX path`
+     (`coverage.deferred[N].paths[M]`도 같은 문구) → 저장소 루트 기준 상대 POSIX 경로로 고친다(`..`·절대 경로·
+     역슬래시 금지). 근거가 저장소 밖이면 그 근거를 빼고 지어내지 않는다.
    - `coverage.surfaces[N].disposition: unsupported disposition: <값>` → surface disposition은
      정확히 `reported | no_issue_found | rejected | not_applicable | needs_follow_up` 중 하나여야 함
      (`no_issue`·`no-issue` 등 오타 주의; U6 실측에서 발생).
