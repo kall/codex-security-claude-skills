@@ -1,7 +1,7 @@
 // policy_draft.mjs — codex-security-policy 스킬의 결정론 부분(대상·스냅샷·출력 디렉터리·프롬프트·
 // 저장 전 검사·저장·마무리). 서브에이전트 호출과 사용자 질문은 부모 세션이 한다.
 //
-// 상류 `codex-security policy`(npm 0.4.0 = 매니페스트 0.1.95)의 호스트 쪽 동작을 **상류 dist 함수로**
+// 상류 `codex-security policy`(npm 0.5.0 = 매니페스트 0.1.95)의 호스트 쪽 동작을 **상류 dist 함수로**
 // 재현한다. 대상 해석·인벤토리·스냅샷 digest·보호 루트·출력 디렉터리 위생·stage 결과 파싱·diff
 // 미리보기는 전부 부트스트랩이 채택한 npm 패키지의 dist/ 에서 import 한 상류 함수가 한다
 // (공용 관문 ../../codex-security-scan/scripts/workflow_digest.mjs). 이 파일이 소유하는 것은
@@ -104,6 +104,8 @@ const OWNER_ANSWERS_NAME = "owner-answers.json";
 //   진행 표시 STAGES 는 sdk/typescript/src/security-policy-cli.ts 47–51행.
 // 복사 시점: 태그 npm-v0.4.0 = 커밋 559b492b22bb457aea8ff88c1bd41aacc2cec8bf
 //   (npm @openai/codex-security 0.4.0 = 플러그인 매니페스트 0.1.95 — 0.2.0 과 같은 매니페스트 버전).
+// 재대조: 태그 npm-v0.5.0 = 커밋 03414ad84e91a8638bde85af08c47fe957dc9323 — security-policy.ts·
+//   security-policy-cli.ts 모두 변경 없음(git diff npm-v0.4.0 npm-v0.5.0 비어 있음).
 // 직전 기준: 태그 npm-v0.2.0 = 커밋 4949af70fcfadff154f6e8fdf100faa5bf2f8169.
 //   0.2.0 → 0.4.0 에서 바뀐 것: security-policy-cli.ts 진행 표시 STAGES 의 [1/3]·[2/3] 문구뿐이다
 //   (14c706bab #1416 fix(onboarding): improve policy onboarding for global installs — npm 0.3.0 에 포함).

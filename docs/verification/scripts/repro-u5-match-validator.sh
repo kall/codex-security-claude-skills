@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# U5 재현 스크립트: 매칭 검증기(validate_matches.py)가 상류 0.1.29~0.4.0 호스트 조정
+# U5 재현 스크립트: 매칭 검증기(validate_matches.py)가 상류 0.1.29~0.5.0 호스트 조정
 # (sdk/typescript/src/scan-comparison.ts 의 matchScanFindingsInternal /
 #  reconcileComparison / validateComparison, finding-catalogue.ts 의 groupFindings /
 #  findingCatalogue / compactFinding) 을 그대로 재현하는지 자기 채점한다.
