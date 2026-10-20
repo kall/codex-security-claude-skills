@@ -12,7 +12,7 @@ description: >-
 
 npm CLI의 `codex-security policy`는 OpenAI 모델을 세 번 호출해 SECURITY.md 초안을 만든다.
 구독 사용자는 이 명령을 쓸 수 없다. 이 스킬은 모델 호출 세 번을 **읽기 전용 격리 서브에이전트**로
-바꾸고, 나머지 호스트 동작은 상류 코드로 재현한다. 기준 실측 버전은 **npm 0.4.0(매니페스트 0.1.95)**다.
+바꾸고, 나머지 호스트 동작은 상류 코드로 재현한다. 기준 실측 버전은 **npm 0.5.0(매니페스트 0.1.95)**다.
 
 - **초안만 만든다(P6-KTD9).** CLI `policy`와 같다. 상류 plugin `define-security-policy/SKILL.md`
   4절(승인 후 저장소 편집)은 CLI에 없는 단계라 이 스킬 범위 밖이다(후속 작업으로 연기). 사용자가
@@ -79,7 +79,7 @@ Git worktree 루트**로 명시한다.
 | 조건 | 사용자 안내(한국어) |
 | --- | --- |
 | `ok: false` | `stage`·`error`를 그대로 전한다 |
-| `securityMdHelper.available: false` | `securityMdHelper.reason`을 전한다. "헬퍼 파일 없음"이면 상류 소스 체크아웃이다 — `npm install -g @openai/codex-security`(npm 0.1.27 이상, 권장 0.4.0) 설치본을 쓰라고 안내 |
+| `securityMdHelper.available: false` | `securityMdHelper.reason`을 전한다. "헬퍼 파일 없음"이면 상류 소스 체크아웃이다 — `npm install -g @openai/codex-security`(npm 0.1.27 이상, 권장 0.5.0) 설치본을 쓰라고 안내 |
 | `sdk.dist: null` | `sdk.reason`을 전한다. 상류 함수가 든 `dist/`가 없다 — 위와 같은 설치 안내 |
 | `node: null` | "신뢰할 수 있는 Node 없음"과 `securityMdHelper.reason` |
 
@@ -111,7 +111,7 @@ env -i <trusted_child_env> <node> <policy_script> <하위 명령> …
 - 출력은 JSON 1개다(`prompt`만 원문 텍스트). exit 0 = 성공, 2 = 거부·실패(`error`와 상류 원문
   `upstreamError`가 실림), 1 = 사용법 오류.
 
-**시작 고지**: 플러그인 경로와 `pluginVersion`(기준 0.1.95, npm 0.4.0 — 다르면 "플러그인 버전이
+**시작 고지**: 플러그인 경로와 `pluginVersion`(기준 0.1.95, npm 0.5.0 — 다르면 "플러그인 버전이
 기준과 다름 — 상류 계약이 바뀌었을 수 있음" 경고), 대상 저장소, 컴포넌트, 그리고 **"이 스킬은
 저장소 파일을 바꾸지 않는다"**를 알린다.
 

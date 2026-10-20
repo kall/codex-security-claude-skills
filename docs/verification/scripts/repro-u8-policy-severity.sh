@@ -1106,7 +1106,9 @@ PY - "$SEV/s12lit.json" "$DIST" <<'PYEOF' >"$SEV/s12lit.check"
 import json, os, sys
 lit = json.load(open(sys.argv[1])); dist = sys.argv[2]
 read = lambda name: open(os.path.join(dist, name), encoding="utf-8").read()
-missing = [s for s in lit["instructions"] if s not in read("classify-severity.js")]
+# npm 0.5.0(#1662)은 지시 8문단을 severity-review.js 로 옮겼다. 그 모듈이 있으면 거기서 찾는다.
+instr = "severity-review.js" if os.path.exists(os.path.join(dist, "severity-review.js")) else "classify-severity.js"
+missing = [s for s in lit["instructions"] if s not in read(instr)]
 for name, fragments in lit.items():
     if name.endswith(".js"):
         missing += [f"{name}: {s}" for s in fragments if s not in read(name)]

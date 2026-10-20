@@ -1344,7 +1344,7 @@ else
   bad "H14b-8: $(jget "$RUN/h14b.json" '[d.get("bindRepoScopes"), d.get("copyDeepReviewInput"), d.get("npmVersion"), d.get("coverageCompleteness")]')"
 fi
 # H14b-9. 헬퍼가 없어도 generate_rank_input.py 에 하위 명령이 있으면 python 이다(npm 0.2.0 소스 형상).
-#         completeness 가 없는 coverage 스키마면 coverageCompleteness 는 false 다(npm 0.4.0 형상).
+#         completeness 가 없는 coverage 스키마면 coverageCompleteness 는 false 다(npm 0.3.0 이후 형상).
 mkdir -p "$NOHELPER/schemas"
 printf 'bind = subparsers.add_parser(\n    "bind-repo-scopes",\n)\n' >"$NOHELPER/scripts/generate_rank_input.py"
 printf '{"properties": {"deferred": {}}}\n' >"$NOHELPER/schemas/coverage.schema.json"

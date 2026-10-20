@@ -13,7 +13,7 @@ description: >-
 결박되어 있어 동등 재현이 불가능하다. 이 스킬은 **정직한 축소판**이다 — 동등하지 않음을 이름·고지·
 요약에 명시한다(KTD3).
 
-**기준: npm 0.4.0(태그 `npm-v0.4.0`).** npm 0.2.0·0.3.0 설치본에서도 같은 절차로 동작한다(아래
+**기준: npm 0.5.0(태그 `npm-v0.5.0`).** npm 0.2.0·0.3.0·0.4.0 설치본에서도 같은 절차로 동작한다(아래
 「인벤토리」의 버전 메모, 실측: `docs/verification/phase4-deep-lite-pipeline.md`).
 
 **상류 저장 정책(`references/artifact-storage.md`)은 적용하지 않는다(P6-KTD8).** 근거와 범위는 Phase 1
@@ -30,7 +30,7 @@ SKILL.md의 prompt-only 절이 정본이다. 이 스킬이 후속 단계에서 �
 2. **preflight(R11)**: `deep_security_scan` 프로필은 실행하지 않는다(block 3종 중 `native_multi_agent_v2`가
    구조적으로 만족 불가). 대신 Phase 1 SKILL.md 0단계 2번의 **경량 능력 확인(3줄)**을 수행하고, deep
    프로필 미충족 사실과 함의를 고지한다(Phase 1은 `config_preflight.py`의 `security_scan` 프로필을 Claude
-   Code 조건에서 영구 `incomplete`라 폐기했다).
+   Code 조건에서 영구 `incomplete`라 폐기했다. 상류는 npm 0.5.0에서 preflight 자체를 지웠다, #1609).
 3. `bootstrap.py --target-repo <root> --require-search`로 pluginRoot·python·scanDir·
    `searchCommand`·`trustedPathEnv`를 얻는다. **`--require-search`가 필요한 이유**: 인벤토리
    (`in_scope_files.txt`)를 Phase 1 2단계와 같은 상류 `generate_in_scope_files.py`로 만들고, 그

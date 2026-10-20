@@ -1445,3 +1445,48 @@ Python 3.14.8, Node v22.23.2. SKIP은 0건이다. 변이 확인: `repro-u7` I5x�
 6. **(사소)** diff-scan PATH 서술, deep-scan의 preflight 서술을 정리했다.
 
 확인하지 못한 것: 실제 서브에이전트 호출, diff `--working-tree` 등록, policy `policy` 단계·`finish`, validate ledger 모드, patch·verify-fix·scan-match 종단, 워크벤치 `complete` 실패 분기, 인증이 필요한 명령.
+
+## 부록 — npm 0.5.0(매니페스트 0.1.95) 재실측 (2026-10-20)
+
+기준선을 npm 0.4.0에서 상류 태그 `npm-v0.5.0`(커밋 `03414ad84e91a8638bde85af08c47fe957dc9323`)으로 올리면서 재실측한 결과다. 상세는 `docs/plans/2026-10-20-1700-chore-codex-security-050-alignment.md`다. `/tmp` 정리로 이전 격리 설치본이 지워져 0.2.0·0.3.0·0.4.0을 다시 설치했다.
+
+### 정합 작업 전 (수정 전 스킬, npm 0.5.0)
+
+`repro-u4`(80)·`repro-u1`(95)·`repro-u7`(70)·`repro-u5`(714)는 exit 0이었다. `repro-u8`은 S12 1건만 실패했다 — classify-severity 지시 8문단이 `dist/severity-review.js`로 옮겨져(#1662) `classify-severity.js` 정적 대조가 실패했다. 문장은 같고, 상류가 조립한 프롬프트를 대조하는 실행 경로(S1~S11)는 통과했다. `repro-u3` 요약은 0.4.0과 같았다.
+
+### 정합 작업 뒤 재검증
+
+| 스크립트 | npm 0.5.0 | npm 0.4.0 | npm 0.3.0 | npm 0.2.0 |
+| --- | --- | --- | --- | --- |
+| `repro-u4.sh` | exit 0, OK 80 | exit 0, OK 80 | exit 0, OK 80 | exit 0, OK 71 (NOTE) |
+| `repro-u1-search-command.sh` | exit 0, OK 95 | exit 0, OK 95 | exit 0, OK 95 | exit 0, OK 95 |
+| `repro-u7-coverage-recovery.sh` | exit 0, OK 70 | exit 0, OK 70 | exit 0, OK 70 | exit 0, OK 70 |
+| `repro-u5-match-validator.sh` | exit 0, OK 714 | exit 0, OK 714 | exit 0, OK 714 | exit 0, OK 714 |
+| `repro-u8-policy-severity.sh` | exit 0, OK 284 | exit 0, OK 284 | exit 0, OK 284 | exit 1, OK 283, FAIL 1 (P7, 의도됨) |
+| `repro-u3.sh` 요약 | S5 0, S6 0, S9 1, S9b 0 | 같음 | 같음 | 같음 |
+
+Python 3.14.8, Node v22.23.2. SKIP은 0건이다.
+
+### 종단간 스모크 테스트 (npm 0.5.0)
+
+0.4.0 부록과 같은 방식으로 합성 저장소(Flask 앱, SQL 주입·명령 주입·경로 조작, `SECURITY.md`, 문서 파일, 커밋 2개)에 스킬 문서를 따라 실행했다. 대상 저장소는 끝까지 `git status`가 깨끗했다.
+
+| 대상 | 결과 |
+| --- | --- |
+| 전체 스캔 | 미리뷰 1건 → `deferred`, `coverageComplete: false` → 봉인 → `complete`(경고 없음, finding 3건, `sourceExcerpt` 있음) → `export --artifact threat-model` 성공 |
+| 경로 지정 `--paths app` | register(`requiredIncludePaths ["app"]`) → Node `bind-repo-scopes` → `complete` |
+| diff `refs` | 삭제 파일·문서 파일 포함 3행 → Node `copy-deep-review-input` → `complete`(결함 1 수정 뒤) |
+| deep-lite | 레거시 랭킹 exit 2 → 2패스 "4 rows into 3 rows" → `complete`(standard) |
+| classify-severity | prepare(pending 3) → apply(`saved`, `publishReadable: true`) → `publish … --dry-run` 반영, 재실행 reused 3, inherit 성공 |
+| policy | threat_model 단계까지 `threat_model_ready`, `threatmodel.md` 투영 |
+
+0.5.0 변경 확인: #1567·#1573 경로 검증은 0.4.0 finalizer도 같은 문구로 거부했다(스킬 영향 없음). #1694는 경로와 같은 이름의 브랜치가 있는 클론에서 0.4.0이 `ambiguous argument`로 실패하고 0.5.0이 성공했다. #828·#1569는 스킬 경로를 타지 않는다.
+
+찾아 고친 문서 결함(0.4.0부터):
+
+1. diff 스캔의 `coverage.inventoryStrategy` 값(`diff`)이 문서에 없었다. `git_diff`로 짐작하면 finalize가 `coverage.schema.inventoryStrategy: unsupported value 'git_diff'`로 거부한다.
+2. 루트 커밋을 diff 대상으로 지정하면 워크벤치 등록이 `Base revision does not resolve to a local Git commit`으로 실패한다. #1716은 MCP `commit` 경로에만 적용된다. 실패 안내에 넣었다.
+
+리페어 루프에 `inventoryStrategy`와 안전 경로(`expected a safe repository-relative POSIX path`) 오류 문구도 더했다.
+
+확인하지 못한 것: 실제 서브에이전트 호출, policy `policy` 단계·`finish`, diff `--working-tree` 워크벤치 등록, 워크벤치 `complete` 실패 분기, validate·patch·verify-fix·scan-match 종단, 인증이 필요한 명령, 루트 커밋 diff의 워크벤치 없는 로컬 봉인.
