@@ -496,7 +496,7 @@ RP prompt --output-dir "$OUT3" --stage threat_model >"$RUN/pr1.txt"; expect_exit
 RP prompt --output-dir "$OUT3" --stage threat_model >"$RUN/pr2.txt"
 PR1="$(cat "$RUN/pr1.txt")"
 contains "$PR1" "No additional owner clarification was supplied." "P7 답 없음 → 상류 헤드리스 문구"
-contains "$PR1" "sibling source and Git metadata are unavailable" "P7 상류 머리말 원문 유지"
+contains "$PR1" "do not inspect sibling source or Git metadata" "P7 상류 머리말 원문 유지(npm 0.5.1 문구)"
 contains "$PR1" "Allowed read roots" "P7 대체 조치: 허용 읽기 루트 명시"
 contains "$PR1" "artifact-storage.md" "P7 저장 정책 비적용 지시(P6-KTD8)"
 M1="$(PY -c 'import re,sys; m=re.search(r"\[TRUSTED_INSTRUCTIONS ([0-9a-f]{16})\]", open(sys.argv[1]).read()); print(m.group(1) if m else "")' "$RUN/pr1.txt")"

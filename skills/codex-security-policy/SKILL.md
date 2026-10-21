@@ -12,7 +12,7 @@ description: >-
 
 npm CLI의 `codex-security policy`는 OpenAI 모델을 세 번 호출해 SECURITY.md 초안을 만든다.
 구독 사용자는 이 명령을 쓸 수 없다. 이 스킬은 모델 호출 세 번을 **읽기 전용 격리 서브에이전트**로
-바꾸고, 나머지 호스트 동작은 상류 코드로 재현한다. 기준 실측 버전은 **npm 0.5.0(매니페스트 0.1.95)**다.
+바꾸고, 나머지 호스트 동작은 상류 코드로 재현한다. 기준 실측 버전은 **npm 0.5.1(매니페스트 0.1.95)**다.
 
 - **초안만 만든다(P6-KTD9).** CLI `policy`와 같다. 상류 plugin `define-security-policy/SKILL.md`
   4절(승인 후 저장소 편집)은 CLI에 없는 단계라 이 스킬 범위 밖이다(후속 작업으로 연기). 사용자가
@@ -36,7 +36,10 @@ npm CLI의 `codex-security policy`는 OpenAI 모델을 세 번 호출해 SECURIT
   상류 소스 체크아웃에는 `dist/`가 없으므로 이 스킬을 쓸 수 없다.
 - **단계 프롬프트는 영문 리터럴로 고정한다(P6-KTD10).** 원문은 `sdk/typescript/src/security-policy.ts`
   `runSecurityPolicyStages()`(756–933행)와 `security-policy-cli.ts`의 진행 표시 `STAGES`(47–51행)이고,
-  태그 `npm-v0.4.0` = 커밋 `559b492b22bb457aea8ff88c1bd41aacc2cec8bf`에서 복사했다. 직전 기준
+  태그 `npm-v0.5.1` = 커밋 `b2fa51576d81cda5e311e7eb89131ffb13daad8b`에서 복사했다. 0.5.0과 비교하면 공통 지시
+  8번째 줄만 바뀌었다(`06201edfa` #1741: "directly; sibling source and Git metadata are unavailable" →
+  "only the selected component; do not inspect sibling source or Git metadata"). 그 전 복사 시점은
+  `npm-v0.4.0`(커밋 `559b492b`)이다. 직전 기준
   `npm-v0.2.0`(커밋 `4949af70`)과 비교하면 진행 표시 `[1/3]`·`[2/3]` 문구만 바뀌었다
   (`14c706bab` #1416, npm 0.3.0부터). 단계 프롬프트·오류 문구·매니페스트 필드는 같다. 그 전 기준은 `npm-v0.1.29`(커밋
   `6620a380`)였고 `npm-v0.1.32`까지 바뀌지 않았다. 0.2.0에서는 policy 단계 첫 문장이 위협 모델 파일 대신 매니페스트의
@@ -79,7 +82,7 @@ Git worktree 루트**로 명시한다.
 | 조건 | 사용자 안내(한국어) |
 | --- | --- |
 | `ok: false` | `stage`·`error`를 그대로 전한다 |
-| `securityMdHelper.available: false` | `securityMdHelper.reason`을 전한다. "헬퍼 파일 없음"이면 상류 소스 체크아웃이다 — `npm install -g @openai/codex-security`(npm 0.1.27 이상, 권장 0.5.0) 설치본을 쓰라고 안내 |
+| `securityMdHelper.available: false` | `securityMdHelper.reason`을 전한다. "헬퍼 파일 없음"이면 상류 소스 체크아웃이다 — `npm install -g @openai/codex-security`(npm 0.1.27 이상, 권장 0.5.1) 설치본을 쓰라고 안내 |
 | `sdk.dist: null` | `sdk.reason`을 전한다. 상류 함수가 든 `dist/`가 없다 — 위와 같은 설치 안내 |
 | `node: null` | "신뢰할 수 있는 Node 없음"과 `securityMdHelper.reason` |
 
@@ -111,7 +114,7 @@ env -i <trusted_child_env> <node> <policy_script> <하위 명령> …
 - 출력은 JSON 1개다(`prompt`만 원문 텍스트). exit 0 = 성공, 2 = 거부·실패(`error`와 상류 원문
   `upstreamError`가 실림), 1 = 사용법 오류.
 
-**시작 고지**: 플러그인 경로와 `pluginVersion`(기준 0.1.95, npm 0.5.0 — 다르면 "플러그인 버전이
+**시작 고지**: 플러그인 경로와 `pluginVersion`(기준 0.1.95, npm 0.5.1 — 다르면 "플러그인 버전이
 기준과 다름 — 상류 계약이 바뀌었을 수 있음" 경고), 대상 저장소, 컴포넌트, 그리고 **"이 스킬은
 저장소 파일을 바꾸지 않는다"**를 알린다.
 
@@ -225,7 +228,8 @@ env -i <trusted_child_env> <node> <policy_script> prepare --sdk-dist <sdk_dist> 
   둔다. 방어 문구는 미신뢰 구획 **앞뒤 양쪽**에 둔다.
 - 경계를 고정 문자열로 두면 악성 저장소가 SECURITY.md 안에 위조한 신뢰 머리글을 심을 수 있다. 그래서
   표식은 스크립트가 호출마다 새로 만든다. 부모는 표식을 만들거나 고치지 않는다.
-- 우리 환경에서 사실이 아닌 상류 문장이 하나 있다: "sibling source and Git metadata are unavailable".
+- 우리 환경에서 강제되지 않는 상류 문장이 하나 있다: "do not inspect sibling source or Git metadata"
+  (npm 0.5.0 이하는 "sibling source and Git metadata are unavailable", 0.5.1 #1741에서 지시형으로 바뀜).
   상류는 `codex_security_policy` 권한 프로필(선택 컴포넌트·플러그인 루트·지식 베이스만 읽기, Git
   메타데이터 deny, 네트워크 차단)로 강제한다. 우리 서브에이전트 도구에는 경로 제한이 없다. 문장은
   원문대로 두고, 신뢰 구획의 호스트 환경 절이 대체 조치를 지시한다: 허용 읽기 루트(컴포넌트 realpath,
