@@ -81,14 +81,14 @@ MCP가 없으면 "report the blocker; do not author canonical files through a sh
 2. **Discovery — diff 범위**: 인벤토리를 diff-rank-input으로 생성한다.
    ```bash
    # refs (커밋/브랜치)
-   env -i <trusted_child_env> <python> <plugin_dir>/scripts/generate_rank_input.py make-diff-rank-input --repo <repo_root> --base <base> --mode revisions --head <head> --out <scan_dir>/artifacts/02_discovery/rank_input.jsonl
+   env -i <trusted_child_env> <python_command> <plugin_dir>/scripts/generate_rank_input.py make-diff-rank-input --repo <repo_root> --base <base> --mode revisions --head <head> --out <scan_dir>/artifacts/02_discovery/rank_input.jsonl
    # working-tree (로컬 패치)
-   env -i <trusted_child_env> <python> <plugin_dir>/scripts/generate_rank_input.py make-diff-rank-input --repo <repo_root> --base <base> --mode local-patch --out <scan_dir>/artifacts/02_discovery/rank_input.jsonl
+   env -i <trusted_child_env> <python_command> <plugin_dir>/scripts/generate_rank_input.py make-diff-rank-input --repo <repo_root> --base <base> --mode local-patch --out <scan_dir>/artifacts/02_discovery/rank_input.jsonl
    ```
    이어서 리뷰 입력을 파생한다(필수 호출). 0단계 `copyDeepReviewInput.kind`로 명령을 고른다. 인자는 같다.
    ```bash
    # kind = python (npm 0.2.0 이하)
-   env -i <trusted_child_env> <python> <plugin_dir>/scripts/generate_rank_input.py copy-deep-review-input --rank-input <scan_dir>/artifacts/02_discovery/rank_input.jsonl --out <scan_dir>/artifacts/02_discovery/deep_review_input.jsonl
+   env -i <trusted_child_env> <python_command> <plugin_dir>/scripts/generate_rank_input.py copy-deep-review-input --rank-input <scan_dir>/artifacts/02_discovery/rank_input.jsonl --out <scan_dir>/artifacts/02_discovery/deep_review_input.jsonl
    # kind = node-helper (npm 0.3.0 이후 — Python 하위 명령은 지워졌다, 상류 #839)
    env -i <trusted_child_env> CODEX_MCP_NODE_PATH=<node> <security_md_launcher> --helper copy-deep-review-input --rank-input <scan_dir>/artifacts/02_discovery/rank_input.jsonl --out <scan_dir>/artifacts/02_discovery/deep_review_input.jsonl
    ```
@@ -98,9 +98,9 @@ MCP가 없으면 "report the blocker; do not author canonical files through a sh
    전체 목록을 쓰면 안 된다(범위가 저장소 전체가 된다):
    ```bash
    # refs
-   env -i <trusted_child_env> <python> <plugin_dir>/scripts/generate_in_scope_files.py --repo <repo_root> --scope . --diff-base <base> --diff-head <head> --diff-mode revisions --out <scan_dir>/artifacts/02_discovery/in_scope_files.txt
+   env -i <trusted_child_env> <python_command> <plugin_dir>/scripts/generate_in_scope_files.py --repo <repo_root> --scope . --diff-base <base> --diff-head <head> --diff-mode revisions --out <scan_dir>/artifacts/02_discovery/in_scope_files.txt
    # working-tree
-   env -i <trusted_child_env> <python> <plugin_dir>/scripts/generate_in_scope_files.py --repo <repo_root> --scope . --diff-base <base> --diff-mode local-patch --out <scan_dir>/artifacts/02_discovery/in_scope_files.txt
+   env -i <trusted_child_env> <python_command> <plugin_dir>/scripts/generate_in_scope_files.py --repo <repo_root> --scope . --diff-base <base> --diff-mode local-patch --out <scan_dir>/artifacts/02_discovery/in_scope_files.txt
    ```
 
    > **셸에 보간하는 모든 값은 인용본을 쓴다** — `<trusted_child_env>` =
@@ -130,7 +130,8 @@ MCP가 없으면 "report the blocker; do not author canonical files through a sh
      directory"). 그래서 `.github/dependabot.yml`·`notes.txt`도 들어간다. 바이너리 판정은 내용(NUL 바이트)
      으로 하므로 `.py` 확장자라도 바이너리면 빠진다(`repro-u4.sh` I17~I20). 삭제된 파일은 base 쪽 내용으로
      판정해 들어간다. 커밋 diff는 head 커밋의 blob으로, 로컬 패치는 워킹트리 파일로 판정하고 심링크는
-     뺀다.
+     뺀다. npm 0.5.1부터는 `.git`·`.svn` 아래 경로도 뺀다(#1552). 로컬 패치의 변경이 `.svn` 아래뿐이면
+     인벤토리가 비고 "빈 인벤토리" 분기로 간다.
    - 이전 규칙(npm 0.2.0 이하): 확장자를 `rank_preview.TEXT_CODE_EXTENSIONS`로 거르고(0.2.0에서
      `.hh`·`.hxx`·`.ejs`·`.erb`·`.phtml`·`.vy`까지), `.github`는 `workflows/*`만 남겼다. 이 집합과 제외
      규칙은 npm 0.3.0(#1347)에서 지워졌다. 같은 diff라도 0.2.0과 0.4.0의 커버리지 분모가 다르다.
@@ -146,7 +147,7 @@ MCP가 없으면 "report the blocker; do not author canonical files through a sh
    이 인자를 받는다:
    ```bash
    # kind = python (npm 0.1.32 이하)
-   PYTHONDONTWRITEBYTECODE=1 <python> <plugin_dir>/scripts/normalize_candidates.py --input <raw1.jsonl> [...] --out <scan_dir>/artifacts/02_discovery/candidate_ledger.jsonl --repo-root <repo_root> --in-scope-files <scan_dir>/artifacts/02_discovery/in_scope_files.txt --allow-missing-in-scope
+   PYTHONDONTWRITEBYTECODE=1 <python_command> <plugin_dir>/scripts/normalize_candidates.py --input <raw1.jsonl> [...] --out <scan_dir>/artifacts/02_discovery/candidate_ledger.jsonl --repo-root <repo_root> --in-scope-files <scan_dir>/artifacts/02_discovery/in_scope_files.txt --allow-missing-in-scope
    # kind = node-helper (npm 0.2.0부터)
    env -i <trusted_child_env> CODEX_MCP_NODE_PATH=<node> <security_md_launcher> --helper normalize-candidates --input <raw1.jsonl> [...] --out <scan_dir>/artifacts/02_discovery/candidate_ledger.jsonl --repo-root <repo_root> --in-scope-files <scan_dir>/artifacts/02_discovery/in_scope_files.txt --allow-missing-in-scope
    ```
