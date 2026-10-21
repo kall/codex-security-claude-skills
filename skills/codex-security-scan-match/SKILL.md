@@ -12,7 +12,7 @@ description: >-
 공식 CLI의 `scans match`는 SDK가 유일하게 Codex 스레드를 직접 여는 지점이라 OpenAI 인증 없이는
 막혀 있다. 이 스킬은 매칭 판정을 **도구를 제한한 격리 서브에이전트**가 수행하게 해 그 공백을 메운다.
 매칭 계약의 정본은 상류 `sdk/typescript/src/scan-comparison.ts`와 `finding-catalogue.ts`다.
-기준 실측 버전은 **npm 0.5.0(매니페스트 0.1.95)**다.
+기준 실측 버전은 **npm 0.5.1(매니페스트 0.1.95)**다.
 
 **판정 규칙은 이 문서가 직접 서술하고, 검증·조정 규칙은 `scripts/validate_matches.py`가 소유한다
 (P5-KTD4).** 다른 스킬처럼 상류 문서를 런타임에 읽는 방식은 이 항목에서 쓸 수 없다 — 판정 문장은

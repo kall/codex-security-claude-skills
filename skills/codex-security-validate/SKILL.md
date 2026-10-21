@@ -13,7 +13,7 @@ description: >-
 # codex-security-validate — finding 판정
 
 후보 finding을 검증하고 disposition을 기록한다. 판정 절차는 상류 플러그인 문서를 **읽어서** 따르고,
-이 문서에는 옮겨 적지 않는다. 기준 실측 버전은 **npm 0.5.0(매니페스트 0.1.95)**다.
+이 문서에는 옮겨 적지 않는다. 기준 실측 버전은 **npm 0.5.1(매니페스트 0.1.95)**다.
 
 입력에 따라 두 모드로 나뉜다. 두 모드의 상류 계약이 다르다.
 
@@ -62,7 +62,7 @@ description: >-
 워크플로 스킬은 읽지 않는다(상류 머리말 "Do not … load scan workflow skills").
 
 `standalone-validation.md`가 없으면 플러그인이 npm 0.3.0 미만이다. 사용자에게 "설치된 플러그인에 소스 전용
-검증 지시문이 없음 — npm 0.5.0으로 갱신 권장"이라고 알리고, `static-finding-assessment.md`만으로
+검증 지시문이 없음 — npm 0.5.1로 갱신 권장"이라고 알리고, `static-finding-assessment.md`만으로
 아래 4절의 제약을 그대로 지켜 판정한다. 옛 validation 스킬의 동적 재현 경로로 돌아가지 않는다.
 
 ### 2. 입력
