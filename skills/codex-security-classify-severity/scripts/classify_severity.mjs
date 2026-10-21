@@ -1,7 +1,7 @@
 // classify_severity.mjs — codex-security-classify-severity 스킬의 결정론 부분.
 // 서브에이전트 판정(finding당 1회)과 사용자 보고는 부모 세션이 한다.
 //
-// 상류 `codex-security classify-severity`(기준 npm 0.5.0, 0.2.0 도 지원)를 **상류 dist 함수 그대로** 돌린다.
+// 상류 `codex-security classify-severity`(기준 npm 0.5.1, 0.2.0 도 지원)를 **상류 dist 함수 그대로** 돌린다.
 // 모델 호출 자리(runReadOnlyCodex → startReadOnlyCodexThread 의 `options.codex`)에만 가짜 Codex 를 넣는다.
 //   근거(주입 가능성): sdk/typescript/src/classify-severity.ts
 //     36행  ClassifySeverityOptions.codex ("@internal Test client for the shared read-only runtime")
@@ -900,7 +900,7 @@ async function handleInherit(args) {
     throw new GatewayError(
       "--sdk-cli 가 없다. 부트스트랩 결과의 sdk.cli 가 null 이면 CLI 가 없는 설치(상류 소스 체크아웃 등)다. " +
         "루브릭 없는 분류는 상류 CLI 에 위임하므로 진행할 수 없다 — `npm install -g @openai/codex-security` " +
-        "(npm 0.1.26 이상, 권장 0.5.0) 설치본으로 부트스트랩을 다시 실행하라.",
+        "(npm 0.1.26 이상, 권장 0.5.1) 설치본으로 부트스트랩을 다시 실행하라.",
     );
   }
   const sdkCli = await realpath(args.sdkCli);

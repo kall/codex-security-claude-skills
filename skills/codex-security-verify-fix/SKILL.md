@@ -13,7 +13,7 @@ description: >-
 # codex-security-verify-fix — 수정 검증 (읽기 전용)
 
 codex-security 플러그인의 `verify-fix` 스킬을 Claude가 직접 수행한다. 기준 실측 버전은
-**npm 0.5.0(매니페스트 0.1.95)**다. 입력으로 받은 각 finding이 **현재 체크아웃에서 실제로
+**npm 0.5.1(매니페스트 0.1.95)**다. 입력으로 받은 각 finding이 **현재 체크아웃에서 실제로
 수정됐는지**만 판정한다. 이 스킬은 **저장소를 절대 변경하지 않는다** — 수정·패치 적용이 필요하면
 `codex-security-patch`로 넘긴다.
 
@@ -26,7 +26,8 @@ npm 0.1.18~0.1.25 구간에서 **바이트 단위로 동일했다**(내용 변�
 두 문서 앞에 붙이는 머리말 한 줄뿐이다(`8614c8cd1` #1423: "Use the bundled $codex-security:verify-fix skill.
 Its complete instructions … do not reread either file." → "Follow the bundled $codex-security:verify-fix
 instructions and shared assessment reference included below. Do not reload these instruction files.").
-뜻은 같고, 이 스킬은 두 문서를 직접 읽으므로 절차는 바뀌지 않는다. fix-finding과 달리 `artifact-storage.md`를 읽으라는 줄은 없다. 따라서 이
+뜻은 같고, 이 스킬은 두 문서를 직접 읽으므로 절차는 바뀌지 않는다. npm 0.5.1에서는 이 머리말이 `cli.ts`에서
+`remediation.ts`로 옮겨졌다(`a5753698f` #1684 hosted verification 지원 — 문장 같음, 태그 `npm-v0.5.1` 재대조). fix-finding과 달리 `artifact-storage.md`를 읽으라는 줄은 없다. 따라서 이
 스킬의 정합 작업에서 확인할 것은 상류 발동 조건 서술과, 이 문서가 참조하는 **다른 스킬의 계약
 변화**(특히 `codex-security-patch`의 승인 게이트 재구성)다. 상류만 다시 읽고 "변경 없음"으로 끝내면
 헛짚는다.
