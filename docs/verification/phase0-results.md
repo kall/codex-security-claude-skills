@@ -1490,3 +1490,47 @@ Python 3.14.8, Node v22.23.2. SKIP은 0건이다.
 리페어 루프에 `inventoryStrategy`와 안전 경로(`expected a safe repository-relative POSIX path`) 오류 문구도 더했다.
 
 확인하지 못한 것: 실제 서브에이전트 호출, policy `policy` 단계·`finish`, diff `--working-tree` 워크벤치 등록, 워크벤치 `complete` 실패 분기, validate·patch·verify-fix·scan-match 종단, 인증이 필요한 명령, 루트 커밋 diff의 워크벤치 없는 로컬 봉인.
+
+## 부록 — npm 0.5.1(매니페스트 0.1.95) 재실측 (2026-10-21)
+
+기준선을 npm 0.5.0에서 상류 태그 `npm-v0.5.1`(커밋 `b2fa51576d81cda5e311e7eb89131ffb13daad8b`)으로 올리면서 재실측한 결과다. 상세는 `docs/plans/2026-10-21-1000-chore-codex-security-051-alignment.md`다.
+
+### 정합 작업 전 (수정 전 스킬, npm 0.5.1)
+
+`repro-u4`(80)·`repro-u1`(95)·`repro-u7`(70)·`repro-u5`(714)는 exit 0, `repro-u3` 요약은 0.5.0과 같았다. `repro-u8`은 P7(리터럴 46조각 중 1개 누락)·P11(architecture 프롬프트 문자 단위 불일치)만 실패했다. policy 공통 지시 8번째 줄이 #1741에서 바뀌었기 때문이다.
+
+### 정합 작업 뒤 재검증
+
+| 스크립트 | npm 0.5.1 | npm 0.5.0 |
+| --- | --- | --- |
+| `repro-u4.sh` | exit 0, OK 80 | exit 0, OK 80 |
+| `repro-u1-search-command.sh` | exit 0, OK 95 | exit 0, OK 95 |
+| `repro-u7-coverage-recovery.sh` | exit 0, OK 70 | exit 0, OK 70 |
+| `repro-u5-match-validator.sh` | exit 0, OK 714 | exit 0, OK 714 |
+| `repro-u8-policy-severity.sh` | exit 0, OK 284 | exit 1, OK 282, FAIL 2 (P7·P11 — 리터럴을 0.5.1 문구로 바꿨기 때문. 의도된 검출) |
+| `repro-u3.sh` 요약 | S5 0, S6 0, S9 1, S9b 0 | 0.5.0 부록과 같음 |
+
+0.4.0 이하는 이번에 다시 돌리지 않았다.
+
+### 종단간 스모크 테스트 (npm 0.5.1)
+
+0.5.0 합성 저장소를 복사하고 추적하지 않는 `.svn/entries`·`app/.svn/wc.db`를 더해 같은 범위로 실행했다. 대상 저장소의 추적 파일은 끝까지 바뀌지 않았다.
+
+| 대상 | 결과 |
+| --- | --- |
+| 전체 스캔 | 인벤토리 5개(`.svn` 2개 빠짐 — 0.5.0 스크립트로는 7개) → 미리뷰 1건 `deferred` → 봉인 → `complete`(경고 없음, finding 3건) → `export --artifact threat-model` 성공 |
+| 경로 지정 `--paths app` | 인벤토리 3개(`app/.svn/wc.db` 빠짐) → Node `bind-repo-scopes` → `complete` |
+| diff `refs` | 삭제·문서 파일 포함 3행 → Node `copy-deep-review-input` → `inventoryStrategy: diff` → `complete` |
+| deep-lite | 레거시 랭킹 exit 2 → 2패스 "4 rows into 3 rows" → `complete`(standard) |
+| classify-severity | prepare(pending 3) → apply(`saved`, `publishReadable: true`) → `publish … --dry-run` 반영 → 재실행 reused 3, inherit 성공 |
+| policy | architecture 프롬프트 16행이 새 문장 "Inspect only the selected component; do not inspect sibling source or Git metadata."이고 dist와 같다 → `threat_model_ready` |
+
+추가 확인: 하위 디렉터리를 저장소 인자로 주면 0.5.0은 추적 중인 gitignore 파일을 빠뜨려 2개, 0.5.1은 상위 `.git`을 찾아 3개였다(#1552). 새 상태 DB에 마이그레이션 51까지 적용되고 `scans list`가 정상이었다. patch 검증 머리말 2줄과 verify-fix 머리말은 `remediation.ts`·`dist/remediation.js`에 같은 문장으로 있다.
+
+찾아 고친 것:
+
+1. **이번 정합에서 새로 쓴 리페어 항목이 틀렸다.** "0.5.1 finalizer가 한 surface 안의 대소문자 중복 `receiptRefs`를 거부한다"고 적었으나, 0.5.1의 해당 검사(#1593)는 워크벤치 unsealed draft 복구 경로 전용이고 경고만 낸다. 스킬 경로의 finalizer는 0.5.0·0.5.1 모두 surface를 가리지 않고 대소문자만 다른 경로를 `manifest.scan.artifacts[N].path: duplicate artifact path`로 거부한다. 실측 문구로 바꿨다.
+2. 로컬 패치 diff 인벤토리가 `.svn` 아래를 빼는 사실과, 하위 디렉터리 스캔의 분모 변화(#1552)를 문서에 더했다.
+3. 기존 결함: diff-scan 명령형의 정의되지 않은 `<python>` 자리표시자를 `<python_command>`로, deep-scan 요약의 "`security_scan` preflight 결과"를 "경량 능력 확인 결과"로 고쳤다.
+
+확인하지 못한 것: 실제 서브에이전트 호출, policy `policy` 단계·`finish`, diff `--working-tree` 워크벤치 등록, `complete` 실패 분기·`recover`, validate·patch·verify-fix·scan-match 종단, 인증이 필요한 명령, unsealed draft 복구 경로의 #1593 경고.
