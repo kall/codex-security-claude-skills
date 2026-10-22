@@ -1534,3 +1534,49 @@ Python 3.14.8, Node v22.23.2. SKIP은 0건이다.
 3. 기존 결함: diff-scan 명령형의 정의되지 않은 `<python>` 자리표시자를 `<python_command>`로, deep-scan 요약의 "`security_scan` preflight 결과"를 "경량 능력 확인 결과"로 고쳤다.
 
 확인하지 못한 것: 실제 서브에이전트 호출, policy `policy` 단계·`finish`, diff `--working-tree` 워크벤치 등록, `complete` 실패 분기·`recover`, validate·patch·verify-fix·scan-match 종단, 인증이 필요한 명령, unsealed draft 복구 경로의 #1593 경고.
+
+## 부록 — npm 0.6.0(매니페스트 0.1.95) 재실측 (2026-10-22)
+
+기준선을 npm 0.5.1에서 상류 태그 `npm-v0.6.0`(커밋 `13dcc6fec00aaf4c23a6fa7e375ccc1726b22836`)으로 올리면서 재실측한 결과다. 상세는 `docs/plans/2026-10-22-1500-chore-codex-security-060-alignment.md`다.
+
+### 정합 작업 전 (수정 전 스킬, npm 0.6.0)
+
+`repro-u4`(80)·`repro-u1`(95)·`repro-u7`(70)·`repro-u5`(714)는 exit 0, `repro-u3` 요약은 0.5.1과 같았다. `repro-u8`은 S 블록 45건이 실패했다. 상류가 finding마다 판정을 3회 요청해(#1765) 작업 항목 수부터 맞지 않았다(finding 2개 → 프롬프트 6개). P 블록(policy)은 통과했다.
+
+### 정합 작업 뒤 재검증
+
+| 스크립트 | npm 0.6.0 | npm 0.5.1 |
+| --- | --- | --- |
+| `repro-u4.sh` | exit 0, OK 80 | exit 0, OK 80 |
+| `repro-u1-search-command.sh` | exit 0, OK 95 | exit 0, OK 95 |
+| `repro-u7-coverage-recovery.sh` | exit 0, OK 70 | exit 0, OK 70 |
+| `repro-u5-match-validator.sh` | exit 0, OK 714 | exit 0, OK 714 |
+| `repro-u8-policy-severity.sh` | exit 0, OK 321 | exit 0, OK 292 (S13 0.6.0 전용 NOTE 1건) |
+| `repro-u3.sh` 요약 | S5 0, S6 0, S9 1, S9b 0 | 같음 |
+
+0.5.0 이하는 이번에 다시 돌리지 않았다. `repro-u8` S 블록의 새 단언(S7 기본 루브릭, S13 리뷰 횟수·다수결·재사용 불일치·run 단위 무효)은 변이 4종(재생을 run 1로 고정, dry-run에 runs 미전달, inherit 거부 제거, 고정 SHA 변경)에서 모두 실패함을 확인했다.
+
+### 종단간 스모크 테스트 (npm 0.6.0)
+
+0.5.1 합성 저장소를 복사해 같은 범위로 실행하고, classify-severity와 patch·verify-fix 정적 모드를 더했다.
+
+| 대상 | 결과 |
+| --- | --- |
+| 전체·diff·deep-lite 스캔 | 0.5.1과 같은 경로로 `complete`. `export --artifact threat-model` 성공 |
+| policy | threat_model 단계, policy 단계와 `finish`까지. `status: draft`, Node diff 미리보기 정상 |
+| classify-severity runs=3 | pending 9(finding 3 × run 3). 다수결이 상류 `reviewSeverity`와 같았다: critical/high/high → high(라벨은 run 2), medium/critical/high 3방향 동률 → critical, excluded/high/excluded → excluded |
+| classify-severity 재사용 | 같은 runs면 reused 3, `--runs 2`면 재판정 6, runs=2 동률 high 대 critical → critical, excluded 대 low → low |
+| classify-severity 기본 루브릭 | 루브릭 생략 `--runs 1` → `rubricSource: upstream-default`, `defaultRubricDrift: false`, saved. `inherit`는 거부(exit 2) |
+| classify-severity 게시 | `severity-classification.json`의 `classificationRuns: 3`, `publish … --dry-run`에서 제외 finding을 뺀 2건 |
+| patch static | 1단 승인 뒤 정적 게이트 3개. 저장소에 심은 conftest·Makefile·textconv·ext-diff 카나리가 하나도 실행되지 않았다 |
+| verify-fix static | `fixed`, evidence에 정적 평가·런타임 검사 미실행 명시 |
+
+찾아 고친 것:
+
+1. **(중요) 정적 모드의 git 명령이 저장소 로컬 `core.fsmonitor`를 실행했다.** `git diff --no-ext-diff --no-textconv`도 막지 못했다. 정적 모드의 git 명령을 부트스트랩 신뢰 환경(`trustedChildEnv` — `core.fsmonitor`·`core.hooksPath`·`diff.external` 등 무력화, 전역·시스템 설정 차단)으로 감싸고, 허용 명령 목록을 patch·verify-fix 두 문서에서 같게 했다.
+2. patch 정적 모드에서 검증 지시가 실행 결과만 요구할 때 outcome을 정할 수 없었다. 상류대로 "미실행"으로 보고하고 통과로 세지 않되, 그것만으로 `blocked`가 되지 않게 했다.
+3. patch 사전 조사 서브에이전트에도 검증 모드를 넘기게 했다(상류 "pass it to every delegated agent").
+4. verify-fix 시작 고지가 커밋하지 않은 워킹트리 변경을 놓쳤다. 신뢰 환경의 `git status`로 함께 고지한다.
+5. policy 문서의 diff 미리보기 구현(0.6.0부터 Node)과 `finish` 결과 `status: draft`를 바로잡았다. classify-severity 문서에 일부 finding만 분류하면 게시 대상이 줄어든다는 주의를 더했다.
+
+확인하지 못한 것: 실제 서브에이전트 호출, 인증이 필요한 상류 CLI와의 결과 비교, patch standard 2단 승인 흐름, diff `--working-tree`·경로 지정 스캔, `complete` 실패 분기, scan-match·validate 종단, `defaultRubricDrift: true`·`stopped` 분기, 0.5.1 이하 설치본의 classify 종단.
