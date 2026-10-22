@@ -145,11 +145,14 @@ bash skills/install.sh --copy --force --check
 
 ## 검증된 조합
 
-- 번들 플러그인: \`@openai/codex-security@0.5.1\` (플러그인 매니페스트 \`0.1.95\`)
-  — npm 0.1.26~0.5.1 은 모두 매니페스트 \`0.1.95\` 라서 매니페스트 버전 경고로 구분되지 않는다. \`--check\` 가
-  npm 버전을 함께 보여 준다. npm 0.5.1 을 설치한다. 0.2.0 부터 스캔 스킬도 npm 설치본이 필요하다(후보 정규화가
-  Node 헬퍼로 옮겨짐). 0.3.0·0.4.0·0.5.0·0.5.1 은 상태 DB 마이그레이션이 더 늘었으므로 전역 설치본을 올리기 전에 상태
+- 번들 플러그인: \`@openai/codex-security@0.6.0\` (플러그인 매니페스트 \`0.1.95\`)
+  — npm 0.1.26~0.6.0 은 모두 매니페스트 \`0.1.95\` 라서 매니페스트 버전 경고로 구분되지 않는다. \`--check\` 가
+  npm 버전을 함께 보여 준다. npm 0.6.0 을 설치한다. 0.2.0 부터 스캔 스킬도 npm 설치본이 필요하다(후보 정규화가
+  Node 헬퍼로 옮겨짐). 0.3.0·0.4.0·0.5.0·0.5.1·0.6.0 은 상태 DB 마이그레이션이 더 늘었으므로 전역 설치본을 올리기 전에 상태
   디렉터리(~/.codex/state/plugins/codex-security)를 백업한다.
+- npm 0.6.0 부터 codex-security-classify-severity 는 루브릭이 없어도 상류 기본 루브릭으로 모델이 판정하고,
+  finding 마다 독립 리뷰를 기본 3회 한다(\`--runs 1–10\`). 재사용되지 않는 finding 마다 서브에이전트를 N회 부른다.
+  0.5.1 이하는 이전 계약(루브릭 없으면 모델 호출 없음) 그대로다.
 - Python 3.10+ / git / Node 22+(플러그인 npm 설치, 스캔 후보 정규화, 경로 지정·diff 스캔의 작업 목록 도우미,
   SECURITY.md 정책 해결, codex-security-policy·codex-security-classify-severity)
 - Linux · macOS (Windows 는 WSL)

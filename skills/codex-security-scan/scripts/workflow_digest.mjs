@@ -48,6 +48,9 @@ export const UPSTREAM_MODULES = Object.freeze([
   "severity-store.js",
   "saved-scan.js",
   "contract.js",
+  // npm 0.6.0 계약 판별(classificationRunsSchema)·--runs 검사와 기본 루브릭 드리프트 고지(파일이 있을 때만 연다).
+  "severity-review.js",
+  "default-severity-rubric.js",
 ]);
 
 // 부트스트랩 resolve_sdk()와 같은 표식. 이 파일이 없으면 npm dist가 아니다.

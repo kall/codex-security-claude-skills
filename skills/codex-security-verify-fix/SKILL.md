@@ -13,7 +13,7 @@ description: >-
 # codex-security-verify-fix — 수정 검증 (읽기 전용)
 
 codex-security 플러그인의 `verify-fix` 스킬을 Claude가 직접 수행한다. 기준 실측 버전은
-**npm 0.5.1(매니페스트 0.1.95)**다. 입력으로 받은 각 finding이 **현재 체크아웃에서 실제로
+**npm 0.6.0(매니페스트 0.1.95)**다. 입력으로 받은 각 finding이 **현재 체크아웃에서 실제로
 수정됐는지**만 판정한다. 이 스킬은 **저장소를 절대 변경하지 않는다** — 수정·패치 적용이 필요하면
 `codex-security-patch`로 넘긴다.
 
@@ -27,7 +27,11 @@ npm 0.1.18~0.1.25 구간에서 **바이트 단위로 동일했다**(내용 변�
 Its complete instructions … do not reread either file." → "Follow the bundled $codex-security:verify-fix
 instructions and shared assessment reference included below. Do not reload these instruction files.").
 뜻은 같고, 이 스킬은 두 문서를 직접 읽으므로 절차는 바뀌지 않는다. npm 0.5.1에서는 이 머리말이 `cli.ts`에서
-`remediation.ts`로 옮겨졌다(`a5753698f` #1684 hosted verification 지원 — 문장 같음, 태그 `npm-v0.5.1` 재대조). fix-finding과 달리 `artifact-storage.md`를 읽으라는 줄은 없다. 따라서 이
+`remediation.ts`로 옮겨졌다(`a5753698f` #1684 hosted verification 지원 — 문장 같음, 태그 `npm-v0.5.1` 재대조).
+npm 0.6.0에서는 `042ce4171`(#1854)이 상류 문서에 검증 모드 문단을 넣었다(태그 `npm-v0.6.0` = 커밋 `13dcc6fec`
+재대조). 워크플로 4단계는 "In standard mode"로 한정됐고, `inconclusive` 사유의 "unavailable relevant checks"는
+"unavailable checks required by the selected mode"로 바뀌었다. 아래 「검증 모드」에 반영했다. 머리말 줄과
+`references/static-finding-assessment.md`는 이 구간에서 바뀌지 않았다. fix-finding과 달리 `artifact-storage.md`를 읽으라는 줄은 없다. 따라서 이
 스킬의 정합 작업에서 확인할 것은 상류 발동 조건 서술과, 이 문서가 참조하는 **다른 스킬의 계약
 변화**(특히 `codex-security-patch`의 승인 게이트 재구성)다. 상류만 다시 읽고 "변경 없음"으로 끝내면
 헛짚는다.
@@ -39,7 +43,53 @@ instructions and shared assessment reference included below. Do not reload these
 
 **검증 지시 입력은 받지 않는다.** `codex-security-patch`의 검증 지시(R15)는 이 스킬의 입력이 아니다.
 이 스킬은 저장소를 바꾸지 않는 판정 전용이라, 환경 준비·빌드·정리처럼 상태를 바꿀 수 있는 사용자
-검증 절차를 실행하지 않는다. 상류 CLI의 `verify-fix` 명령에도 이 입력(`--validation-prompt-file`)이 없다.
+검증 절차를 실행하지 않는다. 상류 CLI의 `verify-fix` 명령에도 이 입력(`--validation-prompt-file`)이 없다
+(npm 0.6.0 재확인. 0.6.0에서 더해진 선택지는 `--verification-mode`뿐이다).
+
+## 검증 모드 — standard / static (npm 0.6.0부터)
+
+기본은 `standard`다. 상류는 호출자가 `verificationMode: static`을 명시할 때만 static을 쓴다. 이
+스킬에서 호출자는 사용자다. **사용자가 명시적으로 정적 검증을 요청할 때만** static으로 진행한다(예:
+"정적 검증", `--static`, `--verification-mode static`). 실행 승인 거부나 도구 부재를 static 요청으로
+해석하지 않는다. 모호하면 묻는다. 모드는 시작 고지에 적고 끝까지 유지한다.
+
+- **상류 지원 확인.** 상류 `skills/verify-fix/SKILL.md`에 `verificationMode: static` 문단이 없으면(npm
+  0.5.1 이하 사본) static을 지원하지 않는다고 알리고, standard로만 진행할지 묻는다. 답이 없으면
+  진행하지 않는다.
+- **standard**: 아래 워크플로와 실행 승인 규칙 그대로다.
+- **static**: 상류 원문대로 현재 소스와 diff, 원래 익스플로잇 경로와 그럴듯한 우회, 호출자와 기존
+  테스트를 **소스로** 읽어 확인한 정상 동작을 평가한다. 의존성 설치·빌드·테스트·재현기·애플리케이션
+  실행을 하지 않는다.
+  - **실행 승인 요청이 없다.** 실행 자체가 없기 때문이다. 아래 **static 허용 명령**만 쓴다.
+  - 실행하지 않았다는 사실만으로는 `inconclusive`가 아니다. 소스 근거의 실질적 공백은 여전히
+    `inconclusive`다.
+  - 런타임 검사는 통과로 세지 않는다. 각 `evidence`에 **정적 평가이며 런타임 검사를 실행하지
+    않았다**는 사실을 적는다.
+
+**static 허용 명령(codex-security-patch·codex-security-verify-fix 공통 목록).** 두 문서에 같은 목록을
+둔다. 한쪽을 바꾸면 다른 쪽도 같이 바꾼다. 이 목록 밖의 명령은 실행하지 않는다.
+
+1. 파일 읽기·검색 도구(Claude Code의 Read·Grep·Glob).
+2. 0단계 `bootstrap.py` 실행.
+3. 검증 지시 파일의 `stat`·`realpath` 검사(검증 지시를 받는 codex-security-patch만 해당).
+4. 아래 형태의 git 읽기 명령 3개. `<trusted_child_env>` = bootstrap의 `trustedChildEnvShell`,
+   `<repo_root>` = `shellQuoted.repoRoot`. 둘 다 따옴표로 다시 감싸지 않고 그대로 붙인다.
+   ```bash
+   env -i <trusted_child_env> git -c core.fsmonitor=false -C <repo_root> rev-parse HEAD
+   env -i <trusted_child_env> git -c core.fsmonitor=false --no-optional-locks -C <repo_root> status --porcelain
+   env -i <trusted_child_env> git -c core.fsmonitor=false -C <repo_root> diff --no-ext-diff --no-textconv [<리비전·경로>]
+   ```
+   `diff`의 추가 인자는 리비전·경로와 `--cached`·`--stat`·`--name-only`로 한정한다. `--output`은 쓰지 않는다.
+
+이 형태가 필요한 이유: `--no-ext-diff --no-textconv`만으로는 저장소 로컬 `.git/config`의
+`core.fsmonitor`가 실행된다(npm 0.6.0 스모크 실측). 플래그 없는 `git diff`는 `diff.external`도 실행한다.
+`trustedChildEnvShell`은 `GIT_CONFIG_*`로 `core.fsmonitor`·`core.hooksPath`·`core.pager`·`diff.external`
+등을 무력화하고 `GIT_CONFIG_GLOBAL=/dev/null`·`GIT_CONFIG_NOSYSTEM=1`을 준다. `--no-optional-locks`는
+`status`가 index를 다시 쓰지 않게 한다.
+
+standard 모드에서도 git 읽기 명령(`rev-parse`·`status`·`diff`)은 위 4번 형태로 실행한다.
+
+static은 읽기 전용 경계를 더 강하게 만들 뿐이다. 승인 없이 실행할 수 있는 범위가 넓어지지 않는다.
 
 ## 0단계 — 부트스트랩과 입력 해석
 
@@ -55,8 +105,10 @@ instructions and shared assessment reference included below. Do not reload these
      또는 `ruleId`)를 쓴다.
    - 텍스트 서술·이슈 본문·단일 finding 파일이면 → 그 1건을 검증한다. `id`가 없으면 사용자가
      준 이슈 키를 쓰고, 그것도 없으면 `finding-1`처럼 안정적인 순번을 부여한다.
-3. **시작 고지**: 검증 대상 건수, 대상 저장소 경로와 현재 revision(`git rev-parse HEAD`),
-   그리고 **저장소를 변경하지 않는다**는 사실을 알린다.
+3. **시작 고지**: 검증 대상 건수, 대상 저장소 경로, 현재 revision(`rev-parse HEAD`), 커밋하지 않은
+   워킹트리 변경 여부(`status --porcelain`의 변경 파일 수와 목록), 검증 모드, 그리고 **저장소를 변경하지
+   않는다**는 사실을 알린다. 판정 대상은 커밋이 아니라 현재 워킹트리다. git 명령은 「검증 모드」의 static
+   허용 명령 4번 형태로 실행한다(두 모드 공통).
 
 ## 판정 방법
 
@@ -70,12 +122,15 @@ instructions and shared assessment reference included below. Do not reload these
    바뀐 것을 수정의 증거로 삼지 않는다** — 이동·리팩터링된 코드를 따라간다.
 3. 원래 익스플로잇 경로를 현재 구현에서 재추적하고, 가장 가까운 관련 제어·등가 경로·그럴듯한
    우회를 확인한다.
-4. **저장소를 변경하지 않고 실행 가능한 경우에만** 원래 재현기·집중 회귀 검사·정상 동작 검사를
-   실행한다(아래 승인 규칙). 런타임 검사가 불가능하면 정확한 정적 근거를 그대로 보존한다.
+4. **standard 모드에서**, **저장소를 변경하지 않고 실행 가능한 경우에만** 원래 재현기·집중 회귀
+   검사·정상 동작 검사를 실행한다(아래 승인 규칙). 런타임 검사가 불가능하면 정확한 정적 근거를 그대로
+   보존한다. static 모드에서는 실행하지 않는다(위 「검증 모드」).
 5. 입력 순서대로 finding당 **정확히 1건**의 결과를 반환한다. 티켓 종료, 무관한 테스트 통과,
    새 스캔에서 안 나온다는 사실은 **증거로 인정하지 않는다**.
 
 ## 저장소 정의 스크립트 실행 승인 (codex-security-patch P5-KTD7 승계)
+
+standard 모드에만 있다. static 모드에서는 이 절과 「미승인 시 판정」을 적용하지 않는다.
 
 **판정 규칙의 정본은 `codex-security-patch` SKILL.md의 `## 2단 승인 대상 판정 규칙 (P5-KTD7)`
 절이다.** 명령을 돌리기 전에 **그 절을 읽고** 판정한다. 규칙 본문은 이 문서에 옮겨 적지 않는다 —
@@ -109,7 +164,7 @@ instructions and shared assessment reference included below. Do not reload these
 실행 승인이 없거나 거부되면 **저장소가 코드 실행을 통제하지 않는 검사**까지만 수행하고 정적
 근거만으로 판정한다. 이때:
 
-- 실행하지 못한 관련 검사는 증명 공백이므로 그 finding은 **`inconclusive`로 떨어진다.**
+- 실행하지 못한 관련 검사는 standard 모드의 증명 공백이므로 그 finding은 **`inconclusive`로 떨어진다.**
 - `evidence`에 **어느 명령을 못 돌렸는지**(명령 원문과 정의 파일 경로)와 그 명령이 무엇을
   증명했을 것인지를 명시한다. 못 돌린 사실을 숨기고 `fixed`로 올리지 않는다.
 - 단, 정적 근거만으로 원래 취약 경로가 **여전히 도달 가능함이 입증**되면 `still_vulnerable`이다.
@@ -135,8 +190,8 @@ instructions and shared assessment reference included below. Do not reload these
 
 - **`fixed`** — 원래 보안 경계가 닫혔고 정상 동작도 유지됨이 **증거로 입증된** 경우에만.
 - **`still_vulnerable`** — 원래 취약 경로가 **여전히 도달 가능함이 입증된** 경우에만.
-- **`inconclusive`** — 저장소 불일치, 원본 컨텍스트 부족, 관련 검사 실행 불가, 정상 제어 미입증,
-  그 밖의 실질적 증명 공백.
+- **`inconclusive`** — 저장소 불일치, 원본 컨텍스트 부족, 선택한 모드가 요구하는 검사 실행 불가,
+  정상 제어 미입증, 그 밖의 실질적 증명 공백. static 모드는 런타임 검사를 요구하지 않는다.
 
 읽기 전용 경계를 약화시키거나, 다른 취약점으로 바꿔치기하거나, 없는 증거를 숨겨서 **더 강한
 판정을 유도하지 않는다.**
@@ -152,7 +207,8 @@ instructions and shared assessment reference included below. Do not reload these
 
 ## 최종 보고 (한국어)
 
-JSON 블록에 이어 다음을 한국어로 보고한다: 대상 저장소·revision, 건수와 상태 분포,
+JSON 블록에 이어 다음을 한국어로 보고한다: 대상 저장소·revision, 검증 모드(static이면 "정적 검증 —
+런타임 검사 미실행"), 건수와 상태 분포,
 `still_vulnerable` 건의 남은 도달 경로, `inconclusive` 건의 **정확한 증명 공백**(못 돌린 명령
 포함), 그리고 후속 옵션(`codex-security-patch`로 수정, `codex-security-scan`으로 재스캔) 제안.
 후속 작업은 요청 없이는 실행하지 않는다.

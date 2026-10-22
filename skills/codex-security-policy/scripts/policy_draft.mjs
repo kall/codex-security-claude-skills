@@ -1,7 +1,7 @@
 // policy_draft.mjs — codex-security-policy 스킬의 결정론 부분(대상·스냅샷·출력 디렉터리·프롬프트·
 // 저장 전 검사·저장·마무리). 서브에이전트 호출과 사용자 질문은 부모 세션이 한다.
 //
-// 상류 `codex-security policy`(npm 0.5.1 = 매니페스트 0.1.95)의 호스트 쪽 동작을 **상류 dist 함수로**
+// 상류 `codex-security policy`(npm 0.6.0 = 매니페스트 0.1.95)의 호스트 쪽 동작을 **상류 dist 함수로**
 // 재현한다. 대상 해석·인벤토리·스냅샷 digest·보호 루트·출력 디렉터리 위생·stage 결과 파싱·diff
 // 미리보기는 전부 부트스트랩이 채택한 npm 패키지의 dist/ 에서 import 한 상류 함수가 한다
 // (공용 관문 ../../codex-security-scan/scripts/workflow_digest.mjs). 이 파일이 소유하는 것은
@@ -108,6 +108,8 @@ const OWNER_ANSWERS_NAME = "owner-answers.json";
 //   Windows sandbox). "directly; sibling source and Git metadata are unavailable" →
 //   "only the selected component; do not inspect sibling source or Git metadata". 사실 서술이 지시로 바뀌었다.
 //   나머지 프롬프트 리터럴·진행 문구·매니페스트 필드는 같다.
+// 재대조: 태그 npm-v0.6.0 = 커밋 13dcc6fec00aaf4c23a6fa7e375ccc1726b22836 — 프롬프트 리터럴·진행 문구 같음.
+//   바뀐 것은 diff 미리보기 구현(Python difflib → Node, #1837)뿐이다.
 // 그 전 복사 시점: 태그 npm-v0.4.0 = 커밋 559b492b22bb457aea8ff88c1bd41aacc2cec8bf.
 // 재대조: 태그 npm-v0.5.0 = 커밋 03414ad84e91a8638bde85af08c47fe957dc9323 — security-policy.ts·
 //   security-policy-cli.ts 모두 변경 없음(git diff npm-v0.4.0 npm-v0.5.0 비어 있음).
@@ -1241,7 +1243,8 @@ async function handleFinish(args) {
   const python = pythonArg(args);
   const projected = await saveModelDocument(session, outputDir, python);
 
-  // 미리보기: 상류 securityPolicyDiff(플러그인 Python difflib, a/ b/ 라벨, 새 파일은 /dev/null).
+  // 미리보기: 상류 securityPolicyDiff(a/ b/ 라벨, 새 파일은 /dev/null). npm 0.5.1 이하는 플러그인 Python difflib,
+  // npm 0.6.0부터는 Node 구현(security-policy-diff.ts, 8f02b49da #1837)이다. 시그니처가 같아 python 인자는 그대로 넘긴다.
   // 미리보기 실패는 상류 CLI 와 같이 경고만 하고 계속한다.
   const sp = await loadUpstream(session.sdkDist, "security-policy.js");
   let diff = "";

@@ -18,7 +18,7 @@ is installed at runtime.
 Download the release tarball and install it. Or just paste this into a Claude Code session:
 
 ```
-Install https://github.com/kall/codex-security-claude-skills/releases/tag/v0.5.1
+Install https://github.com/kall/codex-security-claude-skills/releases/tag/v0.6.0
 ```
 
 ```bash
@@ -72,12 +72,14 @@ moved it to an upstream Node helper), scoped-path and diff scans (npm 0.3.0 move
 `codex-security-policy` and `codex-security-classify-severity`, and for querying the official CLI's history.
 Linux/macOS (Windows via WSL).
 
-Verified combination: `@openai/codex-security@0.5.1` (plugin manifest `0.1.95`). npm 0.1.26 through
-0.5.1 all report manifest `0.1.95`, so the manifest version warning cannot tell them apart. The skills
+Verified combination: `@openai/codex-security@0.6.0` (plugin manifest `0.1.95`). npm 0.1.26 through
+0.6.0 all report manifest `0.1.95`, so the manifest version warning cannot tell them apart. The skills
 detect version-specific behavior from plugin files instead, and `--check` also shows the npm version.
-Install npm 0.5.1. On an isolated install of npm 0.5.1, all five self-check scripts exit 0. With npm 0.5.0,
-only checks P7 and P11 of `repro-u8` fail, because one line of the shared policy instructions changed in 0.5.1
-and the pinned literal now follows 0.5.1 (an intended drift detection). The results below for 0.4.0 and
+Install npm 0.6.0. On isolated installs of npm 0.6.0 and 0.5.1, `repro-u8` exits 0 (on 0.5.1 it prints one
+NOTE: check S13 is 0.6.0-only). The other four scripts (`repro-u4`, `repro-u1`, `repro-u7`, `repro-u5`) also exit 0 on both. The result for
+0.5.0 is from the v0.5.1 release and was not re-run this time: only checks P7 and P11 of `repro-u8` failed,
+because one line of the shared policy instructions changed in 0.5.1 and the pinned literal follows 0.5.1
+(an intended drift detection). The results below for 0.4.0 and
 earlier are from the v0.5.0 release and were not re-run this time: on isolated installs of npm 0.4.0 and
 0.3.0, all five scripts exited 0. With npm 0.2.0, `repro-u4`, `repro-u1`, `repro-u7`, and `repro-u5` pass
 (checks for 0.4.0-only behavior print NOTE there); `repro-u8` fails one check, P7, because the policy progress text changed in 0.3.0 and the
@@ -85,16 +87,28 @@ pinned literal now follows 0.3.0+ (an intended drift detection). npm 0.1.32 and 
 re-verified this time.
 
 From npm 0.2.0 the scan skills need the npm package: an upstream source checkout has no built Node
-helper, so candidate normalization is unavailable and the scans stop at step 0. npm 0.3.0, 0.4.0, 0.5.0, and 0.5.1 add
+helper, so candidate normalization is unavailable and the scans stop at step 0. npm 0.3.0, 0.4.0, 0.5.0, 0.5.1, and 0.6.0 add
 more state-database migrations (per-scan severity tables in 0.3.0, issue receipts in 0.4.0, scan source scopes
-in 0.5.0, deep-scan worker thread history in 0.5.1); back up
+in 0.5.0, deep-scan worker thread history in 0.5.1, severity review counts and external source reports in 0.6.0); back up
 `~/.codex/state/plugins/codex-security` before upgrading a global install.
 
 The deep-lite skill changed with npm 0.4.0: upstream removed the ranking helpers, so deep-lite now reviews
 the whole inventory twice in independent passes (about twice the cost of a standard scan) instead of
 ranking and selecting the top files.
 
-**Do not run `codex-security skills add` (npm 0.5.1 still has it).** It deletes `~/.claude/skills/codex-security-<command>`
+The classify-severity skill changed with npm 0.6.0 (upstream breaking change #1765). Without a rubric it no
+longer inherits existing severities with no model call; it classifies with the upstream default rubric through
+the same subagent flow (no CLI or login needed). Each finding gets independent reviews (default 3, `--runs 1–10`),
+and upstream code takes the majority vote. Cost: N subagent calls per finding that is not reused (default 3).
+On npm 0.5.1 and earlier the old contract stays: no rubric means no model call, and `--runs` is rejected.
+
+With npm 0.6.0, `codex-security-patch` and `codex-security-verify-fix` also support static verification
+(`verificationMode: static`, #1854), only when you ask for it explicitly (for example "static verification" or
+`--static`). It runs no repository-defined scripts, so patch needs only the first approval (the repository
+change), and verify-fix asks for no run approval. A static `fixed` states "static verification — runtime checks
+not run". Standard mode keeps the two-stage approval.
+
+**Do not run `codex-security skills add` (npm 0.6.0 still has it).** It deletes `~/.claude/skills/codex-security-<command>`
 and replaces it with a link to an upstream skill that only calls the login-requiring CLI. Six names collide
 with these skills (scan, policy, patch, validate, verify-fix, classify-severity). `install.sh --check`
 reports overwritten skills; reinstall with `bash skills/install.sh --force` (`--copy --force` for copies).

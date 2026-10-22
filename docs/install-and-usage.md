@@ -197,7 +197,7 @@ import하므로, 같은 스킬 루트에 같은 버전으로 설치돼 있어야
 복사 모드로 설치했다면 저장소 clone은 지워도 되지만, 3.1절 (c) 자동 탐색과 8절 재검증
 스크립트는 저장소가 있어야 쓸 수 있다.
 
-> **상류 `codex-security skills add`와 충돌한다(npm 0.2.0~0.5.1).** 상류 CLI의 `skills add`는 CLI 명령마다
+> **상류 `codex-security skills add`와 충돌한다(npm 0.2.0~0.6.0).** 상류 CLI의 `skills add`는 CLI 명령마다
 > `codex-security-<명령>` 스킬을 만든다. 그리고 `~/.claude/skills/<이름>`을 **강제로 지우고**
 > `~/.agents/skills/<이름>`을 가리키는 심링크로 바꾼다(`incur`의 `install`, 2026-10-14 코드 확인과 임시 HOME 실측).
 > 이 저장소의 스킬 6개(`codex-security-scan`·`-policy`·`-patch`·`-validate`·`-verify-fix`·`-classify-severity`)와
@@ -271,7 +271,7 @@ npm 0.2.0에서는 `"0.2.0"`·`true`·`"kind": "python"`이다. 경로·Python·
 | `bindRepoScopes` | 경로 지정 스캔의 스코프 결합 경로. `python`(npm 0.2.0 이하 `generate_rank_input.py bind-repo-scopes`) 또는 `node-helper`(npm 0.3.0부터) | `available: false`와 `reason`. 경로 지정 스캔을 하지 않는다. 저장소 전체 스캔은 영향 없음 |
 | `copyDeepReviewInput` | diff 스캔의 리뷰 입력 복사 경로. 종류는 `bindRepoScopes`와 같다 | `available: false`와 `reason`. diff 스캔이 0단계에서 중단한다 |
 
-npm 0.1.26~0.5.1은 매니페스트 버전이 모두 `0.1.95`라서 `pluginVersion`으로는 구분할 수 없다. 위 필드들은
+npm 0.1.26~0.6.0은 매니페스트 버전이 모두 `0.1.95`라서 `pluginVersion`으로는 구분할 수 없다. 위 필드들은
 버전 대신 파일(정규화 스크립트 존재, 스키마의 markdown 대안·`completeness` 필드, Python 하위 명령 존재)로 판별한다.
 
 `ok: false`면 `stage`(`pluginRoot` / `python` / `scanDir` / `arguments`)와 `error`의 한국어 안내를
@@ -280,7 +280,7 @@ npm 0.1.26~0.5.1은 매니페스트 버전이 모두 `0.1.95`라서 `pluginVersi
 
 ### 3.4 플러그인 사본별 동작 차이 확인 (권장)
 
-**매니페스트 0.1.95(npm 0.5.1) 기준으로는 두 사본이 같게 동작한다** — npm 배포본과 GitHub 저장소
+**매니페스트 0.1.95(npm 0.6.0) 기준으로는 두 사본이 같게 동작한다** — npm 배포본과 GitHub 저장소
 체크아웃 모두 워킹트리가 변경돼도 **종결은 성공하고 경고만** 남긴다. 태그 `npm-v0.1.32`로 빌드한 패키지에서
 `repro-u3.sh` S5가 `exit=0`이었고 경고 문구도 같았다(2026-09-30 재실측). npm 0.1.32의
 `scripts/workbench_target.py`는 Git 실행 파일 선택과 커밋 diff digest 함수가 늘었지만 게이트 판정은 그대로다.
@@ -288,13 +288,15 @@ npm 0.1.26~0.5.1은 매니페스트 버전이 모두 `0.1.95`라서 `pluginVersi
 `--check`를 돌려도 "경고 사본"으로 판별된다. 하드 실패 사본을 만드는 심볼(`require_unchanged_target`)은
 현재 배포본에 존재하지 않는다. npm 0.2.0 배포본도 `repro-u3.sh` S5가 `exit=0`이고 `--check`가 "경고 사본"으로
 판별한다(2026-10-14 실측). npm 0.3.0·0.4.0 격리 설치본에서도 `repro-u3.sh` 관측 결과가 0.2.0과 같다(S5 `exit=0`,
-경고 사본. 2026-10-17 실측). npm 0.5.0 격리 설치본도 S5 `exit=0`이다(2026-10-20 실측). npm 0.5.1 격리 설치본도 S5 `exit=0`이다(2026-10-21 실측).
+경고 사본. 2026-10-17 실측). npm 0.5.0 격리 설치본도 S5 `exit=0`이다(2026-10-20 실측). npm 0.5.1 격리 설치본도 S5 `exit=0`이다(2026-10-21 실측). npm 0.6.0 격리 설치본도 S5 `exit=0`이다(2026-10-22 실측).
 
 상태 DB 마이그레이션은 버전마다 늘었다. 0.2.0에 이어 0.3.0은 스캔별 심각도 표(`scan_severity_assessments`)를,
 0.4.0은 issue receipt 표(`finding_issue_receipts`)를 더했다(상류 `shared/workbench-migrations.json`). 0.5.0은
 마이그레이션 50으로 `scans.source_scopes_json` 열을 더했다(스캔한 소스 범위를 저장해 excerpt를 읽는 데 쓴다, #488).
 0.5.1은 마이그레이션 51로 deep 스캔 워커 스레드 이력 표(`deep_scan_worker_threads`)를 더했다.
-새 버전으로 한 번 연 상태 DB를 이전 버전으로 다시 쓸 수 있다는 보장이 없다. 그래서 전역 설치본을 0.5.1로 올리기 전에
+0.6.0은 마이그레이션 52로 심각도 평가 표 세 개에 리뷰 횟수 열(`classification_runs`)을, 53으로 외부 소스 리포트 표
+(`external_source_reports`)를 더했다.
+새 버전으로 한 번 연 상태 DB를 이전 버전으로 다시 쓸 수 있다는 보장이 없다. 그래서 전역 설치본을 0.6.0으로 올리기 전에
 상태 디렉터리(`~/.codex/state/plugins/codex-security`)를 백업한다.
 
 과거(플러그인 0.1.14)에는 **같은 매니페스트 버전에서도 사본에 따라 처리가 달랐으므로**(하드 실패
@@ -311,6 +313,7 @@ grep -q "def require_unchanged_target" "$PLUGIN/scripts/workbench_db.py" \
 
 | 사본 / 시점 | 스캔 중 워킹트리 변경 후 종결 시 | 실측 메시지 |
 | --- | --- | --- |
+| npm 배포본 0.6.0 (매니페스트 0.1.95, 격리 설치본) | **성공 종결 + 경고** | `Working-tree contents changed while the scan was running; results were saved for the original snapshot.` |
 | npm 배포본 0.5.1 (매니페스트 0.1.95, 격리 설치본) | **성공 종결 + 경고** | `Working-tree contents changed while the scan was running; results were saved for the original snapshot.` |
 | npm 배포본 0.5.0 (매니페스트 0.1.95, 격리 설치본) | **성공 종결 + 경고** | 위와 동일 |
 | npm 배포본 0.4.0 (매니페스트 0.1.95, 격리 설치본) | **성공 종결 + 경고** | 위와 동일 |
@@ -491,7 +494,7 @@ diff 대상으로 워크벤치에 등록할 수 없다. 스킬은 저장소 전�
 - **ledger 모드**: 스캔 파이프라인의 상류 `skills/validation/SKILL.md` 규칙대로 판정한다. 원장의 모든 행에
   `validation` 객체를 하나씩 추가하고, discovery 필드와 행 순서를 보존하며 원자적으로 재작성한다. 이미 판정된
   행은 재판정 여부를 먼저 묻는다.
-- **단독 모드**: 상류 `codex-security validate`(npm 0.3.0부터, #1423. 기준 0.5.1)와 같이 **소스 증거만으로** 판정한다. 스킬이
+- **단독 모드**: 상류 `codex-security validate`(npm 0.3.0부터, #1423. 기준 0.6.0)와 같이 **소스 증거만으로** 판정한다. 스킬이
   런타임에 상류 `references/standalone-validation.md`와 `references/static-finding-assessment.md`를 읽고 따른다.
   읽기 도구만 쓰고, 대상 코드 실행·빌드·테스트·PoC·네트워크 접근을 하지 않으며, 보고서 파일을 쓰지 않는다.
   상류는 이 제약을 읽기 전용 샌드박스와 네트워크 차단으로 강제하지만, 이 스킬에는 그 샌드박스가 없어
@@ -540,6 +543,13 @@ outcome은 `fixed` / `no_change` / `blocked` 3값이다. **`fixed`는 수정이 
 확인된" 경우가 아니기 때문이다. `no_change`에도 검증 근거(원래 이슈가 재현되지 않는 증거와 정상 동작
 확인)가 필요하다. 근거가 없으면 `blocked`다. npm 0.1.32부터 상류 CLI도 근거 없는 `no_change`를 실패로 처리한다.
 
+**정적 검증 모드(npm 0.6.0부터, #1854).** 사용자가 명시 요청할 때만 쓴다(예: "정적 검증", `--static`).
+상류 `verificationMode: static`과 같다. 저장소 정의 스크립트를 실행하지 않으므로 1단 승인(저장소 변경)만 받고
+2단 승인은 없다. 검증은 상류 static 게이트 3개(최종 diff 검사, 원래 익스플로잇 경로 추적, 호출자·기존 테스트를
+소스로 읽어 정상 동작 확인)를 소스 근거로만 한다. 통과하면 `fixed`이고, 보고에 **"정적 검증 — 런타임 검사
+미실행"**을 적는다. 상류 사본에 static 지원이 없으면(npm 0.5.1 이하) 그 사실을 알리고 standard로만 진행한다.
+standard 모드는 위 2단 승인 그대로다.
+
 > 세션 퍼미션이 `acceptEdits`/`bypassPermissions`면 편집·실행이 프롬프트 없이 진행되므로, 그때는
 > **SKILL.md의 2단 승인 지침이 유일한 게이트**다. 스킬은 이 사실을 먼저 고지한다. 보안 수정을
 > 검토하며 진행하려면 기본 퍼미션 모드에서 쓰는 편이 안전하다.
@@ -566,6 +576,11 @@ finding별로 1건씩 판정한다.
 > 쓴다 — 정본은 `codex-security-patch/SKILL.md`다. 미승인이면 정적 근거로만 판정하고 못 돌린
 > 검사를 증명 공백으로 남긴다 — 대개 `inconclusive`가 된다.
 
+**정적 검증 모드(npm 0.6.0부터, #1854).** 사용자가 명시 요청할 때만 쓴다(예: "정적 검증", `--static`). 소스와
+diff만 평가하고 아무것도 실행하지 않으므로 실행 승인을 요청하지 않는다. 실행하지 않았다는 사실만으로는
+`inconclusive`가 아니다. 소스 근거의 실질적 공백은 여전히 `inconclusive`다. 상류 사본에 static 지원이 없으면
+(npm 0.5.1 이하) 그 사실을 알리고 standard로만 진행한다.
+
 ### 5.7 스캔 간 매칭 — `/codex-security-scan-match`
 
 ```
@@ -576,7 +591,7 @@ finding별로 1건씩 판정한다.
 해결되는** finding을 그룹화해 이력을 연결한다(공식 `scans match` 대체 — 그 명령은 SDK가 Codex
 스레드를 직접 여는 유일한 지점이라 OpenAI 인증 없이는 막혀 있다).
 
-매칭은 상류 0.1.29~0.5.1 `scans match`와 같은 순서로 진행한다. 이 구간에 판정 문장과 조정 결과는 바뀌지 않았다.
+매칭은 상류 0.1.29~0.6.0 `scans match`와 같은 순서로 진행한다. 이 구간에 판정 문장과 조정 결과는 바뀌지 않았다.
 0.2.0은 리팩터만 했고, 0.3.0은 최종 검증의 도달 불가 분기(`enforceConfirmedIdentities`)를 지웠다(#1364).
 
 1. **호스트 신원 병합** — 같은 `findingId`와 **`knownFindingGroups`**(이전 비교들에서 이미 같은
@@ -698,7 +713,7 @@ codex-security scans compare <before-scan-id> <after-scan-id>
 ```
 
 **저장소를 바꾸지 않는다.** 초안을 검토한 뒤 사용자가 **`SECURITY.md`만** 대상 경로(`targetPath`)로 직접
-복사한다(상류 0.4.0~0.5.1 CLI 끝 안내 "copy only SECURITY.md to the Policy target shown"과 같다). 아키텍처·위협 모델·
+복사한다(상류 0.4.0~0.6.0 CLI 끝 안내 "copy only SECURITY.md to the Policy target shown"과 같다). 아키텍처·위협 모델·
 매니페스트는 복사하지 않는다. 승인 후
 저장소에 적용하는 상류 plugin 단계는 이 스킬 범위 밖이다. 매니페스트의 `model`은
 `"claude-subagent (Claude Code)"`로 적는다.
@@ -709,7 +724,7 @@ codex-security scans compare <before-scan-id> <after-scan-id>
 `threat_model_ready` 그대로 남는다. 투영에 실패하면 `threatModelPath: null`과 경고를 돌려준다. npm 0.1.32 이하
 finalizer에는 `--write-threat-model`이 없어 항상 이 경고가 난다.
 
-**전제**: npm 설치본(npm 0.1.27 이상, 권장 0.5.1) — Node 헬퍼와 `dist/`가 필요하다. 신뢰 Node도 필요하다.
+**전제**: npm 설치본(npm 0.1.27 이상, 권장 0.6.0) — Node 헬퍼와 `dist/`가 필요하다. 신뢰 Node도 필요하다.
 하나라도 없으면 초안을 만들지 않고 중단한다(3.2절 프로브 경고 줄로 미리 알 수 있다).
 
 > **비동등성 고지**: 상류 `policy`는 모델을 OS 수준 권한 프로필(읽기 경로 한정, Git 메타데이터 차단,
@@ -723,30 +738,42 @@ finalizer에는 `--write-threat-model`이 없어 항상 이 경고가 난다.
 
 ```
 /codex-security-classify-severity <scanDir> --rubric rubric.md
-/codex-security-classify-severity <scanDir>                      # 루브릭 없음: 기존 severity 상속
+/codex-security-classify-severity <scanDir>                      # 루브릭 없음: 0.6.0 이상 상류 기본 루브릭, 0.5.1 이하 기존 severity 상속
+/codex-security-classify-severity <scanDir> --runs 1             # 리뷰 횟수(npm 0.6.0 이상 전용, 1–10, 기본 3)
 ```
 
-공식 `codex-security classify-severity --rubric`을 대체한다. 그 명령은 finding마다 OpenAI 모델을 한 번
-호출한다. 이 스킬은 **판정 자리만** 도구 없는 격리 서브에이전트로 바꾸고, finding 선택·digest·저장 평가
-재사용·검증·저장·결과 파일 기록은 npm 배포본 `dist/`의 상류 함수를 그대로 실행한다.
+공식 `codex-security classify-severity`를 대체한다. 그 명령은 finding마다 OpenAI 모델을 호출한다(npm 0.6.0부터는
+finding마다 `--runs`번, 기본 3번). 이 스킬은 **판정 자리만** 도구 없는 격리 서브에이전트로 바꾸고, finding 선택·digest·저장 평가
+재사용·검증·다수결·저장·결과 파일 기록은 npm 배포본 `dist/`의 상류 함수를 그대로 실행한다.
+
+**npm 0.6.0의 breaking 변경(#1765).** 루브릭을 생략하면 상류 기본 루브릭으로 **모델이 판정한다**. 이전의 기존
+severity 상속 경로(모델 호출 없음)는 상류에서 없어졌다. finding마다 독립 리뷰를 기본 3번 하고(`--runs 1–10`),
+상류 `reviewSeverity`가 다수결을 한다. 스킬은 run마다 새 격리 서브에이전트를 부르고, 다수결을 다시 구현하지 않는다.
+기본 루브릭 경로도 같은 서브에이전트 흐름이라 CLI·인증이 필요 없다. 스킬은 설치된 `dist/`의 파일로 계약을 고른다.
+npm 0.5.1 이하에서는 이전 계약 그대로다(루브릭 없으면 상속, `--runs`는 거부). 0.6.0에서는 상속 경로를 거부한다.
+
+**비용**: 재사용되지 않는 finding마다 서브에이전트를 N번(기본 3번) 부른다. finding 10개면 30번이다. 시작할 때 호출 수를
+알린다. 비용을 줄이려면 `--runs 1`을 쓴다(다수결의 안정성은 줄어든다).
 
 | 입력 | 규칙 |
 | --- | --- |
 | 스캔 | 스캔 ID(접두어·`latest`) **또는** 완료 스캔 디렉터리 중 정확히 하나 |
-| 루브릭 | 있으면 루브릭 판정, 없으면 기존 severity 상속 |
+| 루브릭 | 있으면 그 루브릭으로 판정. 없으면 npm 0.6.0 이상은 상류 기본 루브릭으로 판정, 0.5.1 이하는 기존 severity 상속 |
+| 리뷰 횟수(선택) | `--runs <1–10>`. npm 0.6.0 이상 전용. 생략하면 상류 기본 3. 0.5.1 이하에서 주면 거부한다 |
 | 지식 베이스(선택, 반복) | **텍스트 파일만.** PDF·DOCX는 거부한다 — 텍스트로 변환해서 준다 |
 | finding 선택(선택) | 생략하면 스캔의 모든 finding. 스캔에 없는 ID가 하나라도 있으면 시작 전에 거부한다 |
 | 재처리(선택) | digest가 같은 저장 평가가 있어도 다시 판정한다 |
 
-- **루브릭 없음**: 상류 CLI의 루브릭 없는 경로에 위임한다(모델 호출·인증 없음, 5.12절). 기존 severity가
-  없는 finding이 있으면 상류가 멈추므로 루브릭을 준다.
-- **루브릭 있음**: 준비(워크벤치에 쓰지 않음. 저장 평가는 워크벤치 DB의 임시 사본에서 읽는다 — 아래) → finding마다 새 서브에이전트 판정(병렬 가능) → 저장(쓰기
+- **루브릭 없음(npm 0.5.1 이하)**: 상류 CLI의 루브릭 없는 경로에 위임한다(모델 호출·인증 없음, 5.12절). 기존 severity가
+  없는 finding이 있으면 상류가 멈추므로 루브릭을 준다. npm 0.6.0 이상에서는 아래 루브릭 경로를 상류 기본 루브릭으로 탄다.
+- **루브릭 있음(또는 0.6.0 이상 기본 루브릭)**: 준비(워크벤치에 쓰지 않음. 저장 평가는 워크벤치 DB의 임시 사본에서 읽는다 — 아래) → 작업 항목(finding × run)마다 새 서브에이전트 판정(병렬 가능) → 저장(쓰기
   전에 입력이 그대로인지 다시 확인). 루브릭·지식 베이스·finding digest가 모두 같은 저장 평가는 다시 판정하지
-  않는다. 루브릭이 한 글자라도 바뀌면 전부 다시 판정한다. 반환이 상류 검증을 통과하지 못하면 그 finding만
+  않는다(0.6.0은 리뷰 횟수도 같아야 한다). 루브릭이 한 글자라도 바뀌면 전부 다시 판정한다. 반환이 상류 검증을 통과하지 못하면 그 작업 항목만
   **한 번** 다시 판정하고, 또 실패하면 중단한다.
 - **한도**: 조립한 프롬프트가 80,000자를 넘으면 나누지 않고 시작 전에 거부한다. 루브릭·지식 베이스를 줄이거나
   finding을 나눠 고른다.
 - 상류 분류 지시가 이 스킬이 고정한 영문 원문과 다르면 진행하지 않는다(상류 계약이 바뀐 것이다).
+  상류 기본 루브릭은 원문 대신 SHA-256(`UPSTREAM_DEFAULT_RUBRIC_SHA256`)으로 대조한다. 다르면 중단하지 않고 알린다.
 
 저장 위치(대상 저장소와 봉인 파일은 바뀌지 않는다):
 
@@ -761,7 +788,7 @@ finalizer에는 `--write-threat-model`이 없어 항상 이 경고가 난다.
 (`bf9a5bce9`, #1543) finding별 읽기 전용 조회 명령이 없어졌다. 상류 `begin`은 스캔 선택 행을 덮어쓰고 0.3.0부터는
 캐시 행을 스캔별 행으로 복사하는 쓰기다. 그래서 스킬은 상류 `scripts/snapshot_sqlite.py`로 DB 사본을 만들고, 그
 사본에 상류 `SeverityStore`의 체크포인트 조회를 부른다. 재사용 규칙은 설치된 상류 버전의 것이 그대로 쓰인다.
-npm 0.2.0~0.5.1 모두 같은 스크립트로 동작한다. 사용자가 판정 단계에서 멈춰도 이전 분류는 그대로 남는다.
+npm 0.2.0~0.6.0 모두 같은 스크립트로 동작한다(버전마다 그 버전의 계약으로). 사용자가 판정 단계에서 멈춰도 이전 분류는 그대로 남는다.
 
 최종 보고는 finding마다 결정(`decision`)·레벨(`level`)·루브릭 라벨·재사용 여부를 표로 보여 준다.
 
@@ -774,7 +801,7 @@ npm 0.2.0~0.5.1 모두 같은 스크립트로 동작한다. 사용자가 판정 
   or its inputs changed.`로 멈추므로 끝까지 다시 분류한다.
 - **확인**: `publish scan --dry-run`으로 Linear API 키 없이 게시 미리보기를 볼 수 있다(5.12절).
 
-**전제**: npm 설치본의 `dist/`(npm 0.1.26 이상, 권장 0.5.1), 신뢰 Node, 플러그인 Python 3.10+(DB 사본에 상류
+**전제**: npm 설치본의 `dist/`(npm 0.1.26 이상, 권장 0.6.0), 신뢰 Node, 플러그인 Python 3.10+(DB 사본에 상류
 `snapshot_sqlite.py`를 쓴다).
 
 > **비동등성 고지**: 상류는 finding마다 OS 샌드박스(읽기 전용, 네트워크 차단, 셸·MCP 비활성)의 Codex 모델을
@@ -832,7 +859,7 @@ codex-security findings false-positive <occurrence-id> --reason "…"
 | --- | --- | --- |
 | `init [file]` | 공식 CLI용 프로젝트 설정 파일 초안을 쓴다(기본 `codex-security.yaml`, 기존 파일은 덮어쓰지 않음) | 성공. 파일을 0600으로 쓴다 |
 | `scan import --json <file>` (또는 `--csv <file>`) | 다른 도구의 finding(CSV·JSON)을 **보안 분석 없이** 완료된 봉인 스캔으로 저장한다 | 성공. `<상태 디렉터리>/scans/imports/codex-security-import-*`에 봉인 스캔을 만든다 |
-| `classify-severity --scan-dir <dir>` (루브릭 없음) | 기존 severity를 상속해 심각도 평가를 저장한다 | 성공. `severity-classification.json`과 워크벤치 행을 쓴다 |
+| `classify-severity --scan-dir <dir>` (루브릭 없음, npm 0.5.1 이하) | 기존 severity를 상속해 심각도 평가를 저장한다. npm 0.6.0부터는 기본 루브릭으로 모델을 부르므로 인증이 필요하다 | 성공. `severity-classification.json`과 워크벤치 행을 쓴다 |
 | `policy <repo> --dry-run --headless` | SECURITY.md 초안 생성 입력(대상 해석 등)만 검증한다 | 성공. 모델을 시작하지 않는다(`authentication.verified: false`) |
 | `publish scan --scan-dir <dir> --to linear --linear-team <아무 값> --dry-run` | Linear 게시 미리보기 | 성공. Linear API 키 없이 미리보기를 낸다 |
 | `export <scan_dir> --artifact threat-model --output -` (npm 0.2.0) | 봉인 스캔에 저장된 위협 모델을 마크다운으로 내보낸다. 분석을 다시 하지 않는다 | 성공. `scan.threatModel`이 없는 스캔은 `No saved threat model is available for this result.`로 exit 2 |
@@ -851,8 +878,9 @@ codex-security findings false-positive <occurrence-id> --reason "…"
     확인했다(`comparable: false`). 매칭 판정과 저장까지 이어지는지는 확인하지 않았다.
   - `codex-security-patch`·`codex-security-verify-fix`: **확인하지 않음.** finding 위치가 가져온 보고서를
     가리키고 원래 저장소와 연결되지 않으므로 맞지 않을 수 있다.
-- **`classify-severity`(루브릭 없음)**: `codex-security-classify-severity` 스킬도 루브릭이 없으면 이 경로에
-  위임한다. 루브릭을 주면 모델 호출이 필요하므로 CLI로는 쓸 수 없다 — 5.10절 스킬을 쓴다.
+- **`classify-severity`(루브릭 없음)**: npm 0.5.1 이하에서는 `codex-security-classify-severity` 스킬도 루브릭이 없으면 이 경로에
+  위임한다. 루브릭을 주면 모델 호출이 필요하므로 CLI로는 쓸 수 없다 — 5.10절 스킬을 쓴다. npm 0.6.0부터는
+  루브릭이 없어도 모델을 부르므로(#1765) 이 명령을 인증 없이 쓸 수 없다. 스킬은 이 경로를 쓰지 않고 상류 기본 루브릭으로 판정한다.
 - **`policy --dry-run`**: 모델을 시작하지 않고 대상 저장소·컴포넌트·초안 대상 경로(`targetPath`)만
   확인한다. `--dry-run`을 빼면 인증이 필요하다 — 초안은 5.9절 스킬로 만든다.
 - **`publish scan --dry-run`**: 팀 ID가 없으면 `--linear-team or CODEX_SECURITY_LINEAR_TEAM is required.`로
@@ -880,7 +908,7 @@ match 명령에 공통으로 받는다(상류 #1143·#1238·#1274). 모두 모�
   달라지는지는 확인하지 않았다.
 - `suggest-owners`가 CODEOWNERS를 먼저 본다(#1519).
 - hosted Standard scan 실행이 생겼다(#1559, 0.4.0).
-- `skills add`는 0.5.1에도 있다. 3.2절 충돌 경고가 그대로 적용된다.
+- `skills add`는 0.6.0에도 있다. 3.2절 충돌 경고가 그대로 적용된다.
 
 **npm 0.5.0 CLI 변경(이 스킬들이 감싸지 않음, 실측하지 않음)**:
 
@@ -894,6 +922,17 @@ match 명령에 공통으로 받는다(상류 #1143·#1238·#1274). 모두 모�
 
 **npm 0.5.1 CLI 변경(이 스킬들이 감싸지 않음, 실측하지 않음)**: hosted patch·verify-fix 실행이 생겼다(#1684).
 patch 검증 프롬프트와 verify-fix 머리말은 `cli.ts`에서 `remediation.ts`로 옮겨졌고, 문장은 같다.
+
+**npm 0.6.0 CLI 변경(이 스킬들이 감싸지 않음, 실측하지 않음)**:
+
+- 외부 스캐너 findings를 가져오는 기능이 생겼다(`import` 명령 등). GitHub code scanning·security advisories(#1632), Endor(#1689),
+  Semgrep(#1690), Snyk(#1687), Wiz(#1693), 로컬 리포트 import(#1848)를 지원하고, 가져온 결과를 로컬에 저장한다(#1847).
+- Cloud findings publisher가 생겼고(#1441), 상류 플러그인에 `publish-findings` 스킬이 더해졌다.
+- 스캔이 끝난 뒤 소유자를 제안한다(#1760).
+- hosted remediation 명령이 생겼다(#1854). 같은 커밋이 patch·verify-fix의 정적 검증 모드를 더했다. 스킬은 5.5·5.6절에 적은
+  방식으로 이 모드를 지원한다.
+- `classify-severity`가 루브릭 없이도 기본 루브릭으로 모델을 부르고, `--runs`를 받는다(#1765, 5.10절).
+- policy diff 미리보기가 Python difflib에서 Node 구현으로 바뀌었다(#1837). 시그니처가 같아 스킬은 영향이 없다.
 
 **npm 0.1.30~0.1.32에 새로 생긴 명령(이 스킬들이 감싸지 않음, 실측하지 않음)**: `suggest-owners <findings>`
 (npm 0.1.31)는 커밋된 소스와 Git 이력으로 finding 소유자를 제안한다. 모델을 부르므로 인증이 필요하다.
@@ -944,9 +983,9 @@ patch 검증 프롬프트와 verify-fix 머리말은 `cli.ts`에서 `remediation
 | `running` 상태 좀비 행 | `list-stale --hours N`으로 나열 후 `close-stale --scan-id <id>`로 **명시적으로만** 정리 |
 | `codex-security: command not found` | 공식 CLI 조회 명령에만 필요하다. `npm install -g @openai/codex-security`(Node 22+) 또는 `npx @openai/codex-security …` |
 | `--check`가 "상류 'codex-security skills add' 가 이 스킬을 덮어썼습니다"를 보고한다 | 상류 CLI의 `skills add`가 같은 이름의 스킬을 지우고 CLI 안내 스킬로 바꿨다(3.2절). `bash skills/install.sh --force`(복사본이면 `--copy --force`)로 다시 설치하고, `skills add`를 다시 실행하지 않는다 |
-| 플러그인 버전 경고 | `pluginVersion`이 매핑 기준(매니페스트 0.1.95)과 다름 → 워크플로 지시가 바뀌었을 수 있으니 8절 재검증을 수행. 버전이 같아도 동작이 다를 수 있으므로 3.4절 프로브를 함께 본다. npm 0.1.26~0.5.1은 모두 매니페스트 0.1.95라 이 경고가 뜨지 않는다 — npm 버전은 부트스트랩 `npmVersion`(`--check`의 `버전` 줄)으로 확인한다. `npmVersion`이 0.5.1이 아니면 스킬이 같은 경고를 낸다. npm 0.1.26에는 SECURITY.md Node 헬퍼가 없어 정책 해결을 건너뛴다. 검증된 조합인 npm 0.5.1을 설치한다(상태 디렉터리 백업 후, 3.4절) |
-| 스캔이 0단계에서 "후보 정규화 불가"로 멈춘다 | 부트스트랩 `candidateNormalizer.available: false`. npm 0.2.0 이후 상류 소스 체크아웃이면 Python 정규화 스크립트도 빌드된 Node 헬퍼도 없다 → npm 0.5.1 설치본을 쓴다. 설치본인데 멈추면 `reason`의 헬퍼 사유("Node 없음"·"신뢰 게이트 거부")를 아래 행처럼 해결한다 |
-| 스캔이 "SECURITY.md 정책 해결을 건너뜀"을 고지한다 | 부트스트랩 `securityMdHelper.available: false`. `reason`이 "헬퍼 파일 없음"이면 상류 소스 체크아웃이거나 npm 0.1.26 이하다 → npm 0.5.1 설치본을 쓴다. "Node 없음"·"신뢰 게이트 거부"면 대상 저장소 밖의 Node를 PATH에 두거나 `CODEX_MCP_NODE_PATH=<절대 경로>`로 지정한다 |
+| 플러그인 버전 경고 | `pluginVersion`이 매핑 기준(매니페스트 0.1.95)과 다름 → 워크플로 지시가 바뀌었을 수 있으니 8절 재검증을 수행. 버전이 같아도 동작이 다를 수 있으므로 3.4절 프로브를 함께 본다. npm 0.1.26~0.6.0은 모두 매니페스트 0.1.95라 이 경고가 뜨지 않는다 — npm 버전은 부트스트랩 `npmVersion`(`--check`의 `버전` 줄)으로 확인한다. `npmVersion`이 0.6.0이 아니면 스킬이 같은 경고를 낸다. npm 0.1.26에는 SECURITY.md Node 헬퍼가 없어 정책 해결을 건너뛴다. 검증된 조합인 npm 0.6.0을 설치한다(상태 디렉터리 백업 후, 3.4절) |
+| 스캔이 0단계에서 "후보 정규화 불가"로 멈춘다 | 부트스트랩 `candidateNormalizer.available: false`. npm 0.2.0 이후 상류 소스 체크아웃이면 Python 정규화 스크립트도 빌드된 Node 헬퍼도 없다 → npm 0.6.0 설치본을 쓴다. 설치본인데 멈추면 `reason`의 헬퍼 사유("Node 없음"·"신뢰 게이트 거부")를 아래 행처럼 해결한다 |
+| 스캔이 "SECURITY.md 정책 해결을 건너뜀"을 고지한다 | 부트스트랩 `securityMdHelper.available: false`. `reason`이 "헬퍼 파일 없음"이면 상류 소스 체크아웃이거나 npm 0.1.26 이하다 → npm 0.6.0 설치본을 쓴다. "Node 없음"·"신뢰 게이트 거부"면 대상 저장소 밖의 Node를 PATH에 두거나 `CODEX_MCP_NODE_PATH=<절대 경로>`로 지정한다 |
 | `codex-security-policy`·`-classify-severity`가 시작 직후 중단한다 | 부트스트랩의 `securityMdHelper`·`sdk.dist`·`node` 중 하나가 없다(3.3절 표). `--check`의 "사용 불가" 경고 줄이 사유를 알려 준다. 대개 npm 설치본(`npm install -g @openai/codex-security`)으로 해결된다 |
 | 두 스킬에서 `ERR_MODULE_NOT_FOUND` | `codex-security-scan` 스킬(공용 관문 `workflow_digest.mjs`)이 같은 스킬 루트에 없거나 버전이 다르다. 9종을 같은 버전으로 다시 설치한다 |
 | 경로 지정 스캔이나 diff 스캔이 0단계에서 멈춘다 | 부트스트랩 `bindRepoScopes`·`copyDeepReviewInput`이 `available: false`다. npm 0.3.0부터 이 둘은 Node 헬퍼라서 Node나 빌드된 `mcp/`가 없으면 쓸 수 없다. `reason`을 보고 npm 설치본과 신뢰 Node를 갖춘다 |
@@ -968,12 +1007,13 @@ bash docs/verification/scripts/repro-u4.sh
 # 워크벤치 계약 (register → seal → 게이트 → complete)
 bash docs/verification/scripts/repro-u3.sh
 
-# 매칭 검증기 계약: 상류 0.1.29~0.5.1 호스트 조정 재현(catalogue → finalize → measure),
+# 매칭 검증기 계약: 상류 0.1.29~0.6.0 호스트 조정 재현(catalogue → finalize → measure),
 # 상류 테스트 이식 픽스처 453건 대조(블록 R), 가짜 codex 로 돌린 상류 dist 결과와 대조(블록 S)
 bash docs/verification/scripts/repro-u5-match-validator.sh
 
 # SECURITY.md 초안·심각도 재분류의 결정론 부분 (digest·스냅샷 벡터, 저장 전 검사,
-# 상류 리터럴 드리프트, env -i 실행 형태, 루브릭 재사용 규칙, publish --dry-run 수용)
+# 상류 리터럴 드리프트, env -i 실행 형태, 루브릭 재사용 규칙, publish --dry-run 수용,
+# npm 0.6.0 리뷰 횟수와 다수결(S13))
 bash docs/verification/scripts/repro-u8-policy-severity.sh
 
 # 검색 명령 확보와 신뢰 게이트 (저장소 내부 rg 거부, 부작용 게이팅, 반복 호출 멱등성)
