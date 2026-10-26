@@ -1580,3 +1580,51 @@ Python 3.14.8, Node v22.23.2. SKIP은 0건이다.
 5. policy 문서의 diff 미리보기 구현(0.6.0부터 Node)과 `finish` 결과 `status: draft`를 바로잡았다. classify-severity 문서에 일부 finding만 분류하면 게시 대상이 줄어든다는 주의를 더했다.
 
 확인하지 못한 것: 실제 서브에이전트 호출, 인증이 필요한 상류 CLI와의 결과 비교, patch standard 2단 승인 흐름, diff `--working-tree`·경로 지정 스캔, `complete` 실패 분기, scan-match·validate 종단, `defaultRubricDrift: true`·`stopped` 분기, 0.5.1 이하 설치본의 classify 종단.
+
+## 부록 — npm 0.7.0(매니페스트 0.1.95) 재실측 (2026-10-26)
+
+기준선을 npm 0.6.0에서 상류 태그 `npm-v0.7.0`(커밋 `f05a0b096cc881242ddf34a4d6b3ce0f322f3cf9`)으로 올리면서 재실측한 결과다. 상세는 `docs/plans/2026-10-26-1500-chore-codex-security-070-alignment.md`다. `/tmp` 정리로 0.6.0 격리 설치본을 다시 설치했다.
+
+### 정합 작업 전 (수정 전 스킬, npm 0.7.0)
+
+`repro-u4`는 exit 1(OK 36, FAIL 21, SKIP 3)이었다. 인벤토리 스크립트 3개가 지워져(#1432) G·I·J·L 블록이 실패하거나 검증하지 못했다. `repro-u1`은 H14g 1건(SECURITY.md 1 MiB 한도 제거, #1883), `repro-u8`은 P7 1건(같은 변경으로 policy 오류 문구 삭제)이 실패했다. `repro-u7`·`repro-u5`는 통과했고 `repro-u3` 요약은 0.6.0과 같았다.
+
+### 정합 작업 뒤 재검증
+
+| 스크립트 | npm 0.7.0 | npm 0.6.0 |
+| --- | --- | --- |
+| `repro-u4.sh` | exit 0, OK 81 | exit 0, OK 81 |
+| `repro-u1-search-command.sh` | exit 0, OK 96 | exit 0, OK 96 |
+| `repro-u7-coverage-recovery.sh` | exit 0, OK 70 | exit 0, OK 70 |
+| `repro-u5-match-validator.sh` | exit 0, OK 714 | exit 0, OK 714 |
+| `repro-u8-policy-severity.sh` | exit 0, OK 332 | exit 0, OK 324 |
+| `repro-u3.sh` 요약 | S5 0, S6 0, S9 1, S9b 0 | 같음 |
+
+두 버전 모두 FAIL·SKIP·NOTE 0이다. Python 3.14, Node v22.23.2. 인벤토리 출력 집합(add-back, `.rgignore`·`RIPGREP_CONFIG_PATH` 축소와 완화, diff 확장자·바이너리·삭제 파일)은 0.7.0 Node 헬퍼와 0.6.0 Python 스크립트에서 같았다. 새 단언 `repro-u8` P4g(큰 가이던스 → `prepare` 거부, 출력 디렉터리 미잔존)는 사전 검사를 막은 변이에서 9건 실패했다.
+
+### 종단간 스모크 테스트 (npm 0.7.0)
+
+| 대상 | 결과 |
+| --- | --- |
+| 전체 스캔 | Node `generate-in-scope-files`(6개) → 정규화 → 정산 → 봉인(첫 시도 통과) → `complete`. `report.md`에 `Deferred Requested Work` 절 |
+| 경로 지정 `--paths app` | 인벤토리 3개(상대·절대 스코프 모두) → Node `bind-repo-scopes` → `complete` |
+| diff `refs` | Node `make-diff-rank-input`·`copy-deep-review-input`·diff 인벤토리 4행(삭제·문서 파일 포함) → `complete` |
+| deep-lite | 2패스 정규화 6행 → 5행 → `complete` |
+| 1.2 MB SECURITY.md | scan 0단계 정책 해결 exit 0(전문 출력, 나눠 읽기 가능). policy `prepare`는 `policySizeLimit: null` |
+| policy(일반 저장소) | threat_model 단계까지 saved, `threat_model_ready` |
+| classify-severity | 기본 루브릭 `--runs 3`, 독립 서브에이전트 3회 → `saved` → `publish … --dry-run` 반영 |
+| patch·verify-fix static | `fixed`. `.git/config`의 fsmonitor·pager·diff.external·filter clean/smudge·hooksPath·alias, conftest·package.json·Makefile 카나리가 하나도 발동하지 않았다(일반 git으로는 발동) |
+| 리페어 루프 | surface id 삭제·대문자 ruleId·`root_cause`·`no_issue` 4건의 finalize 오류 문구가 문서와 같았다 |
+
+명령형의 자리표시자는 모두 부트스트랩 키나 문서에 정의된 입력으로 해석됐다(정의되지 않은 자리표시자 0건). `PATH=<search_path_env>`일 때만 인벤토리 헬퍼가 rg를 찾았다(`trustedPathEnv`로는 `spawn rg ENOENT`).
+
+찾아 고친 것:
+
+1. **(중) policy: 1 MiB 한도가 없어진 뒤 스킬 자체의 80,000자 프롬프트 상한이 실제 한도가 됐다.** 1.2 MB SECURITY.md에서 `prepare`는 통과하고 다음 단계에서 멈춰 출력 디렉터리가 남았다. 가이던스에는 대상 정책 자신과 하위 정책도 들어간다. `prepare`가 가이던스 해결 직후 architecture 프롬프트를 조립해 상한을 미리 검사하고, 넘으면 출력 디렉터리를 남기지 않고 멈추게 했다.
+2. scan·validate 문서에 상류 validation·attack-path의 "Other phase-based scans" 절(후보별 보고서·영수증·closure table)을 적용하지 않는다고 적었다.
+3. diff contract의 `scope.requiredIncludePaths`가 null일 때 `requestedPath`를 쓰는 매핑 행을 더했다.
+4. deep-lite의 `PATH=<search_path_env>` 적용 범위를 인벤토리 호출로 좁혔다.
+5. scan 최종 보고에서 상류 `final-report.md` "Response"의 토큰 사용량·`::code-comment` 지시를 적용하지 않는다고 적었다.
+6. policy 매니페스트 `reviewNotes` 구성 서술, patch·verify-fix의 git filter·diff 드라이버 무력화 서술과 static 허용 목록(Bash 검색 금지), 서브에이전트 유형을 실제 도구 목록으로 확인하라는 지시를 바로잡았다.
+
+확인하지 못한 것: diff `--working-tree` 실행, policy `policy` 단계·`finish`, 큰 SECURITY.md 저장소의 전체 스캔 봉인, classify 재판정 경로, 워크벤치 `complete` 실패 분기, 줄바꿈 경로 인벤토리 실패의 종단 재현, 인증이 필요한 명령.
