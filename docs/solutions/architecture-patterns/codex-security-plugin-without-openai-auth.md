@@ -1,7 +1,7 @@
 ---
 title: "codex-security 번들 플러그인을 OpenAI 인증 없이 Claude Code 스킬로 실행하기"
 date: 2026-07-30
-last_updated: 2026-10-14
+last_updated: 2026-10-27
 category: architecture-patterns
 module: codex-security-claude-skills
 problem_type: architecture_pattern
@@ -9,7 +9,7 @@ component: tooling
 severity: medium
 applies_when:
   - "codex-security(또는 유사한 Codex 플러그인)의 스캔 기능을 OpenAI/Codex 인증 없이 쓰고 싶을 때"
-  - "번들 플러그인의 결정론 스크립트(finalizer, 워크벤치, 랭킹)를 재사용하되 LLM 두뇌만 다른 에이전트로 바꾸고 싶을 때"
+  - "번들 플러그인의 결정론 스크립트·헬퍼(finalizer, 워크벤치, 인벤토리·후보 정규화)를 재사용하되 LLM 두뇌만 다른 에이전트로 바꾸고 싶을 때"
   - "임의 저장소에서 실행되는 전역 스킬이 신뢰할 수 있는 플러그인 사본을 선택해야 할 때"
   - "스킬 문서(SKILL.md)의 명령형이 부트스트랩 출력을 셸 명령에 보간할 때 — 계약 9의 문서 절반"
   - "스킬이 미신뢰 입력을 도구 없는/읽기 전용 서브에이전트에 넘기거나, 조립한 큰 프롬프트를 Agent 호출 하나로 보낼 때 — 계약 7"
@@ -28,7 +28,7 @@ codex-security의 스캔 기능은 공식적으로 Codex 바이너리(OpenAI 인
 저장소를 분석한 결과, **OpenAI 인증이 필요한 지점은 단 하나 — Codex 에이전트 루프(LLM 호출)뿐**이었다.
 번들 플러그인(npm 배포본에서는 `_bundled_plugin/`, 상류 소스 트리에서는 `plugins/codex-security/`)의
 결정론 계층(워크벤치 SQLite, `finalize_scan_contract.py`,
-랭킹 스크립트)은 인증을 전혀 요구하지 않는다. 오히려 `runtime.ts`의 `runWorkbench`는 자식 환경에서
+인벤토리·후보 정규화 헬퍼)은 인증을 전혀 요구하지 않는다. 오히려 `runtime.ts`의 `runWorkbench`는 자식 환경에서
 `OPENAI_API_KEY`/`CODEX_API_KEY`를 **제거**한다(`sdk/typescript/src/runtime.ts:132` 부근).
 
 따라서 "SKILL.md를 읽고 따르는 에이전트" 역할을 Claude Code가 대신하면, 나머지 파이프라인(등록 →
@@ -40,8 +40,11 @@ codex-security의 스캔 기능은 공식적으로 Codex 바이너리(OpenAI 인
 ## Guidance
 
 **전체 구조**: 전역 Claude Code 스킬(`skills/codex-security-scan/` 등)이 TS SDK/CLI를 **수정하지 않고**
-번들 플러그인의 Python 스크립트를 직접 호출하고, 지능 계층(SKILL.md 워크플로 수행)은 Claude가 담당한다.
-플러그인 버전은 벤더링하지 않고 런타임에 읽는다.
+번들 플러그인의 결정론 스크립트를 직접 호출하고, 지능 계층(SKILL.md 워크플로 수행)은 Claude가 담당한다.
+결정론 스크립트는 상류 릴리즈마다 Python에서 Node 헬퍼(`scripts/launch_codex_security_mcp --helper …`)로
+옮겨 왔다(후보 정규화 npm 0.2.0, 범위 바인딩·diff 입력 0.3.0, 인벤토리 0.7.0). 그래서 스킬은 버전 문자열이
+아니라 부트스트랩의 파일 존재 프로브(계약 1-b)로 Python·Node 경로를 고른다. 플러그인 버전은 벤더링하지 않고
+런타임에 읽는다.
 
 구현하면서 반드시 지켜야 할 계약(각각은 실패로 학습한 것):
 
@@ -91,7 +94,9 @@ codex-security의 스캔 기능은 공식적으로 Codex 바이너리(OpenAI 인
    수행한다.
    - **격리는 요청만으로 성립하지 않는다.** Claude Code의 Agent 도구에는 도구 허용 목록 인자가 없다
      (`isolation`은 git worktree 격리다). 내장 유형 Explore·Plan은 Edit·Write만 빼고 Bash·WebFetch를
-     남기며, general-purpose는 모든 도구를 가진다. 도구를 실제로 줄이는 방법은 사용자가 설치한 에이전트
+     남기며, general-purpose는 모든 도구를 가진다. 다만 내장 유형의 도구 구성은 환경에 따라 다르다 — 0.7.0
+     스모크 환경의 Explore는 Read만 받아 Glob·Grep으로 파일을 나열하지 못했고, policy 커버리지가 줄었다. 유형
+     이름이 아니라 실제 도구 목록을 확인한다. 도구를 실제로 줄이는 방법은 사용자가 설치한 에이전트
      정의(`~/.claude/agents/<name>.md`)의 frontmatter `tools`뿐이다. `tools`를 빼면 모든 도구를 상속한다.
      `tools: []`가 "도구 0개"를 뜻하는지는 검증하지 않았다 — 설치 뒤 `/agents`에서 확인하게 한다.
    - **유형 선택 절차.** (1) Glob으로 정의가 있는지 확인해 있으면 그 유형을 쓴다(스킬은 그 파일을 만들지
@@ -107,7 +112,10 @@ codex-security의 스캔 기능은 공식적으로 Codex 바이너리(OpenAI 인
      동등성 한도(`scan-comparison.ts`의 1,048,576 코드포인트)와 별도로 **실행 한도 80,000자**(기본 출력
      32,000토큰 × 토큰당 2.5자, **실측 전 추정값**)를 두고, min(두 값)을 넘으면 호출 전에 중단한다.
      80,000 초과 1,048,576 이하 구간이 가장 위험하다 — 상류 기준으로는 통과하지만 호출이 도중에 잘려,
-     설계한 "중단과 보고" 경로를 타지 않는다. 초안은 한도를 524,288자(상류 ÷ 2)로 두었다. 이 값이 부모 한
+     설계한 "중단과 보고" 경로를 타지 않는다. 상류가 입력 한도를 없애면 실행 한도가 유일한 한도가 된다. npm 0.7.0이
+     SECURITY.md 1 MiB 한도를 지우자(#1883) policy는 큰 가이던스로 `prepare`를 통과한 뒤 다음 단계에서 멈추고
+     출력 디렉터리를 남겼다(스모크 실측). 그래서 실행 한도 검사는 사용자가 산출물을 받기 전 단계(`prepare`)로
+     당긴다. 초안은 한도를 524,288자(상류 ÷ 2)로 두었다. 이 값이 부모 한
      응답의 출력 한도를 넘어 호출이 잘릴 수 있어 80,000으로 내렸다.
    → `skills/codex-security-scan-match/SKILL.md`(「프롬프트 한도」·「3단계」·「하드 규칙」),
    `skills/codex-security-scan-match/scripts/validate_matches.py`(`EQUIVALENCE_LIMIT`·`DEFAULT_EXECUTION_LIMIT`),
@@ -122,10 +130,17 @@ codex-security의 스캔 기능은 공식적으로 Codex 바이너리(OpenAI 인
    판정 제약으로 넘기지 않는다(이 저장소는 0.1.29 정합에서 반영). 호스트가 먼저 카드로 접고, 서브에이전트는 그 그룹이 틀렸다고 보면
    `priorGroupConcerns`로 보고만 한다(저장은 진행).
 
-8. **랭킹 파이프라인 계약(deep-lite).** 샤드 디렉터리는 `rank_shards`로 명명하고 pool-plan의 형제여야
-   하며, 랭킹 `score`는 1~10 정수이고, `merge-rank-outputs`는 **부분 실패를 거부**한다(누락 샤드 → exit 1).
-   랭킹 팬아웃(전량 성공·랭킹 행)과 리뷰 팬아웃(부분 실패 허용·후보)은 출력 스키마·실패 정책이 달라
-   반드시 분리한다.
+8. **deep-lite는 상류 랭킹을 흉내 내지 않고, 상류에 남은 결정론 헬퍼만 조합한다.** 초판의 계약은 상류 랭킹
+   헬퍼(`make-rank-shards` → pool-plan → `merge-rank-outputs` → `select-deep-review-input`) 위에 섰다: 샤드 디렉터리
+   `rank_shards`, 1~10 정수 점수, 부분 실패를 거부하는 병합, 랭킹 팬아웃과 리뷰 팬아웃의 분리. npm 0.4.0이 이 헬퍼를
+   모두 지웠고(#1607) 대체 경로도 없다. 공식 deep도 랭킹 대신 독립 표준 스캔을 반복한다. 그래서 deep-lite는 랭킹을
+   재구현하지 않고, 인벤토리 전체를 서로 다른 샤드 구성으로 **독립 2패스** 리뷰한 뒤 두 패스의 원시 후보를 상류
+   후보 정규화기에 한 번에 넘겨 병합한다. 정규화기는 위치·CWE·인스턴스가 정확히 같은 행만 합치므로, 표현만 다른
+   중복은 validation 단계가 정리한다. 비용은 표준 스캔의 약 2배다. 일반화하면: 상류 헬퍼가 사라졌을 때 그 로직을
+   이 저장소로 옮기지 말고, 남은 헬퍼로 같은 목적을 이루는 구조를 다시 짠다 — 옮긴 사본은 다음 정합부터 상류와
+   어긋난다.
+   → `skills/codex-security-deep-scan/SKILL.md`(「인벤토리」·「리뷰 팬아웃 — 고정 2패스」),
+   `docs/verification/phase4-deep-lite-pipeline.md`(0.4.0 재실측, 옛 랭킹 계약은 역사 절).
 
 9. **인벤토리는 상류 스크립트에 위임하고 검색 명령에도 신뢰 게이트를 적용한다.** 커버리지 분모
    (`in_scope_files.txt`)를 직접 만들면 상류와 다른 집합이 된다 — `rg`만 부르면 추적 중인 무시 파일이
@@ -198,6 +213,10 @@ codex-security의 스캔 기능은 공식적으로 Codex 바이너리(OpenAI 인
    `git diff --raw`가 그것을 실행했다). 그래서 `git config --local --includes --list`로 정의된
    드라이버 키를 열거해 함께 무력화한다 — 열거 자체는 어떤 드라이버도 호출하지 않고,
    `--includes`가 없으면 `include.path`로 끌어온 파일의 드라이버가 목록에서 빠진다(실측).
+   이 신뢰 환경은 인벤토리만의 것이 아니다. patch·verify-fix의 정적 검증 모드(npm 0.6.0, #1854)는 "저장소 코드를
+   실행하지 않는다"를 약속하는데, `git diff --no-ext-diff --no-textconv`만으로는 저장소 로컬 `core.fsmonitor`가
+   실행됐다(0.6.0 스모크 실측). 그래서 두 스킬의 git 읽기 명령도 `env -i <trusted_child_env> git -c
+   core.fsmonitor=false …` 형태로 고정한다(`skills/codex-security-patch/SKILL.md`의 static 허용 명령).
 
    **같은 보안 규칙의 두 사본은 반드시 어긋난다.** PATH 정화(`sanitize_pathlist`)와 config
    무력화 목록(`git_config_overrides`)은 `bootstrap.py`에만 두고 `coverage_reconcile.py`는
@@ -240,7 +259,7 @@ codex-security의 스캔 기능은 공식적으로 Codex 바이너리(OpenAI 인
    따르지 않고 `artifacts/01_context/threat_model.md`만 쓰면 봉인은 성공하지만 0.2.0은 그 스캔을 "모델
    없음"으로 본다(`threatmodel.md` 미생성, `export --artifact threat-model` 실패 — `repro-u4.sh` K3).
    자기채점이 녹색이어도 이 결함은 보이지 않았다. 상류 정합 때는 "무시할 저장 지시"와 "정본 JSON에 생긴
-   새 필드"를 나눠서 본다. 매니페스트 버전이 같은 구간(npm 0.1.26~0.2.0)이라 형식 선택은 버전이 아니라
+   새 필드"를 나눠서 본다. 매니페스트 버전이 같은 구간(npm 0.1.26~0.7.0)이라 형식 선택은 버전이 아니라
    스키마 파일로 판별한다(`bootstrap.py`의 `threatModelMarkdown`).
 
 11. **Node는 `rg`와 같은 신뢰 게이트로 해석하고, 모든 Node 호출은 `env -i`로 환경을 교체한다(P6-KTD6).**
@@ -257,14 +276,17 @@ codex-security의 스캔 기능은 공식적으로 Codex 바이너리(OpenAI 인
    전체 스캔은 정책 해결을 고지와 함께 건너뛰고, 정책 해결이 입력 자체인 `codex-security-policy`는 중단한다.
    → `skills/codex-security-scan/scripts/bootstrap.py`의 `resolve_node`, `probe_node`,
    `resolve_security_md_helper`, `resolve_sdk`, 그리고 `skills/codex-security-scan/scripts/workflow_digest.mjs`
-   머리말. 회귀는 `repro-u1-search-command.sh` H14(저장소 안 Node 거부, 문서화한 호출 형태, 1 MiB 초과)와
+   머리말. 회귀는 `repro-u1-search-command.sh` H14(저장소 안 Node 거부, 문서화한 호출 형태, 거대 SECURITY.md —
+   H14g는 npm 0.6.0 이하에서 1 MiB 초과 exit 2, 0.7.0부터 한도 없이 해결로 버전 분기)와
    `repro-u8-policy-severity.sh` P9·S8·S9(`NODE_OPTIONS` 주입 차단, 저장소 `node_modules/.bin/node` 미실행,
    셰뱅 없음)가 고정한다.
 
 12. **상류 dist가 export하는 결정론 함수는 재구현하지 않고 직접 부른다.** npm 번들의 `dist/`는
    `finding-workflow.js`의 `workflowDigest`, `security-policy.js`의 스냅샷·인벤토리 함수,
-   `classify-severity.js`·`classify-scan-severity.js`의 분류·저장·읽기 함수를 export한다(phase0-results.md
-   0.1.29 부록 4번). 재구현하면 JS 키 정렬·`JSON.stringify` 숫자 표기·링크 체인·Git 메타데이터 규칙이
+   `classify-severity.js`·`classify-scan-severity.js`·`severity-store.js`의 분류·저장·읽기 함수를 export한다(phase0-results.md
+   0.1.29 부록 4번). 상류는 이 함수들을 모듈 사이로 옮긴다 — 저장 계층은 0.3.0에 Node로, 분류 지시문은 0.5.0에
+   `severity-review.js`로 옮겨졌고 0.6.0에 기본 루브릭(`default-severity-rubric.js`)과 독립 리뷰 다수결이 생겼다.
+   허용 목록과 드리프트 대조 위치를 정합마다 함께 옮긴다. 재구현하면 JS 키 정렬·`JSON.stringify` 숫자 표기·링크 체인·Git 메타데이터 규칙이
    Python 사본과 조용히 어긋난다. 그래서 부트스트랩이 채택한 패키지의 `dist/`를 허용 목록
    (`UPSTREAM_MODULES`)으로만 import한다. 모델 호출 자리는 상류의 내부 주입점으로 바꾼다. 예를 들어
    `classifySeverityInternal`은 `options.codex`(읽기 전용 Codex 클라이언트)가 있으면 인증·설정·Codex 실행
@@ -369,4 +391,5 @@ unreviewed = [k for k in in_scope if k not in (log.reviewed & set(in_scope))]  #
 ```
 
 검증 근거: `docs/verification/phase0-results.md` ~ `phase4-results.md`(각 Phase 실측 보고서),
-`docs/verification/phase4-deep-lite-pipeline.md`(랭킹 계약).
+`docs/verification/phase4-deep-lite-pipeline.md`(deep-lite 계약 — 0.4.0 이전 랭킹 계약은 역사 절),
+각 상류 정합 기록(`docs/plans/*-alignment*.md`).

@@ -1,7 +1,7 @@
 ---
 title: "녹색 기준선은 스크립트가 도는 경로만 증명한다 — 상류 정합 때 글루→상류 호출 경로를 전부 실측하기"
 date: 2026-10-01
-last_updated: 2026-10-14
+last_updated: 2026-10-27
 category: workflow-issues
 module: codex-security-claude-skills
 problem_type: workflow_issue
@@ -16,21 +16,25 @@ applies_when:
   - "새 상류 릴리즈에만 있는 동작을 단언하는데 플러그인 매니페스트 버전으로 사본을 구분할 수 없을 때"
   - "자기채점 스크립트와 코드 리뷰가 모두 통과해서 정합을 끝내려 할 때"
   - "이미 있는 동작을 고정하는 특성화 단언을 새로 쓸 때"
+  - "상류 diff를 읽고 스킬 문서에 상류 동작에 관한 새 문장(오류 문구, 한도, 어느 버전부터)을 쓸 때"
+  - "상류가 한도나 검사를 지웠을 때"
 symptoms:
   - "0.1.29·0.1.32 정합에서 수정 전 기준선이 모두 exit 0이라 '회귀 없음'으로 결론냈다"
   - "workbench_glue.py register --mode diff 가 글루를 처음 만든 때부터 항상 exit 1이었는데 어떤 스크립트도 잡지 못했다"
   - "deep-lite의 register --mode deep → complete가 처음부터 항상 거부됐는데 자기채점 스크립트와 코드 리뷰가 모두 통과했다"
   - "새 특성화 단언이 지키려는 검사를 지워도 통과했다(다른 검사가 먼저 거부해서 대상 검사에 닿지 않음)"
+  - "npm 0.4.0~0.7.0 정합 다섯 번 모두 자기채점은 녹색이었는데 종단간 스모크가 매번 결함을 찾았다"
+  - "상류 diff를 읽고 이번 정합에서 새로 쓴 리페어 항목이 실측과 달랐다(0.5.1 receiptRefs)"
 root_cause: missing_workflow_step
 resolution_type: workflow_improvement
-tags: [codex-security, upstream-alignment, regression-test, coverage-gap, control-assertion, version-gate, diff-scan, deep-scan, smoke-test, mutation-check]
+tags: [codex-security, upstream-alignment, regression-test, coverage-gap, control-assertion, version-gate, diff-scan, deep-scan, smoke-test, mutation-check, doc-claim, execution-canary]
 ---
 
 # 녹색 기준선은 스크립트가 도는 경로만 증명한다
 
 > **경로 기준**: `plugins/codex-security/...`·`sdk/typescript/...` 경로는 업스트림
 > [openai/codex-security](https://github.com/openai/codex-security) 저장소 기준이다(이 저장소에는 없다).
-> 그 밖의 경로는 이 저장소 기준이다. 행 번호는 각 절의 작성 시점(2026-10-01, 「두 번째 사례」는 2026-10-14) 기준이다.
+> 그 밖의 경로는 이 저장소 기준이다. 행 번호는 각 절의 작성 시점(2026-10-01, 「두 번째 사례」는 2026-10-14, 「0.4.0~0.7.0 정합」은 2026-10-27) 기준이다.
 
 ## Context
 
@@ -80,6 +84,47 @@ tags: [codex-security, upstream-alignment, regression-test, coverage-gap, contro
 - **디렉터리** 심링크(`scripts/`·`schemas/` 자체가 대상 저장소 안을 가리킴)로 바꾸자, 같은 코드 변경에서 FAIL이 났다(`docs/verification/scripts/repro-u1-search-command.sh:1242-1260`).
 - 같은 방법으로 policy의 투영 실패 처리·`createdAt` 가드를 지웠을 때 P6e·P8e 6건이 FAIL하는 것을 확인했다(`docs/verification/phase0-results.md:1351`). `install.sh`의 종료코드 배선을 끊었을 때 H15c가 FAIL하는 것도 이 세션에서 확인했다(H15c는 대조군 exit 0일 때만 판정한다, `docs/verification/scripts/repro-u1-search-command.sh`의 H15 블록).
 
+### 0.4.0~0.7.0 정합 — 다섯 번 연속 스모크만 잡은 결함 (2026-10-17~2026-10-26)
+
+지침 7을 정합마다 지켰다. 상류 npm 0.4.0, 0.5.0, 0.5.1, 0.6.0, 0.7.0 다섯 번 모두, 자기채점 스크립트를 녹색으로
+만든 **뒤에** 돌린 종단간 스모크가 결함을 하나 이상 찾았다(`docs/verification/phase0-results.md`의 0.4.0~0.7.0 부록,
+`:1399`·`:1449`·`:1494`·`:1538`·`:1584`). 이번에는 결함이 두 종류였다.
+
+**① 글루→상류 경로 결함 — 세 번째 사례(0.4.0).** 경로 지정 스캔의 워크벤치 등록 `register --paths`가 글루를 만든
+때부터 항상 실패했다. 글루가 `target.kind: "repository"`에 `paths`를 실어 보냈고, 상류 `parse_scan_recipe`는 kind가
+`"paths"`가 아닌 레시피의 경로를 `Only scoped scan launch recipes can include target paths.`로 거부했다. 지침 2의 표에
+"scoped" 행은 있었지만 `complete`까지 도는 단언이 없었다 — diff·deep 행과 같은 구멍이다. 수정은 한 줄이다
+(`skills/codex-security-scan/scripts/workbench_glue.py:237`). 고정 단언은 `repro-u7` I17h다
+(`docs/verification/scripts/repro-u7-coverage-recovery.sh:1535`). 수정을 되돌린 글루 사본으로 돌리면 I17h가 FAIL하는 것을 이 세션에서 변이로 확인했다.
+
+**② 문서 주장 결함 — 새 종류.** 스모크는 코드뿐 아니라 **이번 정합에서 상류 diff를 읽고 새로 쓴 문장**도 틀렸다고 잡았다.
+
+- 0.5.1: 상류 diff에서 `receiptRefs` 대소문자 무시 중복 검사(#1593)를 보고 "0.5.1 finalizer가 한 surface 안의 중복을
+  거부한다"를 리페어 루프에 썼다. 실측해 보니 그 검사는 워크벤치 unsealed draft 복구 경로 전용이고 경고만 낸다. 스킬이
+  타는 finalizer는 0.5.0에서도 이미 surface를 가리지 않고 `manifest.scan.artifacts[N].path: duplicate artifact path`로
+  거부했다(검사 자체는 npm 0.1.22부터 있다). 실측 문구로 바꿨다(`skills/codex-security-scan/SKILL.md:609`).
+- 0.5.0: diff 스캔 문서에 `coverage.inventoryStrategy` 값이 없었다. 문서만 따르면 `git_diff`를 짐작하게 되고, finalize가
+  거부한다. 값은 `diff`다(`skills/codex-security-diff-scan/SKILL.md:64`).
+- 0.6.0: 정적 검증 모드 문서가 "`git diff --no-ext-diff --no-textconv`로 저장소 코드 실행을 막는다"는 전제에 섰다.
+  스모크가 저장소 로컬 `.git/config`에 실행 카나리를 심자 `core.fsmonitor`가 그 명령에서도 실행됐다. git 명령을
+  부트스트랩 신뢰 환경으로 감쌌다(`skills/codex-security-patch/SKILL.md:160`).
+- 0.7.0: 상류가 SECURITY.md 1 MiB 한도를 지웠다(#1883). 문서에 "0.7.0에서는 큰 정책도 받는다"고 썼다. 실측하니 스킬
+  자체의 80,000자 프롬프트 상한(`MAX_PROMPT_CHARACTERS`)이 실제 한도가 되어, `prepare`는 통과하고 다음 단계에서 멈춘
+  뒤 출력 디렉터리가 남았다. `prepare`에서 미리 검사하게 했다
+  (`skills/codex-security-policy/scripts/policy_draft.mjs:892`, 단언 `repro-u8` P4g
+  `docs/verification/scripts/repro-u8-policy-severity.sh:345`).
+- 0.4.0: "0.4.0에서 바뀜"으로 적은 상류 변경 4건(#1633 completeness 제거, #1543 심각도 저장 이동, #1423 소스 전용 validate,
+  #839·#843 헬퍼 이동)이 실제로는 0.3.0 태그에 들어 있었다. 정합 기준(0.2.0→0.4.0)과 변경이
+  처음 들어간 버전을 혼동했다. 공용 문서 작업 에이전트가 `git tag --contains`로 확인해 바로잡았다
+  (예: `skills/codex-security-scan/SKILL.md:134`의 "npm 0.3.0부터").
+
+이 결함들은 자기채점 스크립트로는 잡을 수 없었다. 스크립트는 우리가 이미 아는 계약을 잰다. 이번 정합에서 새로 쓴 문장은
+아직 어떤 단언과도 연결되지 않은 가설이다.
+
+**③ 검증 도구 자체의 거짓 녹색.** 0.6.0 설치 점검을 `install.sh --check 2>&1 | tail -25; echo exit=$?`로 돌려 "exit 0"이라고
+보고했다. 그 값은 `tail`의 종료코드였다. 기존 링크가 있으면 `--check`는 설치 단계의 "건너뜀"을 실패로 세어 exit 1이다.
+점검만 하려면 `--check-only`를 쓴다(이 세션의 2026-10-27 확인).
+
 ## Guidance
 
 1. **녹색 기준선을 "회귀 없음"의 증거로 쓰지 않는다.** 녹색은 스크립트가 실제로 도는 경로만 증명한다. 결론 문장은 "스크립트가 도는 경로에서 회귀 없음"으로 쓴다.
@@ -96,6 +141,21 @@ tags: [codex-security, upstream-alignment, regression-test, coverage-gap, contro
 
 7. **정합을 끝내기 전에 스킬별 종단간 스모크 테스트를 한 번 돌린다.** 합성 저장소(취약점 몇 개, `SECURITY.md`, 삭제 경로가 있는 커밋)를 만든다. 스킬 문서의 셸 명령을 문서에 적힌 그대로(자리표시자에는 부트스트랩 `shellQuoted` 값을 맨몸으로) 실행해 등록 → 봉인 → 워크벤치 `complete`까지 간다. 모델이 판단할 부분(위협 모델, 후보, 랭킹 행)은 직접 작성해도 된다 — 확인하려는 것은 결정론 경로다. 자기채점 스크립트와 코드 리뷰가 녹색이어도 이 단계를 건너뛰지 않는다. 결과는 검증 기록에 스킬·버전별 표로 남긴다(`docs/verification/phase0-results.md`의 0.2.0 부록 「종단간 스모크 테스트」).
 
+8. **이번 정합에서 새로 쓴 상류 동작 문장은 가설로 다루고 스모크로 실행한다.** 상류 diff를 읽고 쓴 오류 문구, 한도,
+   "어느 버전부터", 보안 전제(예: "이 플래그가 실행을 막는다")는 실행 경로에 닿기 전까지 확인되지 않은 주장이다.
+   스모크 에이전트에게 "이번 diff에서 새로 쓴 문장 목록"을 넘기고, 각 문장을 일부러 위반하는 입력(대소문자만 다른 경로,
+   한도를 넘는 정책, 저장소 로컬 `.git/config` 카나리)으로 확인하게 한다. 실측과 다르면 실측 문구로 바꾼다.
+
+9. **상류가 한도나 검사를 지우면, 그 뒤에 숨어 있던 우리 쪽 한도를 찾는다.** 상류 검사가 먼저 걸리던 동안에는 우리
+   한도가 드러나지 않는다. 지워진 한도 근처의 우리 상수(프롬프트 상한, 크기 검사, 타임아웃)를 찾아, 어느 단계에서 먼저
+   걸리는지와 실패 뒤 남는 산출물을 실측한다.
+
+10. **"npm X부터"는 `git tag --contains <커밋>`으로 확인하고 쓴다.** 정합 구간(예: 0.2.0→0.4.0)에 중간 릴리즈가 있으면,
+    변경이 처음 들어간 태그와 정합 대상 태그가 다를 수 있다. 버전 표기는 하위 호환 판정과 사용자 안내의 근거다.
+
+11. **검증 명령의 종료코드는 파이프 앞에서 잰다.** `cmd | tail; echo $?`는 `tail`을 잰다. `cmd > log 2>&1; echo $?`처럼
+    출력을 파일로 돌린 뒤 재거나 `PIPESTATUS`를 쓴다.
+
 ## Why This Matters
 
 - diff 스캔은 문서화된 기능이었다. 그런데 기준선 npm 0.1.18부터 0.1.29까지 등록 단계에서 항상 실패했다. 세 번의 정합(0.1.25·0.1.29·0.1.32)이 모두 수정 전 기준선을 "회귀 없음"으로 봤다.
@@ -106,12 +166,21 @@ tags: [codex-security, upstream-alignment, regression-test, coverage-gap, contro
 - 특성화 단언은 예전 코드에서도 통과하므로, 단언이 공허해도 아무 신호가 없다. mutation으로 확인하지 않으면 "단언이 있다"가 "검사가 지켜진다"로 잘못 읽힌다.
 - 버전 게이트를 SKIP으로 처리하면 직전 배포본에서 릴리즈 검증이 항상 실패한다. 그러면 사람들이 exit 2를 무시하는 습관이 생긴다. 그 습관은 진짜 전제 부족을 가린다.
 
+- 0.4.0~0.7.0 다섯 번의 정합에서 스모크는 매번 결함을 찾았다. 자기채점이 녹색이 된 뒤였다. 스모크를 "시간이 남으면
+  하는 확인"으로 다루면, 다섯 번 중 다섯 번 결함이 배포됐다.
+- 문서 주장 결함은 코드 리뷰도 잘 잡지 못한다. 리뷰어는 문서가 상류 diff와 맞는지를 보고, 그 diff를 쓴 사람과 같은
+  해석을 할 수 있다. 0.5.1 receiptRefs 문장이 그랬다 — 상류 diff에는 그 검사가 실제로 있었다. 어느 경로에서 도는지는
+  실행해야 보였다.
+- 보안 전제(실행 차단)가 틀리면 결과가 가장 나쁘다. 정적 검증 모드는 "저장소 코드를 실행하지 않는다"를 약속하는데,
+  그 약속을 지키는 플래그가 실제로는 막지 못했다.
+
 ## When to Apply
 
 - 상류 태그를 올리고, 수정 전 기준선이 모두 통과할 때. 이때가 가장 위험하다.
 - 스킬 문서에 새 모드·옵션을 추가하거나, 글루가 상류 서브커맨드를 새 방식으로 부를 때.
 - 상류 변경 로그에 워크벤치·레시피·계약 필드 변경이 있을 때.
 - 새 상류에만 있는 동작을 단언해야 하는데, 직전 배포본에서도 스크립트가 통과해야 할 때.
+- 상류 diff를 근거로 스킬 문서에 상류 동작 문장을 새로 쓰거나, 상류가 한도·검사를 지웠을 때.
 
 ## Examples
 
@@ -166,10 +235,25 @@ fi
 
 **결과 기록(`docs/verification/phase0-results.md:1299-1309`):** 0.1.32 빌드에서 `repro-u4` OK 53, `repro-u7` OK 63이다. npm 0.1.31 배포본에서 `repro-u4` OK 49(I9~I12 NOTE), `repro-u7` OK 62(I17c NOTE)다. FAIL·SKIP은 0건이다. 0.1.31에서 `.m`을 검사하지 않는다는 점도 함께 적었다.
 
+**호출 경로 표의 scoped 행(0.4.0 정합 전 상태):**
+
+| 글루 경로 | 스킬 문서 | 실제 상류에 대고 `complete`까지 도는 단언 |
+| --- | --- | --- |
+| `register --paths <경로>` | codex-security-scan(경로 지정 스캔) | 없음 → 구멍. 스모크에서 등록 거부. 지금은 `repro-u7` I17h |
+
+**스모크 에이전트에 넘기는 "새로 쓴 문장" 목록의 예(0.6.0 정적 모드):**
+
+```text
+- 주장: static 모드의 git 읽기 명령은 저장소 코드를 실행하지 않는다.
+  확인: 저장소 로컬 .git/config 에 core.fsmonitor·core.pager·diff.external·filter.<x>.clean 카나리를 심고
+        문서의 명령형 그대로 실행한다. 대조군으로 같은 저장소에서 일반 git diff·git status 를 돌려 카나리가 발동하는지 본다.
+```
+
 ## Related
 
 - [codex-security 번들 플러그인을 OpenAI 인증 없이 Claude Code 스킬로 실행하기](../architecture-patterns/codex-security-plugin-without-openai-auth.md) — 워크벤치 수명주기 계약(계약 2·3·6). 계약 1-b의 심볼 프로브는 이 문서의 형제 심볼 게이트와 같은 원리다.
 - [릴리즈 절차](../../releasing.md) 7절(플러그인 업데이트 대응)과 7.1절(npm 미배포 태그 검증), 2절의 exit 2 규칙.
-- [phase0-results.md](../../verification/phase0-results.md) — npm 0.1.25·0.1.29 부록의 "회귀 없음"(당시에도 diff 등록은 깨져 있었다), npm 0.1.32 부록, npm 0.2.0 부록(종단간 스모크 테스트와 deep 등록 결함).
+- [phase0-results.md](../../verification/phase0-results.md) — npm 0.1.25·0.1.29 부록의 "회귀 없음"(당시에도 diff 등록은 깨져 있었다), npm 0.1.32 부록, npm 0.2.0 부록(종단간 스모크 테스트와 deep 등록 결함), npm 0.4.0~0.7.0 부록(정합마다 스모크가 찾은 결함).
+- 정합 기록: `docs/plans/2026-10-17-1430-chore-codex-security-040-alignment.md`부터 `docs/plans/2026-10-26-1500-chore-codex-security-070-alignment.md`까지.
 - [phase4-results.md](../../verification/phase4-results.md) — deep-lite를 처음 만들 때 전체 연쇄 실행을 미룬 기록.
 - 상류 경로 이동 주의: npm 0.1.21 이전 태그의 플러그인은 `sdk/typescript/_bundled_plugin/`에 있다. 옛 태그를 조회할 때 경로 오류를 "없음"으로 읽지 않는다.
