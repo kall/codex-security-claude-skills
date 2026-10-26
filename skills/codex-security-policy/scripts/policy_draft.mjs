@@ -1,7 +1,7 @@
 // policy_draft.mjs — codex-security-policy 스킬의 결정론 부분(대상·스냅샷·출력 디렉터리·프롬프트·
 // 저장 전 검사·저장·마무리). 서브에이전트 호출과 사용자 질문은 부모 세션이 한다.
 //
-// 상류 `codex-security policy`(npm 0.6.0 = 매니페스트 0.1.95)의 호스트 쪽 동작을 **상류 dist 함수로**
+// 상류 `codex-security policy`(npm 0.7.0 = 매니페스트 0.1.95)의 호스트 쪽 동작을 **상류 dist 함수로**
 // 재현한다. 대상 해석·인벤토리·스냅샷 digest·보호 루트·출력 디렉터리 위생·stage 결과 파싱·diff
 // 미리보기는 전부 부트스트랩이 채택한 npm 패키지의 dist/ 에서 import 한 상류 함수가 한다
 // (공용 관문 ../../codex-security-scan/scripts/workflow_digest.mjs). 이 파일이 소유하는 것은
@@ -12,7 +12,7 @@
 //   env -i <trusted_child_env> <node> <이 파일> <subcommand> --key value …
 //
 // 하위 명령(출력은 JSON 1개. `prompt` 만 원문 텍스트):
-//   prepare      대상 해석 → 1 MiB 검사 → 스냅샷 → 출력 디렉터리(0700) → 가이던스 → previous-SECURITY.md
+//   prepare      대상 해석 → (npm 0.6.0 이하) 1 MiB 검사 → 스냅샷 → 출력 디렉터리(0700) → 가이던스 → previous-SECURITY.md
 //   prompt       --output-dir O --stage S        단계 서브에이전트 프롬프트 원문(stdout)
 //   save-stage   --output-dir O --stage S [--python P]
 //                                                <작업 dir>/<stage>.json 을 파싱·검사·저장(0600, 비덮어쓰기).
@@ -77,8 +77,13 @@ const STAGE_FILES = {
 };
 const ORIGINAL_NAME = "previous-SECURITY.md"; // security-policy.ts ORIGINAL_NAME
 const MANIFEST_NAME = "policy-draft.json"; // security-policy.ts MANIFEST_NAME
-const MAX_SECURITY_MD_BYTES = 1024 * 1024; // security-policy.ts MAX_SECURITY_MD_BYTES
-const OWNER_QUESTION_BATCH_SIZE = 3; // security-policy.ts OWNER_QUESTION_BATCH_SIZE
+// security-policy.ts MAX_SECURITY_MD_BYTES(npm 0.6.0 이하). npm 0.7.0 은 0b70ee90f #1883 fix: accept large
+// security policy files 로 이 한도를 security-policy.ts·resolve-security-md 헬퍼·define-security-policy SKILL.md
+// 에서 모두 지웠다(입력 정책 읽기와 policy 초안 크기 검사 둘 다). 그래서 이 한도는 설치된 dist 가 아직
+// 강제할 때만 재현한다 — 판별은 policySizeLimitBytes() 가 dist/security-policy.js 에 상류 한도 문구가
+// 남아 있는지 보는 것으로 한다.
+const MAX_SECURITY_MD_BYTES = 1024 * 1024;
+const OWNER_QUESTION_BATCH_SIZE = 3; // security-policy.ts OWNER_QUESTION_BATCH_SIZE(0.7.0 에도 3)
 // api.ts 가 policy 생성 전에 요구하는 플러그인 파일(정규 파일, 심링크 아님).
 const REQUIRED_PLUGIN_FILES = [
   "references/threat-model.md",
@@ -110,6 +115,12 @@ const OWNER_ANSWERS_NAME = "owner-answers.json";
 //   나머지 프롬프트 리터럴·진행 문구·매니페스트 필드는 같다.
 // 재대조: 태그 npm-v0.6.0 = 커밋 13dcc6fec00aaf4c23a6fa7e375ccc1726b22836 — 프롬프트 리터럴·진행 문구 같음.
 //   바뀐 것은 diff 미리보기 구현(Python difflib → Node, #1837)뿐이다.
+// 재대조: 태그 npm-v0.7.0 = 커밋 f05a0b096cc881242ddf34a4d6b3ce0f322f3cf9 — 프롬프트 리터럴·진행 문구·
+//   매니페스트 필드·나머지 오류 문구 같음(security-policy-cli.ts 변경 없음). 바뀐 것은 1 MiB 한도 삭제뿐이다
+//   (0b70ee90f #1883: MAX_SECURITY_MD_BYTES·validatePolicySize 와 오류 문구 UPSTREAM_MESSAGES.size 삭제,
+//   입력 정책은 file.readFile 로 전부 읽고 policy 초안 크기 검사도 없앰). 이 파일은 한도를 설치된 dist 에
+//   문구가 남아 있을 때만 재현한다(policySizeLimitBytes). OWNER_QUESTION_BATCH_SIZE = 3 은 그대로다
+//   (define-security-policy SKILL.md 의 "세 개 이하" 문장은 75bb5132e #1676 에서 빠졌지만 상수는 남음).
 // 그 전 복사 시점: 태그 npm-v0.4.0 = 커밋 559b492b22bb457aea8ff88c1bd41aacc2cec8bf.
 // 재대조: 태그 npm-v0.5.0 = 커밋 03414ad84e91a8638bde85af08c47fe957dc9323 — security-policy.ts·
 //   security-policy-cli.ts 모두 변경 없음(git diff npm-v0.4.0 npm-v0.5.0 비어 있음).
@@ -659,10 +670,14 @@ export function upstreamLiteralFragments() {
     UPSTREAM_MESSAGES.inheritedChanged,
     UPSTREAM_MESSAGES.destinationChanged,
     UPSTREAM_MESSAGES.gitChanged,
-    UPSTREAM_MESSAGES.size,
   );
   // 진행 표시 문구는 CLI 모듈(security-policy-cli.ts STAGES)에 있다.
-  return { fragments, cliFragments: Object.values(UPSTREAM_STAGE_LABELS) };
+  // 1 MiB 한도 문구는 npm 0.6.0 이하 dist 에만 있다(0.7.0 #1883 에서 삭제). 회귀는 버전별로 있음/없음을 본다.
+  return {
+    fragments,
+    cliFragments: Object.values(UPSTREAM_STAGE_LABELS),
+    sizeLimitFragments: [UPSTREAM_MESSAGES.size],
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -682,9 +697,18 @@ async function requirePluginSupport(pluginRoot) {
   }
 }
 
+// 설치된 상류 dist 가 1 MiB 정책 한도를 강제하는가. 강제하면 그 한도(바이트), 아니면 null.
+// 한도를 지운 커밋(0b70ee90f #1883)이 오류 문구도 함께 지웠으므로 같은 파일의 문구 유무로 판별한다.
+async function policySizeLimitBytes(sdkDist) {
+  const source = await readFile(join(sdkDist, "security-policy.js"), "utf8").catch((error) => {
+    throw new GatewayError(`상류 dist/security-policy.js 를 읽을 수 없다: ${error.message}`);
+  });
+  return source.includes(UPSTREAM_MESSAGES.size) ? MAX_SECURITY_MD_BYTES : null;
+}
+
 async function oversizedPolicies(pluginRoot, repository, componentDir) {
-  // define-security-policy SKILL.md 1절: 인벤토리(--list) 후 각 후보의 바이트 크기를 보고,
-  // 1 MiB 를 넘는 정책은 리졸버에 넘기지 않고 보고한다.
+  // define-security-policy SKILL.md 1절(npm 0.6.0 이하): 인벤토리(--list) 후 각 후보의 바이트 크기를 보고,
+  // 1 MiB 를 넘는 정책은 리졸버에 넘기지 않고 보고한다. npm 0.7.0 은 이 절을 지웠다 — 호출하지 않는다.
   const { stdout } = await execFileAsync(
     process.execPath,
     [join(pluginRoot, "mcp", "helpers.mjs"), "resolve-security-md", "--repo", repository, "--list"],
@@ -755,11 +779,16 @@ async function handlePrepare(args) {
 
   await requirePluginSupport(pluginRoot);
 
-  // 1 MiB 검사는 대상 해석(상류는 대상 정책을 읽는다)보다 앞에 둔다.
-  const componentProbe = await realpath(resolve(repositoryArg, pathArg)).catch((error) => {
-    throw new GatewayError(`정책 대상 디렉터리를 찾을 수 없다: ${pathArg} (${error.message})`);
-  });
-  const sizes = await oversizedPolicies(pluginRoot, repositoryArg, componentProbe);
+  // 1 MiB 검사(npm 0.6.0 이하)는 대상 해석(상류는 대상 정책을 읽는다)보다 앞에 둔다.
+  // npm 0.7.0 이상은 상류처럼 큰 정책을 받아들인다(검사·인벤토리 호출 없음).
+  const policySizeLimit = await policySizeLimitBytes(sdkDist);
+  let sizes = { relevant: [], other: [] };
+  if (policySizeLimit !== null) {
+    const componentProbe = await realpath(resolve(repositoryArg, pathArg)).catch((error) => {
+      throw new GatewayError(`정책 대상 디렉터리를 찾을 수 없다: ${pathArg} (${error.message})`);
+    });
+    sizes = await oversizedPolicies(pluginRoot, repositoryArg, componentProbe);
+  }
   if (sizes.relevant.length > 0) {
     throw new GatewayError(
       "1 MiB(1,048,576 바이트)를 넘는 SECURITY.md 가 이 컴포넌트의 정책 체인에 있다. 상류 리졸버 한도라 " +
@@ -858,7 +887,32 @@ async function handlePrepare(args) {
       knowledgeBase,
       allowedReadRoots,
       guidance,
+      policySizeLimit,
     };
+    // 우리 프롬프트 상한(MAX_PROMPT_CHARACTERS, Agent 1회 호출 한도) 사전 검사. 상류 한도가 아니다.
+    // architecture 프롬프트는 세 단계 중 가장 작다(뒤 단계는 앞 단계 질문·메모가 더 붙는다). 그래서 이것이
+    // 넘으면 어느 단계도 진행할 수 없다 — 가이던스를 해결한 이 시점에 멈추고 출력 디렉터리를 남기지 않는다
+    // (아래 catch 가 작업 디렉터리와 previous-SECURITY.md 만 든 출력 디렉터리를 지운다). npm 0.7.0 은 1 MiB
+    // 한도를 지웠으므로 큰 상속 정책은 여기서 걸린다. 통과해도 뒤 단계가 상한을 넘을 수는 있다(prompt 가 거부).
+    try {
+      await buildPrompt(session, workDir, "architecture");
+    } catch (error) {
+      if (error instanceof GatewayError && error.details?.limit === MAX_PROMPT_CHARACTERS) {
+        throw new GatewayError(
+          `정책 가이던스(${guidance.length}자)를 담은 architecture 단계 프롬프트가 ${error.details.characters}자로 ` +
+            `이 스킬의 프롬프트 상한 ${MAX_PROMPT_CHARACTERS}자를 넘는다 — 진행할 수 없어 출력 디렉터리를 만들지 않고 멈춘다. ` +
+            "상류 CLI 에는 이 한도가 없다(npm 0.7.0 은 정책 크기 한도도 없다). 대상·상속 SECURITY.md 를 줄이거나 나누거나, " +
+            "인증된 상류 CLI(`codex-security policy`)를 쓰라.",
+          {
+            characters: error.details.characters,
+            limit: MAX_PROMPT_CHARACTERS,
+            guidanceCharacters: guidance.length,
+            policyPaths,
+          },
+        );
+      }
+      throw error;
+    }
     await writeArtifact(join(workDir, SESSION_NAME), `${JSON.stringify(session, null, 2)}\n`);
     return {
       target,
@@ -876,6 +930,7 @@ async function handlePrepare(args) {
       inheritedPolicySha256: snapshot.inheritedPolicySha256,
       revision,
       guidanceCharacters: guidance.length,
+      policySizeLimit,
       oversizedUnrelatedPolicies: sizes.other,
       files: { previous: join(outputDir, ORIGINAL_NAME) },
     };
@@ -1066,7 +1121,10 @@ async function handleSaveStage(args) {
     if (!result.markdown.isWellFormed()) {
       throw new GatewayError(UPSTREAM_MESSAGES.unicode(stage), { upstreamMessage: UPSTREAM_MESSAGES.unicode(stage) });
     }
-    if (stage === "policy" && Buffer.byteLength(result.markdown, "utf8") > MAX_SECURITY_MD_BYTES) {
+    // 초안 크기 검사도 상류 validatePolicyContent 에 있던 것이라 npm 0.6.0 이하에서만 한다(0.7.0 은 지웠다).
+    // policySizeLimit 가 없는 세션(이 필드 이전에 만든 세션)은 기존처럼 한도를 적용한다.
+    const draftLimit = session.policySizeLimit === undefined ? MAX_SECURITY_MD_BYTES : session.policySizeLimit;
+    if (stage === "policy" && draftLimit !== null && Buffer.byteLength(result.markdown, "utf8") > draftLimit) {
       throw new GatewayError("정책 초안이 1 MiB 를 넘는다.", { upstreamMessage: UPSTREAM_MESSAGES.size });
     }
     if (stage === "threat_model") {
