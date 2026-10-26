@@ -40,8 +40,8 @@ helpers have been removed"로 적고, 명시 스코프에는 `make-repo-scope-in
 
 | 단계 | 명령 | 0.4.0 실측 | 0.2.0 실측 |
 |---|---|---|---|
-| 1. 인벤토리 | `generate_in_scope_files.py --repo <root> --scope <root> --out <disc>/in_scope_files.txt` | exit 0, `Recorded 20 in-scope files.` 20행(`./` 접두사, `bin/blob.bin` 포함, 무시된 `build/out.js` 제외) | 같음 |
-| (참고) | `generate_rank_input.py make-repo-scope-input --repo <root> --scopes-file ["."] --out …` | exit 0, 20행 `{path}`. 1번과 같은 경로 집합(`./` 차이만) | 같음 |
+| 1. 인벤토리 | `generate_in_scope_files.py --repo <root> --scope <root> --out <disc>/in_scope_files.txt` (npm 0.7.0은 스크립트가 지워져 `--helper generate-in-scope-files`에 같은 인자, #1432) | exit 0, `Recorded 20 in-scope files.` 20행(`./` 접두사, `bin/blob.bin` 포함, 무시된 `build/out.js` 제외) | 같음 |
+| (참고) | `generate_rank_input.py make-repo-scope-input --repo <root> --scopes-file ["."] --out …` (npm 0.7.0은 `--helper make-repo-scope-input`에 같은 인자) | exit 0, 20행 `{path}`. 1번과 같은 경로 집합(`./` 차이만) | 같음 |
 | (참고) | `--helper copy-deep-review-input --rank-input <scope 출력> --out …` | **exit 1**, `missing fields ["area","preview"]` | Node 헬퍼 없음, exit 2 |
 | 2. 패스 1·2 리뷰 | (LLM — 가짜 raw 후보로 대체) `raw/pass1-agent-1.jsonl` 2행, `raw/pass2-agent-1.jsonl` 2행. 그중 1행은 `cwe_ids`·`locations`가 패스 1과 같음 | — | — |
 | 3. 단일 원장 | `--helper normalize-candidates --input raw/pass1-agent-1.jsonl raw/pass2-agent-1.jsonl --out <disc>/candidate_ledger.jsonl --repo-root <root> --in-scope-files <disc>/in_scope_files.txt` | exit 0, `Combined 4 candidate rows into 3 rows`. 겹친 행은 `summary`·`evidence`가 줄바꿈으로 합쳐짐(`candidate-8a2116c965facfbf`) | 같음(같은 `candidate_id` 3개) |

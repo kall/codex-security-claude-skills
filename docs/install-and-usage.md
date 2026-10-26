@@ -85,8 +85,8 @@ node --version       # 22 이상 — 플러그인 npm 설치, 스캔 후보 정�
 | Claude Code | 구독 로그인 세션 | OpenAI 키는 불필요하며 설정해도 쓰이지 않는다 |
 | Python | 3.10+ (3.10은 `tomli`) | 설치 후 `PYTHON=<경로>`로 지정 가능 |
 | git | 필수 | 대상 해석·diff·인벤토리 폴백에 사용 |
-| Node.js | 22+ | 플러그인을 3.1절 (c)·(d) 방법으로 확보하면 설치에는 불필요하다. 다만 Node가 없으면 전체 스캔이 SECURITY.md 정책 해결을 고지와 함께 건너뛰고, `codex-security-policy`·`codex-security-classify-severity`는 쓸 수 없다. **npm 0.2.0부터는 스캔 3종(전체·diff·deep)도 시작하지 않는다** — 후보 정규화가 Python 스크립트에서 Node 헬퍼로 옮겨졌기 때문이다. npm 0.3.0부터는 경로 지정 스캔의 스코프 결합(`bind-repo-scopes`)과 diff 스캔의 리뷰 입력 복사(`copy-deep-review-input`)도 Node 헬퍼다 |
-| ripgrep (`rg`) | 저장소 전체 스캔·deep-lite 는 **필수** | 인벤토리를 상류 스크립트에 위임하므로 확보하지 못하면 스캔이 시작되지 않는다. Claude Code 세션이면 내장 ripgrep을 `rg` 심링크로 노출해 자동 충족된다(3.3절 프로브가 확인). validate·patch·verify-fix·scan-match·policy·classify-severity는 불필요 |
+| Node.js | 22+ | 플러그인을 3.1절 (c)·(d) 방법으로 확보하면 설치에는 불필요하다. 다만 Node가 없으면 전체 스캔이 SECURITY.md 정책 해결을 고지와 함께 건너뛰고, `codex-security-policy`·`codex-security-classify-severity`는 쓸 수 없다. **npm 0.2.0부터는 스캔 3종(전체·diff·deep)도 시작하지 않는다** — 후보 정규화가 Python 스크립트에서 Node 헬퍼로 옮겨졌기 때문이다. npm 0.3.0부터는 경로 지정 스캔의 스코프 결합(`bind-repo-scopes`)과 diff 스캔의 리뷰 입력 복사(`copy-deep-review-input`)도 Node 헬퍼다. npm 0.7.0부터는 인벤토리 생성(`generate-in-scope-files`·`make-diff-rank-input`)도 Node 헬퍼다 |
+| ripgrep (`rg`) | 저장소 전체 스캔·deep-lite 는 **필수** | 인벤토리를 상류 도우미에 위임하므로(npm 0.7.0 Node 헬퍼도 `rg`를 PATH에서 찾는다) 확보하지 못하면 스캔이 시작되지 않는다. Claude Code 세션이면 내장 ripgrep을 `rg` 심링크로 노출해 자동 충족된다(3.3절 프로브가 확인). validate·patch·verify-fix·scan-match·policy·classify-severity는 불필요 |
 
 **OS**: Linux / macOS 기준(bash). Windows는 WSL 사용을 권한다.
 
@@ -95,7 +95,9 @@ node --version       # 22 이상 — 플러그인 npm 설치, 스캔 후보 정�
 > `generate_rank_input.py`의 `bind-repo-scopes`·`copy-deep-review-input`도 같은 Node 헬퍼로 옮겼다. 상류 저장소
 > 체크아웃(`plugins/codex-security`)에는 빌드된 `mcp/`가 없으므로 0.2.0 이후 체크아웃으로는 전체·diff·deep 스캔을
 > 할 수 없다. 3.1절 (a)·(b) 방법(npm 설치본)을 쓴다. npm 0.1.32 이하 체크아웃은 Python 스크립트가 있어 지금처럼
-> 동작한다.
+> 동작한다. 0.7.0은 인벤토리 스크립트 `generate_in_scope_files.py`·`generate_rank_input.py`·`rank_preview.py`도
+> 지웠다(#1432). 대신 같은 런처의 `--helper generate-in-scope-files|make-diff-rank-input|make-repo-scope-input`을
+> 쓴다(인자 같음). 그래서 0.7.0부터는 Node가 없으면 전체 스캔 인벤토리도 만들 수 없다.
 
 > **버전 매니저(mise/asdf/pyenv)를 쓰는 PC라면**: `python3`가 PATH에 없을 수 있다. 이 문서의
 > `python3 …` 명령을 `mise exec -- python3 …` 처럼 감싸거나, `PYTHON="$(mise which python3)"`를
@@ -197,7 +199,7 @@ import하므로, 같은 스킬 루트에 같은 버전으로 설치돼 있어야
 복사 모드로 설치했다면 저장소 clone은 지워도 되지만, 3.1절 (c) 자동 탐색과 8절 재검증
 스크립트는 저장소가 있어야 쓸 수 있다.
 
-> **상류 `codex-security skills add`와 충돌한다(npm 0.2.0~0.6.0).** 상류 CLI의 `skills add`는 CLI 명령마다
+> **상류 `codex-security skills add`와 충돌한다(npm 0.2.0~0.7.0).** 상류 CLI의 `skills add`는 CLI 명령마다
 > `codex-security-<명령>` 스킬을 만든다. 그리고 `~/.claude/skills/<이름>`을 **강제로 지우고**
 > `~/.agents/skills/<이름>`을 가리키는 심링크로 바꾼다(`incur`의 `install`, 2026-10-14 코드 확인과 임시 HOME 실측).
 > 이 저장소의 스킬 6개(`codex-security-scan`·`-policy`·`-patch`·`-validate`·`-verify-fix`·`-classify-severity`)와
@@ -270,9 +272,12 @@ npm 0.2.0에서는 `"0.2.0"`·`true`·`"kind": "python"`이다. 경로·Python·
 | `coverageCompleteness` | 플러그인 coverage 스키마에 `completeness` 필드가 있는가 | `false`(npm 0.3.0부터). 스캔이 `coverage.completeness`를 쓰지 않고 미완을 `deferred`·`needs_follow_up`으로만 표현한다(5.2절) |
 | `bindRepoScopes` | 경로 지정 스캔의 스코프 결합 경로. `python`(npm 0.2.0 이하 `generate_rank_input.py bind-repo-scopes`) 또는 `node-helper`(npm 0.3.0부터) | `available: false`와 `reason`. 경로 지정 스캔을 하지 않는다. 저장소 전체 스캔은 영향 없음 |
 | `copyDeepReviewInput` | diff 스캔의 리뷰 입력 복사 경로. 종류는 `bindRepoScopes`와 같다 | `available: false`와 `reason`. diff 스캔이 0단계에서 중단한다 |
+| `inScopeInventory` | 인벤토리 생성 경로. `python`(npm 0.6.0 이하 `scripts/generate_in_scope_files.py`) 또는 `node-helper`(npm 0.7.0부터 `--helper generate-in-scope-files`, #1432) | `available: false`·`kind: null`과 `reason`. 전체·diff·deep 스캔이 0단계에서 중단한다 |
+| `diffRankInput` | diff 스캔의 diff 목록 생성 경로. `python`(npm 0.6.0 이하 `generate_rank_input.py make-diff-rank-input`) 또는 `node-helper`(npm 0.7.0부터 `--helper make-diff-rank-input`) | `available: false`·`kind: null`과 `reason`. diff 스캔이 0단계에서 중단한다 |
 
-npm 0.1.26~0.6.0은 매니페스트 버전이 모두 `0.1.95`라서 `pluginVersion`으로는 구분할 수 없다. 위 필드들은
-버전 대신 파일(정규화 스크립트 존재, 스키마의 markdown 대안·`completeness` 필드, Python 하위 명령 존재)로 판별한다.
+npm 0.1.26~0.7.0은 매니페스트 버전이 모두 `0.1.95`라서 `pluginVersion`으로는 구분할 수 없다. 위 필드들은
+버전 대신 파일(정규화·인벤토리 스크립트 존재, 스키마의 markdown 대안·`completeness` 필드, Python 하위 명령 존재)로 판별한다.
+`install.sh --check`는 `inScopeInventory`를 `인벤토리` 줄로, `diffRankInput`을 `diff 목록` 줄로 보여 준다.
 
 `ok: false`면 `stage`(`pluginRoot` / `python` / `scanDir` / `arguments`)와 `error`의 한국어 안내를
 그대로 따른다. `diagnostics.pluginAttempts`에 후보별 채택/거부 사유가 남으므로 왜 못 찾았는지
@@ -280,7 +285,7 @@ npm 0.1.26~0.6.0은 매니페스트 버전이 모두 `0.1.95`라서 `pluginVersi
 
 ### 3.4 플러그인 사본별 동작 차이 확인 (권장)
 
-**매니페스트 0.1.95(npm 0.6.0) 기준으로는 두 사본이 같게 동작한다** — npm 배포본과 GitHub 저장소
+**매니페스트 0.1.95(npm 0.7.0) 기준으로는 두 사본이 같게 동작한다** — npm 배포본과 GitHub 저장소
 체크아웃 모두 워킹트리가 변경돼도 **종결은 성공하고 경고만** 남긴다. 태그 `npm-v0.1.32`로 빌드한 패키지에서
 `repro-u3.sh` S5가 `exit=0`이었고 경고 문구도 같았다(2026-09-30 재실측). npm 0.1.32의
 `scripts/workbench_target.py`는 Git 실행 파일 선택과 커밋 diff digest 함수가 늘었지만 게이트 판정은 그대로다.
@@ -288,15 +293,15 @@ npm 0.1.26~0.6.0은 매니페스트 버전이 모두 `0.1.95`라서 `pluginVersi
 `--check`를 돌려도 "경고 사본"으로 판별된다. 하드 실패 사본을 만드는 심볼(`require_unchanged_target`)은
 현재 배포본에 존재하지 않는다. npm 0.2.0 배포본도 `repro-u3.sh` S5가 `exit=0`이고 `--check`가 "경고 사본"으로
 판별한다(2026-10-14 실측). npm 0.3.0·0.4.0 격리 설치본에서도 `repro-u3.sh` 관측 결과가 0.2.0과 같다(S5 `exit=0`,
-경고 사본. 2026-10-17 실측). npm 0.5.0 격리 설치본도 S5 `exit=0`이다(2026-10-20 실측). npm 0.5.1 격리 설치본도 S5 `exit=0`이다(2026-10-21 실측). npm 0.6.0 격리 설치본도 S5 `exit=0`이다(2026-10-22 실측).
+경고 사본. 2026-10-17 실측). npm 0.5.0 격리 설치본도 S5 `exit=0`이다(2026-10-20 실측). npm 0.5.1 격리 설치본도 S5 `exit=0`이다(2026-10-21 실측). npm 0.6.0 격리 설치본도 S5 `exit=0`이다(2026-10-22 실측). npm 0.7.0 격리 설치본도 S5 `exit=0`이다(2026-10-26 실측).
 
 상태 DB 마이그레이션은 버전마다 늘었다. 0.2.0에 이어 0.3.0은 스캔별 심각도 표(`scan_severity_assessments`)를,
 0.4.0은 issue receipt 표(`finding_issue_receipts`)를 더했다(상류 `shared/workbench-migrations.json`). 0.5.0은
 마이그레이션 50으로 `scans.source_scopes_json` 열을 더했다(스캔한 소스 범위를 저장해 excerpt를 읽는 데 쓴다, #488).
 0.5.1은 마이그레이션 51로 deep 스캔 워커 스레드 이력 표(`deep_scan_worker_threads`)를 더했다.
 0.6.0은 마이그레이션 52로 심각도 평가 표 세 개에 리뷰 횟수 열(`classification_runs`)을, 53으로 외부 소스 리포트 표
-(`external_source_reports`)를 더했다.
-새 버전으로 한 번 연 상태 DB를 이전 버전으로 다시 쓸 수 있다는 보장이 없다. 그래서 전역 설치본을 0.6.0으로 올리기 전에
+(`external_source_reports`)를 더했다. 0.7.0은 마이그레이션 54~57을 더했다(모두 deep 스캔 관련).
+새 버전으로 한 번 연 상태 DB를 이전 버전으로 다시 쓸 수 있다는 보장이 없다. 그래서 전역 설치본을 0.7.0으로 올리기 전에
 상태 디렉터리(`~/.codex/state/plugins/codex-security`)를 백업한다.
 
 과거(플러그인 0.1.14)에는 **같은 매니페스트 버전에서도 사본에 따라 처리가 달랐으므로**(하드 실패
@@ -313,6 +318,7 @@ grep -q "def require_unchanged_target" "$PLUGIN/scripts/workbench_db.py" \
 
 | 사본 / 시점 | 스캔 중 워킹트리 변경 후 종결 시 | 실측 메시지 |
 | --- | --- | --- |
+| npm 배포본 0.7.0 (매니페스트 0.1.95, 격리 설치본) | **성공 종결 + 경고** | `Working-tree contents changed while the scan was running; results were saved for the original snapshot.` |
 | npm 배포본 0.6.0 (매니페스트 0.1.95, 격리 설치본) | **성공 종결 + 경고** | `Working-tree contents changed while the scan was running; results were saved for the original snapshot.` |
 | npm 배포본 0.5.1 (매니페스트 0.1.95, 격리 설치본) | **성공 종결 + 경고** | `Working-tree contents changed while the scan was running; results were saved for the original snapshot.` |
 | npm 배포본 0.5.0 (매니페스트 0.1.95, 격리 설치본) | **성공 종결 + 경고** | 위와 동일 |
@@ -454,6 +460,10 @@ records before completion.`으로 실패하고, 스킬이 리페어 루프에서
 **인벤토리(npm 0.5.1).** 인벤토리가 `.git`에 더해 `.svn` 메타데이터도 뺀다(#1552). 하위 디렉터리를 스캔 루트로
 줘도 상위 디렉터리의 `.git`을 찾아 Git 인벤토리를 쓴다.
 
+**인벤토리(npm 0.7.0).** 인벤토리 도우미가 Python 스크립트에서 Node 헬퍼(`--helper generate-in-scope-files`)로
+옮겨졌다(#1432). 스킬은 부트스트랩 `inScopeInventory.kind`로 명령을 고른다. 출력 파일 목록은 0.6.0 Python 스크립트와
+같다(실측). 줄바꿈이 든 경로가 있으면 두 경로 모두 실패한다. 오류 문구는 접두사만 다르다.
+
 대형 저장소는 컨텍스트가 소진될 수 있다. 그때는 남은 파일을 미완으로 남기고 `deferred`에 기록해 정직하게
 보고한다. 스코프를 좁혀(경로 지정) 나눠 돌리는 것도 방법이다.
 
@@ -494,7 +504,7 @@ diff 대상으로 워크벤치에 등록할 수 없다. 스킬은 저장소 전�
 - **ledger 모드**: 스캔 파이프라인의 상류 `skills/validation/SKILL.md` 규칙대로 판정한다. 원장의 모든 행에
   `validation` 객체를 하나씩 추가하고, discovery 필드와 행 순서를 보존하며 원자적으로 재작성한다. 이미 판정된
   행은 재판정 여부를 먼저 묻는다.
-- **단독 모드**: 상류 `codex-security validate`(npm 0.3.0부터, #1423. 기준 0.6.0)와 같이 **소스 증거만으로** 판정한다. 스킬이
+- **단독 모드**: 상류 `codex-security validate`(npm 0.3.0부터, #1423. 기준 0.7.0)와 같이 **소스 증거만으로** 판정한다. 스킬이
   런타임에 상류 `references/standalone-validation.md`와 `references/static-finding-assessment.md`를 읽고 따른다.
   읽기 도구만 쓰고, 대상 코드 실행·빌드·테스트·PoC·네트워크 접근을 하지 않으며, 보고서 파일을 쓰지 않는다.
   상류는 이 제약을 읽기 전용 샌드박스와 네트워크 차단으로 강제하지만, 이 스킬에는 그 샌드박스가 없어
@@ -591,7 +601,7 @@ diff만 평가하고 아무것도 실행하지 않으므로 실행 승인을 요
 해결되는** finding을 그룹화해 이력을 연결한다(공식 `scans match` 대체 — 그 명령은 SDK가 Codex
 스레드를 직접 여는 유일한 지점이라 OpenAI 인증 없이는 막혀 있다).
 
-매칭은 상류 0.1.29~0.6.0 `scans match`와 같은 순서로 진행한다. 이 구간에 판정 문장과 조정 결과는 바뀌지 않았다.
+매칭은 상류 0.1.29~0.7.0 `scans match`와 같은 순서로 진행한다. 이 구간에 판정 문장과 조정 결과는 바뀌지 않았다.
 0.2.0은 리팩터만 했고, 0.3.0은 최종 검증의 도달 불가 분기(`enforceConfirmedIdentities`)를 지웠다(#1364).
 
 1. **호스트 신원 병합** — 같은 `findingId`와 **`knownFindingGroups`**(이전 비교들에서 이미 같은
@@ -651,7 +661,7 @@ codex-security scans compare <before-scan-id> <after-scan-id>
 `make-rank-pool-plan`·`validate-rank-*`·`merge-rank-outputs`·`select-deep-review-input`)를 지웠고(#1607), 대체
 경로도 없다. 그래서 deep-lite는 파일을 랭킹하거나 상위 N%를 고르지 않는다. 버전과 관계없이 같은 절차를 쓴다.
 
-파이프라인: 인벤토리 생성(`generate_in_scope_files.py`, 표준 스캔과 같음) → **리뷰 패스 1**(인벤토리 전체를
+파이프라인: 인벤토리 생성(npm 0.6.0 이하 `generate_in_scope_files.py`, 0.7.0 Node 헬퍼 `generate-in-scope-files`, 표준 스캔과 같음) → **리뷰 패스 1**(인벤토리 전체를
 샤드로 나눠 워커에 배정) → **리뷰 패스 2**(같은 인벤토리를 다른 샤드 구성으로 나누고, 패스 1 결과를 주지 않는
 독립 리뷰) → 두 패스의 raw 후보(`raw/pass1-agent-*.jsonl`·`raw/pass2-agent-*.jsonl`)를 상류 정규화기로 한 번에
 병합 → validation·attack-path 중앙화 tail → 봉인.
@@ -696,8 +706,14 @@ codex-security scans compare <before-scan-id> <after-scan-id>
 - **저장 전 검사**: 초안은 저장소에 커밋될 문서라 여기서 새면 공개 저장소로 나간다. 로컬 절대 경로,
   `.git/` 경로, 개인 키 머리글, URL 자격 증명, AWS·GitHub·Slack·`sk-` 토큰이 보이면 그 단계 문서를 저장하지
   않고 다시 판정한다(단계당 최대 3회). 완전한 비밀 탐지기는 아니다.
-- **한도**: 단계 프롬프트가 80,000자를 넘으면 나누지 않고 중단한다. 컴포넌트의 정책 체인에 1 MiB를 넘는
-  SECURITY.md가 있으면 해결 전에 중단한다(출력 디렉터리를 만들지 않는다).
+- **한도**: 단계 프롬프트가 80,000자를 넘으면 나누지 않고 중단한다. npm 0.6.0 이하에서는 컴포넌트의 정책 체인에 1 MiB를 넘는
+  SECURITY.md가 있으면 해결 전에 중단한다(출력 디렉터리를 만들지 않는다). npm 0.7.0은 이 한도를 지웠으므로(#1883)
+  1 MiB 검사는 하지 않는다. 스킬은 설치된 `dist/`에 한도 문구가 있는지로 고르고, `prepare` 출력 `policySizeLimit`로 알린다.
+  다만 가이던스에는 상속 정책뿐 아니라 대상 정책 자신과 하위 정책도 들어간다. 그래서 가이던스를 포함한 프롬프트가
+  80,000자를 넘으면 `prepare`가 출력 디렉터리를 남기지 않고 멈춘다(0.7.0 스모크 실측). 이때는 정책을 줄이거나 인증된
+  상류 CLI를 쓴다. 크기와 관계없이 받는 것은 이 컴포넌트와 무관한 정책뿐이다.
+- **서브에이전트 유형**: 이름이 아니라 실제 도구 목록을 본다. 같은 `Explore`라도 환경에 따라 Read만 받을 수 있다.
+  Read·Grep·Glob를 모두 가진 읽기 전용 유형이 없으면 진행 전에 알린다.
 - **생성 중 SECURITY.md가 바뀌면** 매니페스트를 쓰지 않고 "생성 후 SECURITY.md가 바뀜 — 새 초안 필요"를
   보고한다. 이미 저장한 문서는 남는다.
 
@@ -713,7 +729,7 @@ codex-security scans compare <before-scan-id> <after-scan-id>
 ```
 
 **저장소를 바꾸지 않는다.** 초안을 검토한 뒤 사용자가 **`SECURITY.md`만** 대상 경로(`targetPath`)로 직접
-복사한다(상류 0.4.0~0.6.0 CLI 끝 안내 "copy only SECURITY.md to the Policy target shown"과 같다). 아키텍처·위협 모델·
+복사한다(상류 0.4.0~0.7.0 CLI 끝 안내 "copy only SECURITY.md to the Policy target shown"과 같다). 아키텍처·위협 모델·
 매니페스트는 복사하지 않는다. 승인 후
 저장소에 적용하는 상류 plugin 단계는 이 스킬 범위 밖이다. 매니페스트의 `model`은
 `"claude-subagent (Claude Code)"`로 적는다.
@@ -724,7 +740,7 @@ codex-security scans compare <before-scan-id> <after-scan-id>
 `threat_model_ready` 그대로 남는다. 투영에 실패하면 `threatModelPath: null`과 경고를 돌려준다. npm 0.1.32 이하
 finalizer에는 `--write-threat-model`이 없어 항상 이 경고가 난다.
 
-**전제**: npm 설치본(npm 0.1.27 이상, 권장 0.6.0) — Node 헬퍼와 `dist/`가 필요하다. 신뢰 Node도 필요하다.
+**전제**: npm 설치본(npm 0.1.27 이상, 권장 0.7.0) — Node 헬퍼와 `dist/`가 필요하다. 신뢰 Node도 필요하다.
 하나라도 없으면 초안을 만들지 않고 중단한다(3.2절 프로브 경고 줄로 미리 알 수 있다).
 
 > **비동등성 고지**: 상류 `policy`는 모델을 OS 수준 권한 프로필(읽기 경로 한정, Git 메타데이터 차단,
@@ -750,7 +766,7 @@ finding마다 `--runs`번, 기본 3번). 이 스킬은 **판정 자리만** 도�
 severity 상속 경로(모델 호출 없음)는 상류에서 없어졌다. finding마다 독립 리뷰를 기본 3번 하고(`--runs 1–10`),
 상류 `reviewSeverity`가 다수결을 한다. 스킬은 run마다 새 격리 서브에이전트를 부르고, 다수결을 다시 구현하지 않는다.
 기본 루브릭 경로도 같은 서브에이전트 흐름이라 CLI·인증이 필요 없다. 스킬은 설치된 `dist/`의 파일로 계약을 고른다.
-npm 0.5.1 이하에서는 이전 계약 그대로다(루브릭 없으면 상속, `--runs`는 거부). 0.6.0에서는 상속 경로를 거부한다.
+npm 0.5.1 이하에서는 이전 계약 그대로다(루브릭 없으면 상속, `--runs`는 거부). 0.6.0 이상에서는 상속 경로를 거부한다.
 
 **비용**: 재사용되지 않는 finding마다 서브에이전트를 N번(기본 3번) 부른다. finding 10개면 30번이다. 시작할 때 호출 수를
 알린다. 비용을 줄이려면 `--runs 1`을 쓴다(다수결의 안정성은 줄어든다).
@@ -768,7 +784,7 @@ npm 0.5.1 이하에서는 이전 계약 그대로다(루브릭 없으면 상속,
   없는 finding이 있으면 상류가 멈추므로 루브릭을 준다. npm 0.6.0 이상에서는 아래 루브릭 경로를 상류 기본 루브릭으로 탄다.
 - **루브릭 있음(또는 0.6.0 이상 기본 루브릭)**: 준비(워크벤치에 쓰지 않음. 저장 평가는 워크벤치 DB의 임시 사본에서 읽는다 — 아래) → 작업 항목(finding × run)마다 새 서브에이전트 판정(병렬 가능) → 저장(쓰기
   전에 입력이 그대로인지 다시 확인). 루브릭·지식 베이스·finding digest가 모두 같은 저장 평가는 다시 판정하지
-  않는다(0.6.0은 리뷰 횟수도 같아야 한다). 루브릭이 한 글자라도 바뀌면 전부 다시 판정한다. 반환이 상류 검증을 통과하지 못하면 그 작업 항목만
+  않는다(0.6.0 이상은 리뷰 횟수도 같아야 한다). 루브릭이 한 글자라도 바뀌면 전부 다시 판정한다. 반환이 상류 검증을 통과하지 못하면 그 작업 항목만
   **한 번** 다시 판정하고, 또 실패하면 중단한다.
 - **한도**: 조립한 프롬프트가 80,000자를 넘으면 나누지 않고 시작 전에 거부한다. 루브릭·지식 베이스를 줄이거나
   finding을 나눠 고른다.
@@ -788,7 +804,7 @@ npm 0.5.1 이하에서는 이전 계약 그대로다(루브릭 없으면 상속,
 (`bf9a5bce9`, #1543) finding별 읽기 전용 조회 명령이 없어졌다. 상류 `begin`은 스캔 선택 행을 덮어쓰고 0.3.0부터는
 캐시 행을 스캔별 행으로 복사하는 쓰기다. 그래서 스킬은 상류 `scripts/snapshot_sqlite.py`로 DB 사본을 만들고, 그
 사본에 상류 `SeverityStore`의 체크포인트 조회를 부른다. 재사용 규칙은 설치된 상류 버전의 것이 그대로 쓰인다.
-npm 0.2.0~0.6.0 모두 같은 스크립트로 동작한다(버전마다 그 버전의 계약으로). 사용자가 판정 단계에서 멈춰도 이전 분류는 그대로 남는다.
+npm 0.2.0~0.7.0 모두 같은 스크립트로 동작한다(버전마다 그 버전의 계약으로). 사용자가 판정 단계에서 멈춰도 이전 분류는 그대로 남는다.
 
 최종 보고는 finding마다 결정(`decision`)·레벨(`level`)·루브릭 라벨·재사용 여부를 표로 보여 준다.
 
@@ -801,7 +817,7 @@ npm 0.2.0~0.6.0 모두 같은 스크립트로 동작한다(버전마다 그 버�
   or its inputs changed.`로 멈추므로 끝까지 다시 분류한다.
 - **확인**: `publish scan --dry-run`으로 Linear API 키 없이 게시 미리보기를 볼 수 있다(5.12절).
 
-**전제**: npm 설치본의 `dist/`(npm 0.1.26 이상, 권장 0.6.0), 신뢰 Node, 플러그인 Python 3.10+(DB 사본에 상류
+**전제**: npm 설치본의 `dist/`(npm 0.1.26 이상, 권장 0.7.0), 신뢰 Node, 플러그인 Python 3.10+(DB 사본에 상류
 `snapshot_sqlite.py`를 쓴다).
 
 > **비동등성 고지**: 상류는 finding마다 OS 샌드박스(읽기 전용, 네트워크 차단, 셸·MCP 비활성)의 Codex 모델을
@@ -908,7 +924,7 @@ match 명령에 공통으로 받는다(상류 #1143·#1238·#1274). 모두 모�
   달라지는지는 확인하지 않았다.
 - `suggest-owners`가 CODEOWNERS를 먼저 본다(#1519).
 - hosted Standard scan 실행이 생겼다(#1559, 0.4.0).
-- `skills add`는 0.6.0에도 있다. 3.2절 충돌 경고가 그대로 적용된다.
+- `skills add`는 0.7.0에도 있다. 3.2절 충돌 경고가 그대로 적용된다.
 
 **npm 0.5.0 CLI 변경(이 스킬들이 감싸지 않음, 실측하지 않음)**:
 
@@ -933,6 +949,20 @@ patch 검증 프롬프트와 verify-fix 머리말은 `cli.ts`에서 `remediation
   방식으로 이 모드를 지원한다.
 - `classify-severity`가 루브릭 없이도 기본 루브릭으로 모델을 부르고, `--runs`를 받는다(#1765, 5.10절).
 - policy diff 미리보기가 Python difflib에서 Node 구현으로 바뀌었다(#1837). 시그니처가 같아 스킬은 영향이 없다.
+
+**npm 0.7.0 변경**:
+
+- 인벤토리 스크립트가 Node 헬퍼로 옮겨졌다(#1432, breaking). 스킬은 부트스트랩 `inScopeInventory`·`diffRankInput`으로
+  경로를 고른다(3.3절). 0.7.0부터 전체 스캔에도 Node가 필요하다.
+- SECURITY.md 1 MiB 한도가 없어졌다(#1883). 스캔은 큰 정책을 한 번에 읽지 않고 나눠 읽는다. policy는 5.9절과 같다.
+- 상류 스킬 문서가 크게 줄었다(#1676, 약 2,000줄). 스킬의 상류 인용도 맞췄다(`final-report.md` 문구, validation·attack-path의
+  절 이름 `Compact Workbench Diff`, 0.7.0에서 "Standalone Diff Worklists and Artifacts"로 다시 쓴 `scan-artifacts-and-ledger.md`,
+  fix-finding의 `Review the fix`와 사전 조사 절 삭제). 스킬의 절차와 안전 계약은 그대로다. patch는 사전 조사·후보 리뷰 두 패스를 유지한다.
+- 상류 verify-fix는 대화형이면 Markdown으로 답한다(#1836). 이 스킬은 CLI 대체이므로 JSON 결과를 유지한다.
+  hosted verification의 `checks` 스키마는 지워졌다(#1951). 스킬의 결과 계약과는 무관하다.
+- 이 스킬들이 감싸지 않는 것(실측하지 않음): 외부 import·게시 워크플로는 `CODEX_SECURITY_ENABLE_EXTERNAL_IMPORTS=1`로
+  켜야 한다(#1863). `scan --validate`는 스캔 뒤 finding마다 단독 검증을 돌려 `<scan-dir>/validation.md`에 모은다(#1007).
+  같은 목적이면 `codex-security-validate` 단독 모드에 finding을 넣는다.
 
 **npm 0.1.30~0.1.32에 새로 생긴 명령(이 스킬들이 감싸지 않음, 실측하지 않음)**: `suggest-owners <findings>`
 (npm 0.1.31)는 커밋된 소스와 Git 이력으로 finding 소유자를 제안한다. 모델을 부르므로 인증이 필요하다.
@@ -983,11 +1013,12 @@ patch 검증 프롬프트와 verify-fix 머리말은 `cli.ts`에서 `remediation
 | `running` 상태 좀비 행 | `list-stale --hours N`으로 나열 후 `close-stale --scan-id <id>`로 **명시적으로만** 정리 |
 | `codex-security: command not found` | 공식 CLI 조회 명령에만 필요하다. `npm install -g @openai/codex-security`(Node 22+) 또는 `npx @openai/codex-security …` |
 | `--check`가 "상류 'codex-security skills add' 가 이 스킬을 덮어썼습니다"를 보고한다 | 상류 CLI의 `skills add`가 같은 이름의 스킬을 지우고 CLI 안내 스킬로 바꿨다(3.2절). `bash skills/install.sh --force`(복사본이면 `--copy --force`)로 다시 설치하고, `skills add`를 다시 실행하지 않는다 |
-| 플러그인 버전 경고 | `pluginVersion`이 매핑 기준(매니페스트 0.1.95)과 다름 → 워크플로 지시가 바뀌었을 수 있으니 8절 재검증을 수행. 버전이 같아도 동작이 다를 수 있으므로 3.4절 프로브를 함께 본다. npm 0.1.26~0.6.0은 모두 매니페스트 0.1.95라 이 경고가 뜨지 않는다 — npm 버전은 부트스트랩 `npmVersion`(`--check`의 `버전` 줄)으로 확인한다. `npmVersion`이 0.6.0이 아니면 스킬이 같은 경고를 낸다. npm 0.1.26에는 SECURITY.md Node 헬퍼가 없어 정책 해결을 건너뛴다. 검증된 조합인 npm 0.6.0을 설치한다(상태 디렉터리 백업 후, 3.4절) |
-| 스캔이 0단계에서 "후보 정규화 불가"로 멈춘다 | 부트스트랩 `candidateNormalizer.available: false`. npm 0.2.0 이후 상류 소스 체크아웃이면 Python 정규화 스크립트도 빌드된 Node 헬퍼도 없다 → npm 0.6.0 설치본을 쓴다. 설치본인데 멈추면 `reason`의 헬퍼 사유("Node 없음"·"신뢰 게이트 거부")를 아래 행처럼 해결한다 |
-| 스캔이 "SECURITY.md 정책 해결을 건너뜀"을 고지한다 | 부트스트랩 `securityMdHelper.available: false`. `reason`이 "헬퍼 파일 없음"이면 상류 소스 체크아웃이거나 npm 0.1.26 이하다 → npm 0.6.0 설치본을 쓴다. "Node 없음"·"신뢰 게이트 거부"면 대상 저장소 밖의 Node를 PATH에 두거나 `CODEX_MCP_NODE_PATH=<절대 경로>`로 지정한다 |
+| 플러그인 버전 경고 | `pluginVersion`이 매핑 기준(매니페스트 0.1.95)과 다름 → 워크플로 지시가 바뀌었을 수 있으니 8절 재검증을 수행. 버전이 같아도 동작이 다를 수 있으므로 3.4절 프로브를 함께 본다. npm 0.1.26~0.7.0은 모두 매니페스트 0.1.95라 이 경고가 뜨지 않는다 — npm 버전은 부트스트랩 `npmVersion`(`--check`의 `버전` 줄)으로 확인한다. `npmVersion`이 0.7.0이 아니면 스킬이 같은 경고를 낸다. npm 0.1.26에는 SECURITY.md Node 헬퍼가 없어 정책 해결을 건너뛴다. 검증된 조합인 npm 0.7.0을 설치한다(상태 디렉터리 백업 후, 3.4절) |
+| 스캔이 0단계에서 "후보 정규화 불가"로 멈춘다 | 부트스트랩 `candidateNormalizer.available: false`. npm 0.2.0 이후 상류 소스 체크아웃이면 Python 정규화 스크립트도 빌드된 Node 헬퍼도 없다 → npm 0.7.0 설치본을 쓴다. 설치본인데 멈추면 `reason`의 헬퍼 사유("Node 없음"·"신뢰 게이트 거부")를 아래 행처럼 해결한다 |
+| 스캔이 "SECURITY.md 정책 해결을 건너뜀"을 고지한다 | 부트스트랩 `securityMdHelper.available: false`. `reason`이 "헬퍼 파일 없음"이면 상류 소스 체크아웃이거나 npm 0.1.26 이하다 → npm 0.7.0 설치본을 쓴다. "Node 없음"·"신뢰 게이트 거부"면 대상 저장소 밖의 Node를 PATH에 두거나 `CODEX_MCP_NODE_PATH=<절대 경로>`로 지정한다 |
 | `codex-security-policy`·`-classify-severity`가 시작 직후 중단한다 | 부트스트랩의 `securityMdHelper`·`sdk.dist`·`node` 중 하나가 없다(3.3절 표). `--check`의 "사용 불가" 경고 줄이 사유를 알려 준다. 대개 npm 설치본(`npm install -g @openai/codex-security`)으로 해결된다 |
 | 두 스킬에서 `ERR_MODULE_NOT_FOUND` | `codex-security-scan` 스킬(공용 관문 `workflow_digest.mjs`)이 같은 스킬 루트에 없거나 버전이 다르다. 9종을 같은 버전으로 다시 설치한다 |
+| 스캔이 0단계에서 인벤토리 도우미 불가로 멈춘다 | 부트스트랩 `inScopeInventory`(diff 스캔은 `diffRankInput`도)가 `available: false`다. npm 0.7.0부터 인벤토리는 Node 헬퍼라서 Node나 빌드된 `mcp/`가 없으면 쓸 수 없다(상류 소스 체크아웃 등). `reason`을 보고 npm 설치본과 신뢰 Node를 갖춘다 |
 | 경로 지정 스캔이나 diff 스캔이 0단계에서 멈춘다 | 부트스트랩 `bindRepoScopes`·`copyDeepReviewInput`이 `available: false`다. npm 0.3.0부터 이 둘은 Node 헬퍼라서 Node나 빌드된 `mcp/`가 없으면 쓸 수 없다. `reason`을 보고 npm 설치본과 신뢰 Node를 갖춘다 |
 | finalize가 `Scan result contains invalid findings; repair the finding records before completion.`로 실패한다 | npm 0.4.0의 새 finding 검증이다(5.2절). 스킬이 리페어 루프에서 오류 줄의 필드(구 별칭, 빠진 필수 필드, slug 형식)만 고친다. |
 | `scan import`가 `Scan output parent must not be group- or world-writable …`로 exit 2 | 출력 경로의 상위 디렉터리 중 group/world 쓰기 가능한 것이 있다. 권한을 조이거나 상태 디렉터리를 옮긴다(5.12절) |
@@ -1007,7 +1038,7 @@ bash docs/verification/scripts/repro-u4.sh
 # 워크벤치 계약 (register → seal → 게이트 → complete)
 bash docs/verification/scripts/repro-u3.sh
 
-# 매칭 검증기 계약: 상류 0.1.29~0.6.0 호스트 조정 재현(catalogue → finalize → measure),
+# 매칭 검증기 계약: 상류 0.1.29~0.7.0 호스트 조정 재현(catalogue → finalize → measure),
 # 상류 테스트 이식 픽스처 453건 대조(블록 R), 가짜 codex 로 돌린 상류 dist 결과와 대조(블록 S)
 bash docs/verification/scripts/repro-u5-match-validator.sh
 
