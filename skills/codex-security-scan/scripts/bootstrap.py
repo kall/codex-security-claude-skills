@@ -17,12 +17,15 @@
   6. 후보 정규화 경로(`candidateNormalizer`) — Python 스크립트 또는 5번의 Node 헬퍼.
      이것도 관측이다. 불가일 때 멈출지는 스킬이 정한다.
   7. 정본 위협 모델의 markdown 형식 지원(`threatModelMarkdown`) — 플러그인 스키마로 판별한다.
-  8. 버전별 계약 차이 관측(전부 파일로 판별한다. 매니페스트 버전은 npm 0.1.26~0.5.0 이
+  8. 버전별 계약 차이 관측(전부 파일로 판별한다. 매니페스트 버전은 npm 0.1.26~0.7.0 이
      모두 0.1.95 라 구분하지 못한다):
      - `npmVersion` — 플러그인 루트의 형제 package.json 의 version(npm 설치본일 때만).
      - `coverageCompleteness` — coverage 스키마에 `completeness` 가 있는가(npm 0.2.0 이하).
      - `bindRepoScopes`·`copyDeepReviewInput` — 작업 목록 도우미의 실행 경로(Python 스크립트
        하위 명령 또는 5번의 Node 헬퍼). npm 0.4.0 은 Python 하위 명령을 지웠다.
+     - `inScopeInventory`·`diffRankInput` — 인벤토리 도우미(`generate-in-scope-files`·
+       `make-diff-rank-input`)의 실행 경로. npm 0.6.0 이하는 Python 스크립트, npm 0.7.0 은
+       그 스크립트를 지우고 5번의 Node 헬퍼로 옮겼다(상류 05cceee24 #1432).
 
 이 JSON이 이후 모든 단계(register-cli-scan, 산출물 작성, finalize)의 경로
 source-of-truth 다. 스킬 문서는 이 스크립트를 한 번 호출하고 그 결과만 사용한다.
@@ -82,8 +85,10 @@ DIR_MODE = 0o700  # scanDir/scansRoot/stateDir 권한
 ARTIFACT_MODE = 0o600  # 이후 단계가 만드는 산출물 파일 권한(문서화용 상수)
 MAX_SCAN_DIR_ATTEMPTS = 50  # 같은 초에 여러 번 호출될 때 접미사 재시도 상한
 
-# 검색 명령(ripgrep) 해석. 상류 generate_in_scope_files.py 는 `rg` 를 하드코딩하고
-# 경로를 받는 인자가 없으므로, 전달 통로는 자식 프로세스의 PATH 뿐이다.
+# 검색 명령(ripgrep) 해석. 상류 인벤토리 도우미(npm 0.6.0 이하 generate_in_scope_files.py,
+# npm 0.7.0 Node 헬퍼 generate-in-scope-files)는 `rg` 를 하드코딩하고 경로를 받는 인자가
+# 없으므로, 전달 통로는 자식 프로세스의 PATH 뿐이다. Node 헬퍼도 POSIX 에서는 `rg` 를
+# 이름으로 spawn 해 PATH 로 찾는다(상류 inventory-git.ts runRipgrep, 실측).
 SEARCH_COMMAND = "rg"
 CLAUDE_EXECPATH_ENV = "CLAUDE_CODE_EXECPATH"
 RIPGREP_MARKER = "ripgrep"  # `rg --version` 첫 줄에 반드시 있는 문자열
@@ -134,6 +139,11 @@ COVERAGE_SCHEMA_RELATIVE = Path("schemas") / "coverage.schema.json"
 # 그 하위 명령을 지우고 같은 런처의 `--helper <이름>` 으로 옮겼다(상류 f894583a3 #1607).
 RANK_SCRIPT_RELATIVE = Path("scripts") / "generate_rank_input.py"
 MAX_RANK_SCRIPT_SIZE = 4 * 1024 * 1024
+# 인벤토리 도우미. npm 0.6.0 이하는 generate_in_scope_files.py 스크립트와
+# generate_rank_input.py 의 make-diff-rank-input 하위 명령이고, npm 0.7.0 은 두 파일을 지우고
+# 같은 런처의 `--helper generate-in-scope-files|make-diff-rank-input` 으로 옮겼다(상류
+# 05cceee24 #1432). 인자 이름은 같다.
+INVENTORY_SCRIPT_RELATIVE = Path("scripts") / "generate_in_scope_files.py"
 
 # 자식 환경은 **허용 목록**으로 짠다. 거부 목록은 구조가 틀렸다 — 위협면이
 # "우리가 부르는 서드파티 바이너리(git/npm/python/rg)가 읽는 임의의 환경변수"
@@ -415,6 +425,8 @@ SUCCESS_KEYS = (
     "coverageCompleteness",
     "bindRepoScopes",
     "copyDeepReviewInput",
+    "inScopeInventory",
+    "diffRankInput",
     "scanDir",
     "scansRoot",
     "stateDir",
@@ -442,7 +454,8 @@ INSTALL_GUIDANCE = (
 )
 
 SEARCH_GUIDANCE = (
-    "전체 스캔 인벤토리는 상류 scripts/generate_in_scope_files.py 가 만들고 그 스크립트는 "
+    "전체 스캔 인벤토리는 상류 인벤토리 도우미(npm 0.6.0 이하 scripts/generate_in_scope_files.py, "
+    "npm 0.7.0 Node 헬퍼 generate-in-scope-files)가 만들고 그 도우미는 "
     "ripgrep(`rg`)을 PATH 에서만 해석합니다. 신뢰할 수 있는 `rg` 를 확보하지 못했습니다.\n"
     "  1) ripgrep 설치:  apt install ripgrep / brew install ripgrep / cargo install ripgrep\n"
     f"  2) Claude Code 세션이라면 {CLAUDE_EXECPATH_ENV} 가 실행 가능한 claude 바이너리를 "
@@ -1563,7 +1576,7 @@ def coverage_requires_completeness(plugin_root: Path, target_repo: Path) -> bool
 def resolve_npm_version(plugin_root: Path, target_repo: Path) -> str | None:
     """npm 패키지 version. 플러그인 루트가 `<패키지>/_bundled_plugin` 일 때만 읽는다.
 
-    매니페스트 버전(pluginVersion)은 npm 0.1.26~0.5.0 이 모두 0.1.95 라서 이 값이
+    매니페스트 버전(pluginVersion)은 npm 0.1.26~0.7.0 이 모두 0.1.95 라서 이 값이
     사람이 읽는 유일한 구분 축이다. 동작 분기에는 쓰지 않는다(분기는 파일 존재 프로브).
     """
     if plugin_root.name != "_bundled_plugin":
@@ -1623,6 +1636,39 @@ def resolve_worklist_helper(
         "reason": (
             f"{command} 불가 — {RANK_SCRIPT_RELATIVE} 에 하위 명령이 없고(npm 0.3.0 부터 "
             f"Node 헬퍼로 이동) Node 헬퍼도 쓸 수 없음: {helper['reason']}"
+        ),
+    }
+
+
+def resolve_inventory_helper(
+    plugin_root: Path, target_repo: Path, helper: dict, command: str
+) -> dict:
+    """{"available","kind","reason"}. 실패하지 않는다.
+
+    `generate-in-scope-files` 는 scripts/generate_in_scope_files.py 가 있으면 python,
+    `make-diff-rank-input` 은 generate_rank_input.py 에 그 하위 명령이 있으면 python 이다
+    (npm 0.6.0 이하). 없으면 SECURITY.md 헬퍼와 같은 런처·Node 로 `--helper <command>` 를
+    쓰는 node-helper 다(npm 0.7.0, 상류 05cceee24 #1432). 판정 규칙은
+    resolve_worklist_helper 와 같다 — Node 헬퍼에 그 명령이 있는지는 실행하지 않고는
+    알 수 없으므로, Python 경로가 없는 사본에서만 헬퍼 경로로 판정한다.
+    """
+    if command == "generate-in-scope-files":
+        script = plugin_root / INVENTORY_SCRIPT_RELATIVE
+        python_available = not within_target(target_repo, script) and is_regular_file(script)
+        python_location = str(INVENTORY_SCRIPT_RELATIVE)
+    else:
+        python_available = rank_script_has_command(plugin_root, target_repo, command)
+        python_location = f"{RANK_SCRIPT_RELATIVE} 의 하위 명령"
+    if python_available:
+        return {"available": True, "kind": "python", "reason": None}
+    if helper["available"]:
+        return {"available": True, "kind": "node-helper", "reason": None}
+    return {
+        "available": False,
+        "kind": None,
+        "reason": (
+            f"{command} 불가 — {python_location} 이 없고(npm 0.7.0 부터 Node 헬퍼로 이동) "
+            f"Node 헬퍼도 쓸 수 없음: {helper['reason']}"
         ),
     }
 
@@ -1962,7 +2008,8 @@ def main(argv: list[str]) -> int:
         action="store_true",
         help=(
             "검색 명령(ripgrep) 확보를 필수로 만든다. 실패 시 exit 1. 저장소 전체 스캔과 "
-            "deep-lite 는 인벤토리를 상류 generate_in_scope_files.py 에 위임하므로 이 "
+            "deep-lite 는 인벤토리를 상류 인벤토리 도우미(npm 0.6.0 이하 "
+            "generate_in_scope_files.py, npm 0.7.0 Node 헬퍼)에 위임하므로 이 "
             "플래그를 쓴다. diff 스캔은 diff 모드가 git 만 쓰므로 필요 없고, validate·"
             "patch·verify-fix·scan-match 는 인벤토리를 만들지 않으므로 필요 없다"
         ),
@@ -2136,6 +2183,12 @@ def main(argv: list[str]) -> int:
     copy_deep_review_input = resolve_worklist_helper(
         plugin_root_path, target_repo, helper, "copy-deep-review-input"
     )
+    in_scope_inventory = resolve_inventory_helper(
+        plugin_root_path, target_repo, helper, "generate-in-scope-files"
+    )
+    diff_rank_input = resolve_inventory_helper(
+        plugin_root_path, target_repo, helper, "make-diff-rank-input"
+    )
 
     # emit() 의 errors="replace" 는 **진단·메시지 필드의 최후 안전망**이다. 경로
     # 축에는 적용돼선 안 된다 — 치환하면 ok:true 페이로드에 존재하지 않는 경로가
@@ -2189,12 +2242,12 @@ def main(argv: list[str]) -> int:
             ),
             # 대상 저장소 내부 항목을 제거한 PATH. 플러그인 스크립트를 자식
             # 프로세스로 돌릴 때 **이 값을 그대로 PATH 로 넣는다**(앞에 덧붙이지
-            # 않는다). 상류 generate_in_scope_files.py 는 `rg` 뿐 아니라 `git` 도
+            # 않는다). 상류 인벤토리 도우미는 `rg` 뿐 아니라 `git` 도
             # PATH 에서 해석해 `cwd=대상 저장소` 로 실행하므로, 원시 $PATH 를
             # 물려주면 저장소가 커밋한 ./node_modules/.bin/git 이 실행된다(실측).
             "trustedPathEnv": trusted_path_env,
             # 소비자가 `env -i` 로 그대로 쓰는 KEY=VALUE 목록. PATH 정화만으로는
-            # 반쪽이다 — 상류 generate_in_scope_files.py 는 `env=` 를 넘기지 않아
+            # 반쪽이다 — 상류 인벤토리 도우미는 rg 에 부모 환경을 그대로 물려주어
             # 부모 환경을 전부 상속하고, 거기에는 PATH 보다 강한 채널이 있다:
             # GIT_CONFIG_KEY_*(core.fsmonitor 로 임의 명령 실행), GIT_DIR/
             # GIT_WORK_TREE(신뢰 경계 이동), NODE_OPTIONS, LD_PRELOAD — 전부 재현.
@@ -2257,6 +2310,12 @@ def main(argv: list[str]) -> int:
             # `--helper <이름>`. 불가이면 kind 는 null 이고 사유는 reason 에 있다.
             "bindRepoScopes": bind_repo_scopes,
             "copyDeepReviewInput": copy_deep_review_input,
+            # 인벤토리(전체·diff)와 diff 랭킹 입력 도우미의 실행 경로. kind 가 python 이면
+            # generate_in_scope_files.py·generate_rank_input.py make-diff-rank-input, node-helper 면
+            # securityMdHelper 의 런처·Node 로 `--helper generate-in-scope-files|make-diff-rank-input`
+            # (npm 0.7.0). 불가이면 kind 는 null 이고 사유는 reason 에 있다.
+            "inScopeInventory": in_scope_inventory,
+            "diffRankInput": diff_rank_input,
             # 셸 명령에 보간되는 값은 **전부** 인용된 형태를 함께 낸다. 한 축만
             # 인용하면 계약이 반쪽이다 — `trustedChildEnv` 를 인용한 뒤에도 같은
             # 명령줄의 `PATH="<pathEnv>"`·`mkdir -p "<scanDir>/…"` 로 `$()` 가

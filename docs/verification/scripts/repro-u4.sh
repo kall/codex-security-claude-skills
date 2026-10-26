@@ -203,7 +203,7 @@ expect_exit 2 "$?" "E finalize (실패 기대)"
 #   deferred 0건 + needs_follow_up surface -> invocations 없음(SARIF 만으로는 불완전을 모름)
 #
 # 어느 형상인지는 버전 문자열이 아니라 플러그인 스키마로 고른다(매니페스트 버전은
-# npm 0.1.26~0.4.0 이 모두 0.1.95 다). 스킬 bootstrap 의 coverageCompleteness 와 같은 축이다.
+# npm 0.1.26~0.7.0 이 모두 0.1.95 다). 스킬 bootstrap 의 coverageCompleteness 와 같은 축이다.
 # ---------------------------------------------------------------------------
 step "F. SARIF 성공 판정 형상 (완전 / deferred 있음 / deferred 없는 불완전)"
 COVERAGE_COMPLETENESS="$(PY -c 'import json,sys
@@ -321,14 +321,20 @@ esac
 #    검색 명령(rg)은 스킬이 실제로 쓰는 기계, 즉 bootstrap.py 가 해석한
 #    `searchCommand.pathEnv` 를 그대로 쓴다. 여기서 shim 을 셸로 재구현하면
 #    상류 호출은 통과하지만 정작 스킬이 쓰는 경로는 검증되지 않는다.
+#
+#    인벤토리 도우미의 실행 경로도 bootstrap 의 판정(`inScopeInventory.kind`·
+#    `diffRankInput.kind`)을 그대로 쓴다. npm 0.6.0 이하는 Python 스크립트
+#    (generate_in_scope_files.py, generate_rank_input.py make-diff-rank-input), npm 0.7.0 은
+#    그 파일을 지우고 런처의 `--helper generate-in-scope-files|make-diff-rank-input` 으로
+#    옮겼다(상류 05cceee24 #1432). 기대 집합은 두 경로가 같다(실측).
 # ---------------------------------------------------------------------------
 step "G. 인벤토리 정확성 (추적된 무시 파일 포함 / 미추적 포함 / 무시된 미추적 제외)"
 INV_SCRIPT="$PLUGIN/scripts/generate_in_scope_files.py"
+RANK_SCRIPT="$PLUGIN/scripts/generate_rank_input.py"
+LAUNCHER="$PLUGIN/scripts/launch_codex_security_mcp"
 BOOTSTRAP="${CODEX_SECURITY_BOOTSTRAP:-$WORK/../../../skills/codex-security-scan/scripts/bootstrap.py}"
 SEARCH_PATH_ENV=""
-if [ ! -f "$INV_SCRIPT" ]; then
-  bad "G: $INV_SCRIPT 가 없습니다"
-elif [ ! -f "$BOOTSTRAP" ]; then
+if [ ! -f "$BOOTSTRAP" ]; then
   skip "G: bootstrap.py 를 찾지 못해 검색 명령을 확보할 수 없습니다: $BOOTSTRAP"
 else
   # bootstrap 의 신뢰 경계 계산에만 쓰이는 빈 대상 저장소로 프로브한다.
@@ -366,6 +372,54 @@ PYEOF2
   fi
 fi
 
+# G0. 인벤토리 도우미의 kind. bootstrap 판정을 사본의 파일과 손으로 대조한다.
+#     기대값: Python 스크립트(하위 명령)가 있으면 python, 없으면 node-helper.
+boot_field() { # boot_field <python 식> — boot.json 을 d 로 읽어 식의 값을 출력한다
+  PY - "$RUN/boot.json" "$1" <<'PYEOF3'
+import json, pathlib, sys
+try:
+    d = json.loads(pathlib.Path(sys.argv[1]).read_text() or "{}")
+except (OSError, json.JSONDecodeError):
+    d = {}
+print(eval(sys.argv[2], {"d": d}) or "")
+PYEOF3
+}
+NODE_FOR_HELPER="$(boot_field '(d.get("node") or {}).get("path")')"
+[ -n "$NODE_FOR_HELPER" ] || NODE_FOR_HELPER="$(command -v node || true)"
+INV_KIND="$(boot_field '(d.get("inScopeInventory") or {}).get("kind")')"
+DIFF_RANK_KIND="$(boot_field '(d.get("diffRankInput") or {}).get("kind")')"
+if [ -f "$INV_SCRIPT" ]; then WANT_INV_KIND=python; else WANT_INV_KIND=node-helper; fi
+if grep -q '"make-diff-rank-input"' "$RANK_SCRIPT" 2>/dev/null; then
+  WANT_DIFF_RANK_KIND=python
+else
+  WANT_DIFF_RANK_KIND=node-helper
+fi
+if [ ! -s "$RUN/boot.json" ]; then
+  # bootstrap 출력이 없으면(위에서 이미 FAIL/SKIP) 파일로 고른 kind 로 I 블록만이라도 돌린다.
+  INV_KIND="$WANT_INV_KIND"
+  DIFF_RANK_KIND="$WANT_DIFF_RANK_KIND"
+elif [ "$INV_KIND" = "$WANT_INV_KIND" ] && [ "$DIFF_RANK_KIND" = "$WANT_DIFF_RANK_KIND" ]; then
+  ok "G0: bootstrap 의 inScopeInventory·diffRankInput kind=$INV_KIND·$DIFF_RANK_KIND (사본과 일치)"
+else
+  bad "G0: bootstrap kind 가 사본과 다릅니다 — inventory=$INV_KIND diffRank=$DIFF_RANK_KIND 기대=$WANT_INV_KIND·$WANT_DIFF_RANK_KIND"
+fi
+# 스킬 문서의 명령형 두 가지. 이 배열은 `env -i <환경 …>` 뒤에 붙는다 — node-helper 의
+# CODEX_MCP_NODE_PATH= 는 env 가 명령 앞 할당으로 받는다(스킬 문서와 같은 형태).
+case "$INV_KIND" in
+  python) INV_CMD=("$PYTHON_BIN" "$INV_SCRIPT") ;;
+  node-helper) INV_CMD=(CODEX_MCP_NODE_PATH="$NODE_FOR_HELPER" "$LAUNCHER" --helper generate-in-scope-files) ;;
+  *) INV_CMD=() ;;
+esac
+case "$DIFF_RANK_KIND" in
+  python) DIFF_RANK_CMD=("$PYTHON_BIN" "$RANK_SCRIPT" make-diff-rank-input) ;;
+  node-helper) DIFF_RANK_CMD=(CODEX_MCP_NODE_PATH="$NODE_FOR_HELPER" "$LAUNCHER" --helper make-diff-rank-input) ;;
+  *) DIFF_RANK_CMD=() ;;
+esac
+if [ "${#INV_CMD[@]}" = 0 ]; then
+  bad "G0: 인벤토리 도우미 경로가 없습니다(kind=$INV_KIND) — Python 스크립트도 Node 헬퍼도 쓸 수 없습니다"
+  SEARCH_PATH_ENV=""
+fi
+
 if [ -n "$SEARCH_PATH_ENV" ]; then
   INV="$RUN/inv-repo"
   mkdir -p "$INV/src" "$INV/dist"
@@ -400,12 +454,12 @@ if [ -n "$SEARCH_PATH_ENV" ]; then
     # 오류 로그도 호출별로 남긴다 — 고정 파일이면 뒤 호출이 앞 원인을 덮는다.
     env -i PATH="$SEARCH_PATH_ENV" HOME="$INV_HOME" GIT_CONFIG_NOSYSTEM=1 \
       PYTHONDONTWRITEBYTECODE=1 "$@" \
-      "$PYTHON_BIN" "$INV_SCRIPT" --repo "$INV" --scope . --out "$out" \
+      "${INV_CMD[@]}" --repo "$INV" --scope . --out "$out" \
       > "$out.err" 2>&1
   }
 
   run_inventory "$RUN/inv.txt"
-  expect_exit 0 "$?" "G1 인벤토리 생성"
+  expect_exit 0 "$?" "G1 인벤토리 생성($INV_KIND)"
   [ -s "$RUN/inv.txt.err" ] && sed 's/^/     /' "$RUN/inv.txt.err"
   LC_ALL=C sort -u "$RUN/inv.txt" > "$RUN/inv.actual"
   printf './.gitignore\n./dist/generated.py\n./src/tracked.py\n./src/untracked.py\n' \
@@ -475,9 +529,9 @@ if [ -n "$SEARCH_PATH_ENV" ]; then
 
   # -------------------------------------------------------------------------
   # G4. RIPGREP_CONFIG_PATH 로도 같은 축소가 가능한가.
-  #     실행 환경이 정하는 값이지만, 상류 generate_in_scope_files.py 는 env= 를
-  #     넘기지 않아 부모 환경을 전부 상속한다. 소비자가 PATH 만 교체해도 이
-  #     변수는 자식 rg 에 그대로 들어간다.
+  #     실행 환경이 정하는 값이지만, 상류 인벤토리 도우미는 rg 에 부모 환경을 그대로
+  #     물려준다(Python 은 env= 없음, Node 헬퍼는 process.env 상속). 소비자가 PATH 만
+  #     교체해도 이 변수는 자식 rg 에 그대로 들어간다.
   # -------------------------------------------------------------------------
   # G4b 는 .rgignore 가 없어야 RIPGREP_CONFIG_PATH 를 단독으로 검증한다. 남아
   # 있으면 같은 경로가 두 이유로 빠져 단언이 조용히 무력화된다(실측으로 거짓 통과 재현).
@@ -623,10 +677,12 @@ EOF
 )"
 step "I. diff 인벤토리·랭킹 입력: 새 확장자와 .github/workflows"
 echo "     확장자 필터(rank_preview.TEXT_CODE_EXTENSIONS): $TEXT_EXT_FILTER"
-RANK_SCRIPT="$PLUGIN/scripts/generate_rank_input.py"
+echo "     도우미 kind: 인벤토리=$INV_KIND, diff 랭킹 입력=$DIFF_RANK_KIND"
 GIT_BIN="$(command -v git || true)"
 if [ -z "$GIT_BIN" ]; then
   skip "I: git 이 없어 diff 인벤토리를 검증할 수 없습니다"
+elif [ "${#INV_CMD[@]}" = 0 ] || [ "${#DIFF_RANK_CMD[@]}" = 0 ]; then
+  bad "I: diff 인벤토리·랭킹 입력 도우미 경로가 없습니다(G0 참조)"
 else
   # diff 모드는 rg 를 타지 않는다. git 만 PATH 에서 해석하므로 git 이 있는
   # 디렉터리만 PATH 로 준다(원시 $PATH 를 물려주지 않는다).
@@ -664,13 +720,13 @@ else
   diff_inventory() { # diff_inventory <base> <head> <out>
     env -i PATH="$DIFF_PATH_ENV" HOME="$DIFF_HOME" GIT_CONFIG_NOSYSTEM=1 \
       PYTHONDONTWRITEBYTECODE=1 \
-      "$PYTHON_BIN" "$INV_SCRIPT" --repo "$DREPO" --scope . \
+      "${INV_CMD[@]}" --repo "$DREPO" --scope . \
       --diff-base "$1" --diff-head "$2" --diff-mode revisions --out "$3" > "$3.err" 2>&1
   }
   diff_rank_input() { # diff_rank_input <base> <head> <out> — 경로 목록만 뽑아 <out>.paths 에 쓴다
     env -i PATH="$DIFF_PATH_ENV" HOME="$DIFF_HOME" GIT_CONFIG_NOSYSTEM=1 \
       PYTHONDONTWRITEBYTECODE=1 \
-      "$PYTHON_BIN" "$RANK_SCRIPT" make-diff-rank-input --repo "$DREPO" \
+      "${DIFF_RANK_CMD[@]}" --repo "$DREPO" \
       --base "$1" --head "$2" --mode revisions --out "$3" > "$3.err" 2>&1 || return $?
     PY - "$3" > "$3.paths" <<'EOF'
 import json, sys
@@ -843,11 +899,11 @@ else
   mkdir -p "$(dirname "$NOUT")"
   env -i PATH="$SEARCH_PATH_ENV" HOME="$INV_HOME" GIT_CONFIG_NOSYSTEM=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    "$PYTHON_BIN" "$INV_SCRIPT" --repo "$NREPO" --scope . --out "$NOUT" \
+    "${INV_CMD[@]}" --repo "$NREPO" --scope . --out "$NOUT" \
     > "$RUN/newline.err" 2>&1
   n_rc=$?
   if [ "$n_rc" != "0" ]; then
-    ok "J1: 줄바꿈 경로가 있으면 전체 인벤토리가 exit $n_rc 로 실패"
+    ok "J1: 줄바꿈 경로가 있으면 전체 인벤토리($INV_KIND)가 exit $n_rc 로 실패"
   else
     bad "J1: 줄바꿈 경로가 있는데 전체 인벤토리가 exit 0 으로 끝났습니다(분모가 쪼개진 경로로 오염됨)"
   fi
@@ -1029,7 +1085,7 @@ cat >"$RUN/norm-expected.jsonl" <<'EOF'
 EOF
 NORM_ARGS=(--input "$RUN/norm-raw1.jsonl" "$RUN/norm-raw2.jsonl" --out "$RUN/norm-out.jsonl"
   --repo-root "$NREPO4" --in-scope-files "$RUN/norm-in-scope.txt")
-NODE_FOR_HELPER="$(command -v node || true)"
+NODE_FOR_HELPER="${NODE_FOR_HELPER:-$(command -v node || true)}"
 if [ -f "$PLUGIN/scripts/normalize_candidates.py" ]; then
   NORM_KIND=python
   PY "$PLUGIN/scripts/normalize_candidates.py" "${NORM_ARGS[@]}" >/dev/null 2>"$RUN/norm.err"

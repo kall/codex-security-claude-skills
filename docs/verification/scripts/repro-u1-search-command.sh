@@ -271,7 +271,8 @@ fi
 
 # ---------------------------------------------------------------------------
 # H3. pathEnv 자기 완결성 — 이 값을 PATH 로 교체하면 rg 와 git 이 모두 해석된다.
-#     상류 generate_in_scope_files.py 가 둘 다 PATH 에서 찾기 때문이다.
+#     상류 인벤토리 도우미(npm 0.6.0 이하 generate_in_scope_files.py, npm 0.7.0 Node 헬퍼)가
+#     둘 다 PATH 에서 찾기 때문이다.
 # ---------------------------------------------------------------------------
 step "H3. pathEnv 자기 완결성 (rg·git 둘 다 해석)"
 if [ "$SEARCH_AVAILABLE" != "yes" ]; then
@@ -1211,7 +1212,7 @@ else
   bad "H14a-4: threatModelMarkdown=$H14A4_GOT, 스키마 기대=$H14A4_WANT"
 fi
 
-# H14a-5. npm 패키지 version(npmVersion). 매니페스트 버전은 npm 0.1.26~0.4.0 이 모두 0.1.95 라서
+# H14a-5. npm 패키지 version(npmVersion). 매니페스트 버전은 npm 0.1.26~0.7.0 이 모두 0.1.95 라서
 #         사람이 읽는 구분 축은 이 값뿐이다. 기대값은 package.json 을 직접 읽어 정한다.
 H14A5_WANT="$(PY - "$PLUGIN" <<'EOF'
 import json, pathlib, sys
@@ -1261,6 +1262,22 @@ for H14A7_CMD in bind-repo-scopes copy-deep-review-input; do
     bad "H14a-7: $H14A7_KEY 기대 kind=$H14A7_KIND, 실제 $(jget "$RUN/h14a.json" 'd.get("'"$H14A7_KEY"'")')"
   fi
 done
+
+# H14a-8. 인벤토리 도우미. npm 0.7.0 은 generate_in_scope_files.py 와 generate_rank_input.py 를 지우고
+#         런처 `--helper generate-in-scope-files|make-diff-rank-input` 으로 옮겼다(상류 05cceee24 #1432).
+#         기대 kind 는 사본의 파일로 정한다(스크립트·하위 명령이 있으면 python).
+if [ -f "$PLUGIN/scripts/generate_in_scope_files.py" ]; then H14A8_INV=python; else H14A8_INV=node-helper; fi
+if grep -q '"make-diff-rank-input"' "$PLUGIN/scripts/generate_rank_input.py" 2>/dev/null; then
+  H14A8_RANK=python
+else
+  H14A8_RANK=node-helper
+fi
+H14A8="$(jget "$RUN/h14a.json" 'd.get("inScopeInventory") == {"available": True, "kind": "'"$H14A8_INV"'", "reason": None} and d.get("diffRankInput") == {"available": True, "kind": "'"$H14A8_RANK"'", "reason": None}')"
+if [ "$H14A8" = "True" ]; then
+  ok "H14a-8: inScopeInventory.kind=$H14A8_INV·diffRankInput.kind=$H14A8_RANK"
+else
+  bad "H14a-8: 기대 kind=$H14A8_INV·$H14A8_RANK, 실제 $(jget "$RUN/h14a.json" '[d.get("inScopeInventory"), d.get("diffRankInput")]')"
+fi
 
 # H14b. 헬퍼 파일이 없는 플러그인 사본(상류 소스 체크아웃 형상)이면 불가 + "헬퍼 파일 없음".
 #       sdk 도 null 이어야 한다(형제 dist/ 가 없다).
@@ -1337,26 +1354,28 @@ rm -f "$NOHELPER/scripts/normalize_candidates.py"
 
 # H14b-8. 같은 헬퍼 없는 사본: 작업 목록 도우미는 불가, npmVersion 은 null(npm 레이아웃 아님),
 #         coverage 스키마가 없으면 coverageCompleteness 는 true(0.2.0 이하 필수 필드를 쓰는 쪽).
-H14B8="$(jget "$RUN/h14b.json" 'all((d.get(k) or {}).get("available") is False and (d.get(k) or {}).get("kind") is None and str((d.get(k) or {}).get("reason") or "").startswith(n + " 불가") for k, n in (("bindRepoScopes", "bind-repo-scopes"), ("copyDeepReviewInput", "copy-deep-review-input"))) and d.get("npmVersion") is None and d.get("coverageCompleteness") is True')"
+H14B8="$(jget "$RUN/h14b.json" 'all((d.get(k) or {}).get("available") is False and (d.get(k) or {}).get("kind") is None and str((d.get(k) or {}).get("reason") or "").startswith(n + " 불가") for k, n in (("bindRepoScopes", "bind-repo-scopes"), ("copyDeepReviewInput", "copy-deep-review-input"), ("inScopeInventory", "generate-in-scope-files"), ("diffRankInput", "make-diff-rank-input"))) and d.get("npmVersion") is None and d.get("coverageCompleteness") is True')"
 if [ "$H14B8" = "True" ]; then
   ok "H14b-8: 도우미 불가·npmVersion=null·coverageCompleteness=true(스키마 없음)"
 else
-  bad "H14b-8: $(jget "$RUN/h14b.json" '[d.get("bindRepoScopes"), d.get("copyDeepReviewInput"), d.get("npmVersion"), d.get("coverageCompleteness")]')"
+  bad "H14b-8: $(jget "$RUN/h14b.json" '[d.get("bindRepoScopes"), d.get("copyDeepReviewInput"), d.get("inScopeInventory"), d.get("diffRankInput"), d.get("npmVersion"), d.get("coverageCompleteness")]')"
 fi
 # H14b-9. 헬퍼가 없어도 generate_rank_input.py 에 하위 명령이 있으면 python 이다(npm 0.2.0 소스 형상).
 #         completeness 가 없는 coverage 스키마면 coverageCompleteness 는 false 다(npm 0.3.0 이후 형상).
 mkdir -p "$NOHELPER/schemas"
-printf 'bind = subparsers.add_parser(\n    "bind-repo-scopes",\n)\n' >"$NOHELPER/scripts/generate_rank_input.py"
+printf 'bind = subparsers.add_parser(\n    "bind-repo-scopes",\n)\ndiff = subparsers.add_parser(\n    "make-diff-rank-input",\n)\n' >"$NOHELPER/scripts/generate_rank_input.py"
+# npm 0.6.0 이하 형상: 인벤토리 스크립트가 있으면 헬퍼 없이도 python 이다.
+touch "$NOHELPER/scripts/generate_in_scope_files.py"
 printf '{"properties": {"deferred": {}}}\n' >"$NOHELPER/schemas/coverage.schema.json"
 NBOOT_PLUGIN="$NOHELPER" nboot "$RUN/h14b9.json" "$NODE_DIR:$EMPTY_BIN"
 expect_exit 0 "$?" "H14b-9 bind-repo-scopes 하위 명령만 있는 사본으로 부트스트랩"
-H14B9="$(jget "$RUN/h14b9.json" 'd.get("bindRepoScopes") == {"available": True, "kind": "python", "reason": None} and (d.get("copyDeepReviewInput") or {}).get("kind") is None and d.get("coverageCompleteness") is False')"
+H14B9="$(jget "$RUN/h14b9.json" 'd.get("bindRepoScopes") == {"available": True, "kind": "python", "reason": None} and (d.get("copyDeepReviewInput") or {}).get("kind") is None and d.get("coverageCompleteness") is False and d.get("inScopeInventory") == {"available": True, "kind": "python", "reason": None} and d.get("diffRankInput") == {"available": True, "kind": "python", "reason": None}')"
 if [ "$H14B9" = "True" ]; then
-  ok "H14b-9: 하위 명령별로 판정(bind=python, copy=불가)·completeness 없는 스키마는 false"
+  ok "H14b-9: 하위 명령별로 판정(bind·diffRank·inventory=python, copy=불가)·completeness 없는 스키마는 false"
 else
-  bad "H14b-9: $(jget "$RUN/h14b9.json" '[d.get("bindRepoScopes"), d.get("copyDeepReviewInput"), d.get("coverageCompleteness")]')"
+  bad "H14b-9: $(jget "$RUN/h14b9.json" '[d.get("bindRepoScopes"), d.get("copyDeepReviewInput"), d.get("inScopeInventory"), d.get("diffRankInput"), d.get("coverageCompleteness")]')"
 fi
-rm -rf "$NOHELPER/schemas" "$NOHELPER/scripts/generate_rank_input.py"
+rm -rf "$NOHELPER/schemas" "$NOHELPER/scripts/generate_rank_input.py" "$NOHELPER/scripts/generate_in_scope_files.py"
 
 # H14c. PATH 의 `node` 가 대상 저장소 안이면 거부하고 다음 후보를 쓴다.
 mkdir -p "$NT/node_modules/.bin"
@@ -1451,8 +1470,11 @@ else
   fi
 fi
 
-# H14g. 1 MiB 를 넘는 SECURITY.md 는 헬퍼가 exit 2 로 끝난다. 스킬은 이 종료코드로
-#       건너뛰기 분기를 탄다(중단하면 저장소가 자기 스캔을 막을 수 있다).
+# H14g. 1 MiB 를 넘는 SECURITY.md. npm 0.6.0 이하 헬퍼는 exit 2(`SECURITY.md exceeds 1 MiB`)로
+#       끝나고, 스킬은 이 종료코드로 건너뛰기 분기를 탄다(중단하면 저장소가 자기 스캔을 막을 수
+#       있다). npm 0.7.0 은 이 한도를 지웠다(상류 0b70ee90f #1883) — 같은 파일이 exit 0 으로
+#       해결된다. 매니페스트 버전이 같으므로 헬퍼 번들(helpers.mjs.br.part-*)에 한도 문구가
+#       있는지로 기대값을 고른다. 번들은 brotli 압축이라 Node 로 푼다.
 BIG="$RUN/big-target"
 mkdir -p "$BIG"
 PY -c 'import sys; open(sys.argv[1], "w").write("# Security\n" + "a" * (1024 * 1024 + 16))' "$BIG/SECURITY.md"
@@ -1468,11 +1490,35 @@ else
   bash -c "env -i $H14G_TCE CODEX_MCP_NODE_PATH=$H14G_NODE $H14G_LAUNCHER --helper resolve-security-md --repo $H14G_REPO --scope $H14G_REPO --out -" \
     >"$RUN/h14g.out" 2>"$RUN/h14g.helper.err"
   H14G_RC=$?
-  if [ "$H14G_RC" = "2" ] && grep -q '1 MiB' "$RUN/h14g.helper.err"; then
-    ok "H14g: 1 MiB 초과 SECURITY.md → 헬퍼 exit 2 + 크기 한도 오류 (스킬이 건너뛰기 분기로 감지 가능)"
-  else
-    bad "H14g: 헬퍼 exit $H14G_RC (기대 2) — $(head -c 300 "$RUN/h14g.helper.err")"
-  fi
+  H14G_NODE_RAW="$(jget "$RUN/h14g.json" '(d.get("node") or {}).get("path") or ""')"
+  H14G_LIMIT="$("$H14G_NODE_RAW" -e '
+const fs = require("fs"), zlib = require("zlib"), dir = process.argv[1];
+const parts = fs.readdirSync(dir).filter((f) => /^helpers\.mjs\.br\.part-\d+$/.test(f)).sort();
+if (!parts.length) process.exit(3);
+const text = zlib.brotliDecompressSync(Buffer.concat(parts.map((f) => fs.readFileSync(dir + "/" + f))));
+console.log(text.includes("SECURITY.md exceeds 1 MiB") ? "yes" : "no");
+' "$PLUGIN/mcp" 2>/dev/null)"
+  case "$H14G_LIMIT" in
+    yes)
+      if [ "$H14G_RC" = "2" ] && grep -q '1 MiB' "$RUN/h14g.helper.err"; then
+        ok "H14g: 1 MiB 초과 SECURITY.md → 헬퍼 exit 2 + 크기 한도 오류 (npm 0.6.0 이하 — 스킬이 건너뛰기 분기로 감지 가능)"
+      else
+        bad "H14g: 헬퍼 exit $H14G_RC (기대 2, 번들에 한도 문구 있음) — $(head -c 300 "$RUN/h14g.helper.err")"
+      fi
+      ;;
+    no)
+      # 출력은 `## SECURITY.md source: "SECURITY.md"` 머리줄 뒤에 원문 전체를 싣는다(실측).
+      if [ "$H14G_RC" = "0" ] && grep -qxF '# Security' "$RUN/h14g.out" \
+         && [ "$(wc -c < "$RUN/h14g.out" | tr -d ' ')" -gt 1048576 ]; then
+        ok "H14g: 1 MiB 초과 SECURITY.md 가 exit 0 으로 해결됨 (npm 0.7.0 — 한도 없음, 상류 #1883)"
+      else
+        bad "H14g: 헬퍼 exit $H14G_RC (기대 0, 번들에 한도 문구 없음) — $(head -c 300 "$RUN/h14g.helper.err")"
+      fi
+      ;;
+    *)
+      bad "H14g: 헬퍼 번들에서 한도 문구 유무를 읽지 못했습니다(node=$H14G_NODE_RAW) — 기대값을 고를 수 없습니다"
+      ;;
+  esac
 fi
 
 # H14h. 헬퍼 경로에 셸 메타문자가 들어도 인용본이 명령 치환을 막는다.

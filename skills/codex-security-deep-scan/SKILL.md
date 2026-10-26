@@ -13,7 +13,7 @@ description: >-
 결박되어 있어 동등 재현이 불가능하다. 이 스킬은 **정직한 축소판**이다 — 동등하지 않음을 이름·고지·
 요약에 명시한다(KTD3).
 
-**기준: npm 0.6.0(태그 `npm-v0.6.0`).** npm 0.2.0~0.5.1 설치본에서도 같은 절차로 동작한다(아래
+**기준: npm 0.7.0(태그 `npm-v0.7.0`).** npm 0.2.0~0.6.0 설치본에서도 같은 절차로 동작한다(아래
 「인벤토리」의 버전 메모, 실측: `docs/verification/phase4-deep-lite-pipeline.md`).
 
 **상류 저장 정책(`references/artifact-storage.md`)은 적용하지 않는다(P6-KTD8).** 근거와 범위는 Phase 1
@@ -33,13 +33,16 @@ SKILL.md의 prompt-only 절이 정본이다. 이 스킬이 후속 단계에서 �
    Code 조건에서 영구 `incomplete`라 폐기했다. 상류는 npm 0.5.0에서 preflight 자체를 지웠다, #1609).
 3. `bootstrap.py --target-repo <root> --require-search`로 pluginRoot·python·scanDir·
    `searchCommand`·`trustedPathEnv`를 얻는다. **`--require-search`가 필요한 이유**: 인벤토리
-   (`in_scope_files.txt`)를 Phase 1 2단계와 같은 상류 `generate_in_scope_files.py`로 만들고, 그
-   스크립트가 `rg`를 **PATH에서만** 해석하기 때문이다. 이 인벤토리가 두 리뷰 패스의 작업 목록이자
+   (`in_scope_files.txt`)를 Phase 1 2단계와 같은 상류 인벤토리 도우미(npm 0.6.0 이하
+   `generate_in_scope_files.py`, npm 0.7.0 Node 헬퍼 `generate-in-scope-files`)로 만들고, 그
+   도우미가 `rg`를 **PATH에서만** 해석하기 때문이다. 이 인벤토리가 두 리뷰 패스의 작업 목록이자
    커버리지 분모다(아래 「인벤토리」).
    확보 실패 시 `bootstrap.py`가 exit 1 + `stage=searchCommand`로 멈추므로 스캔을 시작하지 않는다.
    Phase 1 0단계의 **후보 정규화 확인**도 적용한다 — `candidateNormalizer.available`이 `false`면 중단한다.
-4. **플러그인 스크립트 호출 시 PATH를 교체한다.** 대상 저장소를 `cwd`로 실행하는 모든 상류 스크립트는
-   `PATH=<search_path_env>`로 호출한다 — `<search_path_env>` = `shellQuoted.searchPathEnv`(인용본이므로
+   `inScopeInventory.available`이 `false`여도 중단한다(인벤토리를 만들 수 없다).
+4. **인벤토리 호출의 PATH를 교체한다.** `PATH=<search_path_env>`는 `rg`가 필요한 **인벤토리 호출(Phase 1
+   2단계 1번)에만** 붙인다. 정규화·`bind-repo-scopes` 등 나머지 명령형은 Phase 1 그대로 `<trusted_child_env>`의
+   정화된 PATH(`trustedPathEnv`)를 쓴다. `<search_path_env>` = `shellQuoted.searchPathEnv`(인용본이므로
    `"…"`로 다시 감싸지 않는다). **앞에 덧붙이지 말고 교체한다.** 원시 `$PATH`를 물려주면 대상 저장소가
    커밋한 `./node_modules/.bin/git`·`rg`가 사용자 권한으로 실행된다(Phase 1 SKILL.md 0단계에 근거와
    실측 재현이 있다).
@@ -57,20 +60,24 @@ SKILL.md의 prompt-only 절이 정본이다. 이 스킬이 후속 단계에서 �
 
 ## 인벤토리 (R6 — 실측 계약: docs/verification/phase4-deep-lite-pipeline.md)
 
-Phase 1 2단계 1번 명령을 **그대로** 실행해 `<disc>/in_scope_files.txt`를 만든다(`<disc>` =
-`<scan_dir>/artifacts/02_discovery`). 실패 처리·분모 규칙도 Phase 1 2단계 1번이 정본이다. 인벤토리를
+Phase 1 2단계 1번 명령(`inScopeInventory.kind`로 고름)을 **그대로** 실행해 `<disc>/in_scope_files.txt`를
+만든다(`<disc>` = `<scan_dir>/artifacts/02_discovery`). 실패 처리·분모 규칙도 Phase 1 2단계 1번이 정본이다. 인벤토리를
 손으로 만들거나 줄이지 않는다.
 
-**랭킹은 없다(npm 0.4.0).** 상류가 랭킹 헬퍼를 모두 은퇴시켰다(`f894583a3`, #1607). 0.4.0 설치본에서
-`generate_rank_input.py`의 `make-repo-rank-input`·`make-rank-shards`·`make-rank-pool-plan`·
+**랭킹은 없다(npm 0.4.0부터).** 상류가 랭킹 헬퍼를 모두 은퇴시켰다(`f894583a3`, #1607). 0.4.0~0.6.0
+설치본에서 `generate_rank_input.py`의 `make-repo-rank-input`·`make-rank-shards`·`make-rank-pool-plan`·
 `validate-rank-shard`·`validate-rank-worker`·`validate-rank-pool`·`merge-rank-outputs`·
 `select-deep-review-input`은 `invalid choice`로 exit 2이고, 같은 이름의 Node 헬퍼도 없다(exit 2, 실측).
-상류 `scan-artifacts-and-ledger.md`는 이들을 "legacy ranking helpers"로 적고, 공식 deep도 랭킹 대신
-독립 표준 스캔을 반복한다. 그래서 deep-lite는 파일을 고르지 않고 **인벤토리 전체를 두 번 리뷰한다**.
+npm 0.7.0은 `generate_rank_input.py` 자체를 지웠고, 런처의 헬퍼 목록에도 이 이름이 없다(`make-repo-rank-input`
+exit 2, 실측). 0.6.0 `scan-artifacts-and-ledger.md`는 이들을 "legacy ranking helpers"로 적었다. 0.7.0은 이
+문서를 "Standalone Diff Worklists and Artifacts"로 다시 써서 그 문구가 없다 — 이 절이 권위를 가진다. 공식
+deep도 랭킹 대신 독립 표준 스캔을 반복한다. 그래서 deep-lite는 파일을 고르지 않고 **인벤토리 전체를 두 번 리뷰한다**.
 랭킹·상위 % 선택을 이 스킬에서 다시 구현하지 않는다(상류 로직 재구현 금지).
 
 다음 상류 경로는 **쓰지 않는다**(실측 근거):
-- `make-repo-scope-input --scopes-file ["."]`: 상류가 명시 스코프용으로 남긴 경로다. 합성 저장소에서
+- `make-repo-scope-input --scopes-file ["."]`: 상류가 명시 스코프용으로 남긴 경로다(npm 0.6.0 이하
+  `generate_rank_input.py` 하위 명령, npm 0.7.0 Node 헬퍼 — 0.7.0 상류 `security-scan` SKILL.md는 SDK의
+  `CODEX_SECURITY_TARGET_PATHS_FILE` 경로에서 이 헬퍼를 쓴다). 합성 저장소에서
   `in_scope_files.txt`와 같은 20개 경로를 냈다(접두사 `./` 차이만 있음). 커버리지 분모와 다른 두 번째
   목록을 만들 이유가 없다. 하위 경로 스캔은 Phase 1처럼 `--scope`로 처리한다.
 - `copy-deep-review-input`: diff 스캔 전용 복사 헬퍼다(npm 0.3.0부터 Node 헬퍼). 입력 행에
@@ -78,9 +85,10 @@ Phase 1 2단계 1번 명령을 **그대로** 실행해 `<disc>/in_scope_files.tx
   `missing fields ["area","preview"]`로 거부한다(exit 1).
 
 **버전 메모.** npm 0.2.0의 `rank_preview.TEXT_CODE_EXTENSIONS` 확장자 필터는 npm 0.3.0에서 없어졌다
-(#1347 "include text files regardless of extension"). 0.4.0의 `rank_preview.py`는 diff 미리보기와 바이너리
-판정만 남았다. deep-lite 인벤토리는 원래 확장자 필터가 없는 `generate_in_scope_files.py` 목록이라 이
-변화와 무관하다. npm 0.2.0·0.3.0 설치본에도 랭킹 헬퍼가 남아 있지만 이 스킬은 버전과 관계없이 부르지
+(#1347 "include text files regardless of extension"). 0.4.0~0.6.0의 `rank_preview.py`는 diff 미리보기와 바이너리
+판정만 남았고, 0.7.0은 이 파일도 Node(`source-preview.ts`)로 옮겼다(#1432). deep-lite 인벤토리는 원래 확장자
+필터가 없는 전체 인벤토리 목록이라 이 변화와 무관하다. 0.7.0 Node 인벤토리의 출력 집합은 0.6.0 Python
+스크립트와 같다(`repro-u4.sh` G 블록). npm 0.2.0·0.3.0 설치본에도 랭킹 헬퍼가 남아 있지만 이 스킬은 버전과 관계없이 부르지
 않는다.
 
 ### 워커 에이전트 유형 (리뷰 팬아웃)
@@ -134,8 +142,8 @@ validation(compact 1회) → attack-path(compact 1회) → canonical JSON(순서
 (리페어 루프) → `workbench_glue.py complete`(게이트 실패 3선택지). Phase 1·2 SKILL.md를 참조한다.
 
 - **`bind-repo-scopes`의 위치**: npm 0.2.0은 `generate_rank_input.py bind-repo-scopes`(Python), npm 0.3.0부터는
-  Node 헬퍼(`launch_codex_security_mcp --helper bind-repo-scopes`, 인자 같음)다. 0.4.0의 Python
-  스크립트에는 이 서브커맨드가 없다(exit 2, 실측). 명령은 Phase 1 6단계 1번이 정본이다. 저장소 전체
+  Node 헬퍼(`launch_codex_security_mcp --helper bind-repo-scopes`, 인자 같음)다. 0.4.0~0.6.0의 Python
+  스크립트에는 이 서브커맨드가 없다(exit 2, 실측). 0.7.0에는 그 스크립트가 없다. 명령은 Phase 1 6단계 1번이 정본이다. 저장소 전체
   스캔이면 부르지 않는다.
 - **정산의 빈 인벤토리**: `coverage_reconcile.py`는 빈 `in_scope_files.txt`를 하드 실패(exit 3)로
   처리한다. deep-lite는 인벤토리 전체를 리뷰하므로 빈 인벤토리는 인벤토리 단계 실패이거나 정말 빈

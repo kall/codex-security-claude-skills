@@ -207,17 +207,19 @@ python_info = data.get("python") or {}
 plugin_root = pathlib.Path(data["pluginRoot"])
 search = data.get("searchCommand")
 normalizer = data.get("candidateNormalizer") or {}
+inventory = data.get("inScopeInventory") or {}
 # 저장소 전체 스캔과 deep-lite 는 검색 명령 없이는 시작조차 못 한다. 후보 정규화가
-# 불가하면(npm 0.2.0 소스 체크아웃) 전체·diff·deep 스캔이 0단계에서 멈춘다. 그 상태를
-# "실행 환경 정상"으로 표시하면 주력 스킬 불가와 전부 정상이 같은 신호가 된다.
-full_ok = bool(search) and bool(normalizer.get("available"))
+# 불가하면(npm 0.2.0 소스 체크아웃) 전체·diff·deep 스캔이 0단계에서 멈춘다. 인벤토리
+# 도우미가 불가해도(npm 0.7.0 소스 체크아웃) 마찬가지다. 그 상태를 "실행 환경 정상"으로
+# 표시하면 주력 스킬 불가와 전부 정상이 같은 신호가 된다.
+full_ok = bool(search) and bool(normalizer.get("available")) and bool(inventory.get("available"))
 print("\n[프로브] 실행 환경 정상" if full_ok else "\n[프로브] 부분 정상 — 저장소 전체 스캔 불가")
 print(f"  플러그인 : {plugin_root}")
 print(f"  버전     : 매니페스트 {data.get('pluginVersion')} · npm {data.get('npmVersion') or '알 수 없음'}"
       f" (출처: {data.get('pluginSource')})")
 print(f"  Python   : {python_info.get('path')} ({python_info.get('version')})")
 
-# 검색 명령(ripgrep). 저장소 전체 스캔·deep-lite 는 인벤토리를 상류 스크립트에 위임하므로
+# 검색 명령(ripgrep). 저장소 전체 스캔·deep-lite 는 인벤토리를 상류 도우미에 위임하므로
 # 필수다. diff 스캔과 나머지 스킬(validate/patch/verify-fix/scan-match)은 없어도 동작한다.
 if search:
     origin = {
@@ -241,11 +243,21 @@ else:
     print("  정규화   : 사용 불가 — 전체·diff·deep 스캔을 시작할 수 없습니다")
     print(f"             {normalizer.get('reason') or 'candidateNormalizer 없음'}")
 
+# 인벤토리 도우미(npm 0.7.0 부터 Node 헬퍼, 상류 #1432). 불가이면 전체·diff·deep 스캔이 시작하지 않는다.
+if inventory.get("available"):
+    kind = {"python": "Python 스크립트", "node-helper": "Node 헬퍼"}.get(
+        inventory.get("kind"), inventory.get("kind"))
+    print(f"  인벤토리 : {kind}")
+else:
+    print("  인벤토리 : 사용 불가 — 전체·diff·deep 스캔을 시작할 수 없습니다")
+    print(f"             {inventory.get('reason') or 'inScopeInventory 없음'}")
+
 # 작업 목록 도우미(npm 0.3.0 부터 Node 헬퍼). scoped-path 바인딩과 diff 리뷰 입력 복사에 쓴다.
 # 불가여도 저장소 전체 스캔은 영향이 없으므로 종료코드를 바꾸지 않는다. 못 쓰는 경로만 알린다.
 for key, label, consumer in (
     ("bindRepoScopes", "경로 바인딩", "scoped-path 스캔을"),
     ("copyDeepReviewInput", "diff 입력 ", "diff 스캔을"),
+    ("diffRankInput", "diff 목록 ", "diff 스캔을"),
 ):
     helper_info = data.get(key) or {}
     if helper_info.get("available"):

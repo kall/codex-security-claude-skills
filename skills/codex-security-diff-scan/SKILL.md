@@ -19,9 +19,10 @@ codex-security 플러그인의 `security-diff-scan` 스킬을 Claude가 직접 �
 SKILL.md의 prompt-only 절이 정본이다. 이 스킬이 읽는 `skills/threat-model/SKILL.md`·
 `skills/validation/SKILL.md`·`skills/attack-path-analysis/SKILL.md`가 그 정책을 가리켜도 멈추지 않고
 터미널 정본 경로를 계속한다. npm 0.4.0 `skills/security-diff-scan/SKILL.md`는 터미널 절차를 지우고
-MCP가 없으면 "report the blocker; do not author canonical files through a shell"이라고 쓴다. 이 문장도
-같은 근거로 적용하지 않는다. 0.4.0에서도 diff 인벤토리 스크립트·finalizer·`complete-scan`은 이 경로를
-받아들인다(`repro-u4.sh` I 블록, `repro-u7` I17).
+MCP가 없으면 "report the blocker; do not author canonical files through a shell"이라고 썼다. npm 0.7.0은
+같은 취지를 "report the blocker without creating a replacement scan or shell-authored canonical files"로
+고쳐 쓴다. 이 문장도 같은 근거로 적용하지 않는다. 0.7.0에서도 diff 인벤토리 도우미(Node 헬퍼)·
+finalizer·`complete-scan`은 이 경로를 받아들인다(`repro-u4.sh` I 블록, `repro-u7` I17).
 
 ## 대상 해석 (R8)
 
@@ -35,8 +36,8 @@ MCP가 없으면 "report the blocker; do not author canonical files through a sh
 
 1. `bootstrap.py --target-repo <저장소 루트>`로 pluginRoot·python·scanDir을 얻는다(Phase 1 0단계).
    Phase 1 0단계의 **후보 정규화 확인**을 그대로 적용한다 — `candidateNormalizer.available`이 `false`면
-   중단한다(npm 0.2.0 이후 소스 체크아웃 등). `copyDeepReviewInput.available`이 `false`여도 중단한다
-   (2단계의 필수 호출을 할 수 없다).
+   중단한다(npm 0.2.0 이후 소스 체크아웃 등). `copyDeepReviewInput`·`diffRankInput`·`inScopeInventory` 중
+   하나라도 `available`이 `false`여도 중단한다(2단계의 필수 호출을 할 수 없다). 사유는 각 객체의 `reason`에 있다.
 2. **워크벤치 등록(Phase 2)**: `workbench_glue.py register`에 diff 대상을 인자로 준다(R10).
    ```bash
    # refs (커밋/브랜치)
@@ -58,6 +59,7 @@ MCP가 없으면 "report the blocker; do not author canonical files through a sh
    | `target.targetId`·`target.displayName` | 같은 이름으로 그대로 복사 |
    | `diffTarget.baseRevision`·`diffTarget.headRevision` | `scan.target.baseRevision`·`headRevision`(해석된 커밋 SHA) |
    | `diffTarget.snapshotDigest` | `scan.target.snapshotDigest` |
+   | `scope.requiredIncludePaths`(배열이면 그대로) / `null`이면 `[requestedPath]`(diff는 `requestedPath: "."` → `["."]`) | `scan.scope.includePaths`, `coverage.includePaths`(두 곳에 같은 값) |
    | `diffTarget.kind` | `coverage.mode` — `range` → `branch_diff`, `commit` → `commit`, `working_tree` → `working_tree` |
    | (diff 종류와 무관) | `coverage.inventoryStrategy` = `diff`. 상류 스키마 enum은 `repository \| scoped_path \| diff \| directory \| custom`이다. `git_diff`를 쓰면 finalize가 `coverage.schema.inventoryStrategy: unsupported value 'git_diff'`로 거부한다(2026-10-20 0.5.0 스모크) |
 
@@ -78,12 +80,18 @@ MCP가 없으면 "report the blocker; do not author canonical files through a sh
    저장소 수준 위협 모델을 만든다(무관한 diff에도 유효하도록). 5단계에서 이 모델을 정본
    `scan.threatModel`에 싣는다(Phase 1 5단계 "정본 위협 모델" 표). `scope.includePaths`는 **모델의
    범위**인 `["."]`이며 변경 파일 목록으로 바꾸지 않는다(상류 `skills/security-diff-scan/SKILL.md` 1항).
-2. **Discovery — diff 범위**: 인벤토리를 diff-rank-input으로 생성한다.
+2. **Discovery — diff 범위**: 인벤토리를 diff-rank-input으로 생성한다. 0단계 `diffRankInput.kind`로
+   명령을 고른다. 인자는 두 경로가 같다(npm 0.7.0이 Python 스크립트를 지우고 Node 헬퍼로 옮겼다,
+   상류 05cceee24 #1432).
    ```bash
-   # refs (커밋/브랜치)
+   # kind = python (npm 0.6.0 이하) — refs (커밋/브랜치)
    env -i <trusted_child_env> <python_command> <plugin_dir>/scripts/generate_rank_input.py make-diff-rank-input --repo <repo_root> --base <base> --mode revisions --head <head> --out <scan_dir>/artifacts/02_discovery/rank_input.jsonl
-   # working-tree (로컬 패치)
+   # kind = python — working-tree (로컬 패치)
    env -i <trusted_child_env> <python_command> <plugin_dir>/scripts/generate_rank_input.py make-diff-rank-input --repo <repo_root> --base <base> --mode local-patch --out <scan_dir>/artifacts/02_discovery/rank_input.jsonl
+   # kind = node-helper (npm 0.7.0) — refs
+   env -i <trusted_child_env> CODEX_MCP_NODE_PATH=<node> <security_md_launcher> --helper make-diff-rank-input --repo <repo_root> --base <base> --mode revisions --head <head> --out <scan_dir>/artifacts/02_discovery/rank_input.jsonl
+   # kind = node-helper — working-tree
+   env -i <trusted_child_env> CODEX_MCP_NODE_PATH=<node> <security_md_launcher> --helper make-diff-rank-input --repo <repo_root> --base <base> --mode local-patch --out <scan_dir>/artifacts/02_discovery/rank_input.jsonl
    ```
    이어서 리뷰 입력을 파생한다(필수 호출). 0단계 `copyDeepReviewInput.kind`로 명령을 고른다. 인자는 같다.
    ```bash
@@ -94,14 +102,25 @@ MCP가 없으면 "report the blocker; do not author canonical files through a sh
    ```
    Node 헬퍼는 `make-diff-rank-input`이 만든 행(`path`·`area`·`preview`)을 그대로 받는다. 행을 손으로
    만들거나 고치지 않는다. 두 경로 모두 랭킹 입력의 모든 행을 같은 순서로 옮긴다(`repro-u4.sh` L2).
-   diff 범위 인벤토리(`in_scope_files.txt`)도 **플러그인 스크립트로** 만든다. Phase 1의 `rg --files`
-   전체 목록을 쓰면 안 된다(범위가 저장소 전체가 된다):
+   이 두 단계(`make-diff-rank-input` → `copy-deep-review-input`)의 상류 서술은 npm 0.7.0
+   `skills/security-scan/references/scan-artifacts-and-ledger.md`의 "Changed-file Worklist" 절이다("Standalone Diff
+   Worklists and Artifacts" — 레거시 diff 경로 전용으로 다시 쓰였다). 그 절의 MCP 저장 도구 지시는 P6-KTD8에 따라
+   적용하지 않는다.
+   diff 범위 인벤토리(`in_scope_files.txt`)도 **상류 인벤토리 도우미로** 만든다. 0단계 `inScopeInventory.kind`로
+   명령을 고른다. Phase 1의 `rg --files` 전체 목록을 쓰면 안 된다(범위가 저장소 전체가 된다):
    ```bash
-   # refs
+   # kind = python (npm 0.6.0 이하) — refs
    env -i <trusted_child_env> <python_command> <plugin_dir>/scripts/generate_in_scope_files.py --repo <repo_root> --scope . --diff-base <base> --diff-head <head> --diff-mode revisions --out <scan_dir>/artifacts/02_discovery/in_scope_files.txt
-   # working-tree
+   # kind = python — working-tree
    env -i <trusted_child_env> <python_command> <plugin_dir>/scripts/generate_in_scope_files.py --repo <repo_root> --scope . --diff-base <base> --diff-mode local-patch --out <scan_dir>/artifacts/02_discovery/in_scope_files.txt
+   # kind = node-helper (npm 0.7.0) — refs
+   env -i <trusted_child_env> CODEX_MCP_NODE_PATH=<node> <security_md_launcher> --helper generate-in-scope-files --repo <repo_root> --scope . --diff-base <base> --diff-head <head> --diff-mode revisions --out <scan_dir>/artifacts/02_discovery/in_scope_files.txt
+   # kind = node-helper — working-tree
+   env -i <trusted_child_env> CODEX_MCP_NODE_PATH=<node> <security_md_launcher> --helper generate-in-scope-files --repo <repo_root> --scope . --diff-base <base> --diff-mode local-patch --out <scan_dir>/artifacts/02_discovery/in_scope_files.txt
    ```
+   Node 헬퍼의 런처·`env -i`·`CODEX_MCP_NODE_PATH`는 Phase 1 SKILL.md 0단계 3번과 같다(P6-KTD6). 두 경로의
+   출력 집합은 같다(`repro-u4.sh` I 블록, 0.6.0·0.7.0 실측). 성공 출력은 인벤토리가 `Recorded N in-scope files.`,
+   랭킹 입력이 `Wrote N rows to <경로>`다.
 
    > **셸에 보간하는 모든 값은 인용본을 쓴다** — `<trusted_child_env>` =
    > `trustedChildEnvShell`, 나머지 경로는 `shellQuoted.*`(`repoRoot`·`scanDir`·
@@ -112,7 +131,8 @@ MCP가 없으면 "report the blocker; do not author canonical files through a sh
    > 무효가 된다(실측). 위 명령형처럼 자리표시자는 맨몸으로 쓴다. 정본 근거는
    > Phase 1 SKILL.md 2단계.
    `RIPGREP_CONFIG_PATH=`는 **diff 경로에서는 실효가 없다** — diff 모드는 `git`만 쓰고 `rg`를
-   타지 않는다(실측: 오염된 설정에서도, PATH에 `rg`가 아예 없어도 결과가 같다). 전체 스캔
+   타지 않는다(실측: 오염된 설정에서도, PATH에 `rg`가 아예 없어도 결과가 같다. npm 0.7.0 Node 헬퍼도
+   diff 경로에서는 `git diff`·`git ls-files`만 부른다). 전체 스캔
    인벤토리 호출과 형태를 맞춰 두는 방어 조치이며, 근거는 Phase 1 SKILL.md 2단계가 정본이다.
 
    **PATH는 `<trusted_child_env>` 안에 이미 있다.** `trustedChildEnvShell`의 `PATH`는 bootstrap의
@@ -123,7 +143,7 @@ MCP가 없으면 "report the blocker; do not author canonical files through a sh
    저장소가 커밋한 `./node_modules/.bin/git`이 실행된다(실측). 전체 스캔과 같은 이유이며 정본
    서술은 Phase 1 SKILL.md 2단계에 있다(P5-KTD2).
 
-   **diff 인벤토리에 들어가는 파일(npm 0.4.0 기준).** diff 인벤토리와 diff 랭킹 입력은 같은 규칙을
+   **diff 인벤토리에 들어가는 파일(npm 0.4.0~0.7.0).** diff 인벤토리와 diff 랭킹 입력은 같은 규칙을
    쓴다(`repro-u4.sh` I 블록).
    - **바이너리가 아닌 변경 파일 전부**다. 파일 이름·확장자·디렉터리로 거르지 않는다(상류
      `skills/security-diff-scan/SKILL.md`: "changed text files regardless of filename, extension, or
@@ -152,7 +172,7 @@ MCP가 없으면 "report the blocker; do not author canonical files through a sh
    env -i <trusted_child_env> CODEX_MCP_NODE_PATH=<node> <security_md_launcher> --helper normalize-candidates --input <raw1.jsonl> [...] --out <scan_dir>/artifacts/02_discovery/candidate_ledger.jsonl --repo-root <repo_root> --in-scope-files <scan_dir>/artifacts/02_discovery/in_scope_files.txt --allow-missing-in-scope
    ```
    diff 인벤토리에는 **삭제된 경로**가 포함되며(예: `git rm` 된 파일), 이 플래그가 없으면
-   정규화가 exit 2로 실패한다(실측). 문구는 npm 0.1.32 이하 Python이 `in-scope file row N: [Errno 2] No such file or directory: '<경로>'`, npm 0.2.0 Node 헬퍼가 `in-scope file row N: ENOENT: no such file or directory, realpath '<경로>'`다(npm 0.4.0도 같다). 플래그를 붙여도
+   정규화가 exit 2로 실패한다(실측). 문구는 npm 0.1.32 이하 Python이 `in-scope file row N: [Errno 2] No such file or directory: '<경로>'`, npm 0.2.0 Node 헬퍼가 `in-scope file row N: ENOENT: no such file or directory, realpath '<경로>'`다(npm 0.4.0·0.7.0도 같다). 플래그를 붙여도
    후보 location 파일의 실존 검사는 그대로 수행된다.
 
    **삭제된 파일에 대한 finding 처리**: head 시점에 존재하지 않는 경로만 `locations`에 갖는
