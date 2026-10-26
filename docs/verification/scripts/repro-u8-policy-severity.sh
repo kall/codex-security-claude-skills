@@ -9,7 +9,9 @@
 #   P2  스냅샷 벡터 — inheritedPolicySha256 / previousPolicySha256 이 상류 규칙으로 독립 계산한 기대값과
 #       같은가(조상 정책 0개·1개·링크). 대상 해석은 상류 CLI `policy --dry-run --json` 과 대조
 #   P3  출력 디렉터리 — 위치·0700·0600·previous-SECURITY.md 선기록, 저장소 안 상태 디렉터리 거부(저장소 무변경)
-#   P4  1 MiB 초과 정책은 해결 전에 보고
+#   P4  1 MiB 정책 한도 — npm 0.6.0 이하: 초과 정책은 해결 전에 보고, 1 MiB 초과 초안 거부.
+#       npm 0.7.0 이상(0b70ee90f #1883): 큰 정책·큰 초안을 상류처럼 받아들인다. 기대 버전은 설치된
+#       dist 의 package.json 버전으로 정하고(POLICY_SIZE_LIMIT), 스크립트의 실제 판별(dist 문구 프로브)과 대조한다
 #   P5  헬퍼 없는 플러그인 사본 → 부트스트랩 available:false + prepare 중단 안내
 #   P6  저장 전 검사·반환 처리 — 허용 루트 밖 절대 경로·개인 키 머리글 등 거부, 깨끗한 문서 수용,
 #       비덮어쓰기, strict 스키마, blockedReason, 빈 markdown, 재시도 한도
@@ -125,6 +127,10 @@ PYTHON_B="$(jget "$RUN/boot.json" '(d["python"] or {}).get("path") or ""')"
 # 지시 첫 문장이 다르고 finalizer 에 --write-threat-model 이 없다. 그 사본에서는 해당 단언 대신 NOTE 를
 # 낸다(repro-u4 I9·I13 과 같은 규약). 판별은 같은 릴리즈의 스키마 변경을 보는 부트스트랩 필드로 한다.
 POLICY_020="$(jget "$RUN/boot.json" 'd.get("threatModelMarkdown")')"
+# 1 MiB 정책 한도는 npm 0.6.0 이하 계약이다(0.7.0 #1883 에서 삭제). 기대값은 dist 문구가 아니라 패키지
+# 버전으로 정한다 — 스크립트의 판별(dist 문구 프로브)이 맞는지를 이 값과 대조하기 위해서다.
+PKG_VERSION="$(PY -c 'import json,sys; print(json.load(open(sys.argv[1])).get("version",""))' "$DIST/../package.json" 2>/dev/null)"
+POLICY_SIZE_LIMIT="$(PY -c 'import re,sys; m=re.match(r"(\d+)\.(\d+)\.(\d+)", sys.argv[1]); print("unknown" if not m else ("false" if tuple(map(int,m.groups())) >= (0,7,0) else "true"))' "$PKG_VERSION")"
 note020() { printf 'NOTE %s: 이 플러그인 사본은 npm 0.2.0 이전이라 0.2.0 정책 계약 단언 대상이 아닙니다\n' "$1"; }
 [ "$HELPER_OK" = "true" ] || missing "SECURITY.md 헬퍼 불가: $(jget "$RUN/boot.json" 'd["securityMdHelper"]["reason"]')"
 [ -n "$DIST" ] || missing "상류 dist 없음(소스 체크아웃?): $(jget "$RUN/boot.json" 'd["sdk"]["reason"]')"
@@ -312,24 +318,51 @@ contains "$(cat "$RUN/p3f.json")" "신뢰 게이트 거부" "P3 --sdk-dist 거�
 # ---------------------------------------------------------------------------
 # P4. 1 MiB 초과 정책 — 해결 전에 보고
 # ---------------------------------------------------------------------------
-step "P4. 1 MiB 초과 정책"
+step "P4. 1 MiB 정책 한도(npm $PKG_VERSION, 한도 기대=$POLICY_SIZE_LIMIT)"
 R4="$RUN/repos/big"
 mkrepo "$R4"; mkdir -p "$R4/svc/deep" "$R4/other"
 head -c 1100000 /dev/zero | tr '\0' 'x' >"$R4/svc/deep/SECURITY.md"
 head -c 1100000 /dev/zero | tr '\0' 'y' >"$R4/other/SECURITY.md"
 printf 'ok\n' >"$R4/svc/main.py"; commit_all "$R4"
-RP prepare "${PREP_ARGS[@]}" --bootstrap-repo-root "$R4" --repository "$R4" --path svc >"$RUN/p4.json"; code=$?
-expect_exit 2 "$code" "P4 컴포넌트 안 1 MiB 초과 정책이면 중단"
-P4OUT="$(cat "$RUN/p4.json")"
-contains "$P4OUT" "svc/deep/SECURITY.md" "P4 초과 정책 경로를 보고"
-contains "$P4OUT" "1 MiB" "P4 1 MiB 사유"
-[ -e "$STATE/policies/big" ] && bad "P4 해결 전 중단인데 출력 루트가 생김" || ok "P4 해결 전 중단 — 출력 디렉터리 미생성"
-# 관계없는 컴포넌트의 초과 정책은 막지 않고 참고로만 보고한다
-mkdir -p "$R4/web"; printf 'w\n' >"$R4/web/index.js"
-RP prepare "${PREP_ARGS[@]}" --bootstrap-repo-root "$R4" --repository "$R4" --path web >"$RUN/p4b.json"; code=$?
-expect_exit 0 "$code" "P4 관계없는 초과 정책은 중단 사유가 아님"
-contains "$(cat "$RUN/p4b.json")" "other/SECURITY.md" "P4 관계없는 초과 정책도 참고로 보고"
-RP cleanup --output-dir "$(jget "$RUN/p4b.json" 'd.get("outputDir","")')" >/dev/null 2>&1
+if [ "$POLICY_SIZE_LIMIT" = "unknown" ]; then
+  bad "P4 dist 패키지 버전을 읽지 못함: [$PKG_VERSION]"
+elif [ "$POLICY_SIZE_LIMIT" = "false" ]; then
+  # npm 0.7.0 이상: 상류 크기 한도가 없다. 무관한 컴포넌트(other)의 1 MiB 초과 정책은 가이던스에 들어가지
+  # 않으므로 막지 않고, 0.6.0 과 달리 참고 보고도 하지 않는다(크기 검사 없음).
+  mkdir -p "$R4/web"; printf 'w\n' >"$R4/web/index.js"; commit_all "$R4"
+  RP prepare "${PREP_ARGS[@]}" --bootstrap-repo-root "$R4" --repository "$R4" --path web >"$RUN/p4.json"; code=$?
+  expect_exit 0 "$code" "P4 (0.7.0+) 무관한 1 MiB 초과 정책을 막지 않음"
+  expect_eq "null" "$(jget "$RUN/p4.json" 'd.get("policySizeLimit","missing")')" "P4 (0.7.0+) policySizeLimit=null(dist 프로브)"
+  expect_eq "[]" "$(jget "$RUN/p4.json" 'd.get("oversizedUnrelatedPolicies")')" "P4 (0.7.0+) 크기 검사 없음 — oversizedUnrelatedPolicies 빈 배열"
+  RP cleanup --output-dir "$(jget "$RUN/p4.json" 'd.get("outputDir","")')" >/dev/null 2>&1
+  # 상류 한도는 없어도 이 스킬의 프롬프트 상한(80,000자)이 있다. 컴포넌트 아래·대상·상속 정책은 가이던스로
+  # 프롬프트에 들어가므로 prepare 가 가이던스를 해결한 시점에 멈추고 출력 디렉터리를 남기지 않아야 한다.
+  # 첫 경우(svc/deep/SECURITY.md)는 이미 있다.
+  for big in svc/deep/SECURITY.md svc/SECURITY.md SECURITY.md; do
+    if [ ! -f "$R4/$big" ]; then head -c 1100000 /dev/zero | tr '\0' 'z' >"$R4/$big"; commit_all "$R4"; fi
+    N4_BEFORE="$(find "$STATE/policies" -mindepth 2 -maxdepth 2 2>/dev/null | wc -l)"
+    RP prepare "${PREP_ARGS[@]}" --bootstrap-repo-root "$R4" --repository "$R4" --path svc >"$RUN/p4g.json"; code=$?
+    expect_exit 2 "$code" "P4g (0.7.0+) 큰 가이던스($big) → prepare 단계에서 거부"
+    contains "$(cat "$RUN/p4g.json")" "프롬프트 상한 80000자" "P4g($big) 프롬프트 상한 사유"
+    contains "$(cat "$RUN/p4g.json")" '"guidanceCharacters"' "P4g($big) 가이던스 크기 보고"
+    expect_eq "$N4_BEFORE" "$(find "$STATE/policies" -mindepth 2 -maxdepth 2 2>/dev/null | wc -l)" "P4g($big) 출력 디렉터리 미잔존"
+    "${GITC[@]}" -C "$R4" rm -q "$big" && "${GITC[@]}" -C "$R4" commit -qm "drop $big"
+  done
+else
+  RP prepare "${PREP_ARGS[@]}" --bootstrap-repo-root "$R4" --repository "$R4" --path svc >"$RUN/p4.json"; code=$?
+  expect_exit 2 "$code" "P4 컴포넌트 안 1 MiB 초과 정책이면 중단"
+  P4OUT="$(cat "$RUN/p4.json")"
+  contains "$P4OUT" "svc/deep/SECURITY.md" "P4 초과 정책 경로를 보고"
+  contains "$P4OUT" "1 MiB" "P4 1 MiB 사유"
+  [ -e "$STATE/policies/big" ] && bad "P4 해결 전 중단인데 출력 루트가 생김" || ok "P4 해결 전 중단 — 출력 디렉터리 미생성"
+  # 관계없는 컴포넌트의 초과 정책은 막지 않고 참고로만 보고한다
+  mkdir -p "$R4/web"; printf 'w\n' >"$R4/web/index.js"
+  RP prepare "${PREP_ARGS[@]}" --bootstrap-repo-root "$R4" --repository "$R4" --path web >"$RUN/p4b.json"; code=$?
+  expect_exit 0 "$code" "P4 관계없는 초과 정책은 중단 사유가 아님"
+  contains "$(cat "$RUN/p4b.json")" "other/SECURITY.md" "P4 관계없는 초과 정책도 참고로 보고"
+  expect_eq "1048576" "$(jget "$RUN/p4b.json" 'd.get("policySizeLimit","missing")')" "P4 policySizeLimit=1048576(dist 프로브)"
+  RP cleanup --output-dir "$(jget "$RUN/p4b.json" 'd.get("outputDir","")')" >/dev/null 2>&1
+fi
 
 # ---------------------------------------------------------------------------
 # P5. 헬퍼 없는 플러그인 사본
@@ -481,21 +514,47 @@ contains "$(jget "$RUN/s6e.json" 'd["threatModelWarning"] or ""')" "Could not sa
 [ -e "$OUT6E/threatmodel.md" ] && bad "P6e threatmodel.md 가 생김" || ok "P6e threatmodel.md 없음"
 expect_eq "threat_model_ready|# Model" "$(jget "$OUT6E/policy-draft.json" 'd["status"] + "|" + d["threatModel"]["content"]')" "P6e 정본은 매니페스트에 남음"
 RP cleanup --output-dir "$OUT6E" >/dev/null
+# P4c 초안 크기: 1 MiB 를 넘는 policy 초안은 npm 0.6.0 이하에서 거부(상류 validatePolicyContent), 0.7.0
+# 이상에서 수용한다. 인자 길이 한도(128 KiB) 때문에 결과 JSON 은 Python 으로 직접 쓴다.
+RP prepare "${PREP_ARGS[@]}" --bootstrap-repo-root "$R3" --repository "$R3" --path app >"$RUN/p4c.json"
+OUT4C="$(jget "$RUN/p4c.json" 'd["outputDir"]')"
+stage_json "$(jget "$RUN/p4c.json" 'd["stageResultFiles"]["architecture"]')" "# Spec"
+RP save-stage --output-dir "$OUT4C" --stage architecture >/dev/null
+stage_json "$(jget "$RUN/p4c.json" 'd["stageResultFiles"]["threat_model"]')" "# Model"
+RP save-stage --output-dir "$OUT4C" --stage threat_model --python "$PYTHON_B" >/dev/null
+PY -c 'import json,sys; open(sys.argv[1],"w").write(json.dumps({"markdown":"# Policy\n"+"p"*1100000,"questions":[],"reviewNotes":[],"blockedReason":None}))' \
+  "$(jget "$RUN/p4c.json" 'd["stageResultFiles"]["policy"]')"
+RP save-stage --output-dir "$OUT4C" --stage policy >"$RUN/s4c.json"; code=$?
+if [ "$POLICY_SIZE_LIMIT" = "false" ]; then
+  expect_exit 0 "$code" "P4c (0.7.0+) 1 MiB 초과 policy 초안 수용"
+  [ -f "$OUT4C/SECURITY.md" ] && ok "P4c (0.7.0+) SECURITY.md 초안 저장" || bad "P4c (0.7.0+) SECURITY.md 초안이 없다"
+else
+  expect_exit 2 "$code" "P4c 1 MiB 초과 policy 초안 거부"
+  contains "$(cat "$RUN/s4c.json")" "1 MiB limit" "P4c 상류 한도 문구"
+fi
+RP cleanup --output-dir "$OUT4C" >/dev/null
 
 # ---------------------------------------------------------------------------
 # P7. 프롬프트
 # ---------------------------------------------------------------------------
 step "P7. 프롬프트"
 RP upstream-literals >"$RUN/lit.json"; expect_exit 0 $? "P7 리터럴 목록"
-PY - "$RUN/lit.json" "$DIST/security-policy.js" "$DIST/security-policy-cli.js" <<'PYEOF' >"$RUN/lit.check"
+PY - "$RUN/lit.json" "$DIST/security-policy.js" "$DIST/security-policy-cli.js" "$POLICY_SIZE_LIMIT" <<'PYEOF' >"$RUN/lit.check"
 import json, sys
 lit = json.load(open(sys.argv[1]))
 src = open(sys.argv[2], encoding="utf-8").read()
 cli = open(sys.argv[3], encoding="utf-8").read()
 frags = lit["fragments"] + lit["cliFragments"]
 miss = [f for f in lit["fragments"] if f not in src] + [f for f in lit["cliFragments"] if f not in cli]
+# 1 MiB 한도 문구: npm 0.6.0 이하 dist 에는 있어야 하고, 0.7.0 이상(#1883)에는 없어야 한다.
+limit = sys.argv[4] == "true"
+for f in lit.get("sizeLimitFragments", []):
+    if (f in src) != limit:
+        miss.append(("MISSING: " if limit else "UNEXPECTED(0.7.0+ 에서 삭제됨): ") + f)
+    elif limit:
+        frags.append(f)
 print(len(frags), len(miss))
-for f in miss: print("MISSING:", f[:120])
+for f in miss: print(f[:140] if f.startswith(("MISSING", "UNEXPECTED")) else "MISSING: " + f[:120])
 PYEOF
 read -r NFRAG NMISS <"$RUN/lit.check"
 if [ "$POLICY_020" != "true" ]; then note020 "P7 리터럴 드리프트"; elif [ "${NFRAG:-0}" -ge 25 ] && [ "${NMISS:-1}" = "0" ]; then ok "P7 상류 리터럴 ${NFRAG}조각이 설치된 dist/security-policy.js 에 문자 그대로 있음"; else bad "P7 리터럴 드리프트: $(cat "$RUN/lit.check")"; fi

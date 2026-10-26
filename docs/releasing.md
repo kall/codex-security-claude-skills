@@ -124,12 +124,12 @@ tarball을 교체하지 말고 새 버전을 올린다 — 사용자가 체크�
 
 1. **고정한 상류 영문 리터럴을 새 상류 태그와 다시 대조한다.** 아래 네 곳은 상류 원문을 복사 시점 커밋
    (태그 `npm-v0.1.29` = `6620a380f86c26d6c6428a660b2a90c3b5a1fa45`)과 함께 고정했다. 마지막 재대조는
-   태그 `npm-v0.6.0` = `13dcc6fec00aaf4c23a6fa7e375ccc1726b22836`이다(직전은 `npm-v0.5.1` =
-   `b2fa51576d81cda5e311e7eb89131ffb13daad8b`. 더 앞은 `npm-v0.5.0` = `03414ad84e91a8638bde85af08c47fe957dc9323`,
-   `npm-v0.4.0` = `559b492b22bb457aea8ff88c1bd41aacc2cec8bf`, `npm-v0.2.0` = `4949af70fcfadff154f6e8fdf100faa5bf2f8169`).
+   태그 `npm-v0.7.0` = `f05a0b096cc881242ddf34a4d6b3ce0f322f3cf9`이다(직전은 `npm-v0.6.0` =
+   `13dcc6fec00aaf4c23a6fa7e375ccc1726b22836`. 더 앞은 `npm-v0.5.1` = `b2fa51576d81cda5e311e7eb89131ffb13daad8b`,
+   `npm-v0.5.0` = `03414ad84e91a8638bde85af08c47fe957dc9323`, `npm-v0.4.0` = `559b492b22bb457aea8ff88c1bd41aacc2cec8bf`, `npm-v0.2.0` = `4949af70fcfadff154f6e8fdf100faa5bf2f8169`).
    - scan-match: `comparisonPrompt()`(0.4.0 약 973행) 원문이 같았다. 0.5.0은 `scan-comparison.ts`를 바꾸지 않았다.
      0.5.1은 내부 구현만 바꿨고 판정 문장은 같다. 0.6.0 설치본의 `dist/scan-comparison.js`·`dist/finding-catalogue.js`는
-     0.5.1 설치본과 바이트 단위로 같다.
+     0.5.1 설치본과 바이트 단위로 같다. 0.7.0도 `scan-comparison.ts`·`finding-catalogue.ts`를 바꾸지 않았다.
    - classify-severity: 지시 8문단이 같았다. 0.4.0은 행 번호만 바뀌었다(`classify-severity.ts` 166–173행).
      0.5.0은 8문단을 새 모듈 `severity-review.ts`의 `severityReviewInstructions`로 옮겼다(#1662, 호스트 리뷰와
      공유). 문장과 조립 순서는 같다. 0.5.1은 `classify-severity.ts`·`severity-store.ts`의 내부 구현만 바꿨고
@@ -137,11 +137,13 @@ tarball을 교체하지 말고 새 버전을 올린다 — 사용자가 체크�
      바뀐 것은 계약이다. 루브릭을 생략하면 상류 기본 루브릭(`default-severity-rubric.ts`)으로 모델이 판정하고,
      finding마다 독립 리뷰를 `--runs`번(기본 3) 해 `reviewSeverity`가 다수결을 한다. 재사용 조건에 리뷰 횟수
      일치가 더해졌다(마이그레이션 52). 기본 루브릭은 원문을 복사하지 않고 SHA-256(`UPSTREAM_DEFAULT_RUBRIC_SHA256`)만
-     고정했다.
+     고정했다. 0.7.0은 지시 8문단과 분류 계약이 0.6.0과 같고, 기본 루브릭 SHA-256도 같다.
    - patch: 검증 지시 주입 문구(`cli.ts` 0.4.0 약 7688행, 0.5.0 약 7747행)가 같았다. 0.5.1은 이 두 줄(약 99–100행)과
      verify-fix 머리말을 `remediation.ts`로 옮겼다(#1684, hosted patch·verification 지원). 문장은 같다.
      0.6.0은 이 두 줄을 그대로 두고(약 108–113행) 앞에 static 분기를 더했다(#1854). static 머리말(약 109행)과
-     `STATIC_VERIFICATION_INSTRUCTIONS`(약 38–39행)를 `npm-v0.6.0` 원문으로 새로 고정했다.
+     `STATIC_VERIFICATION_INSTRUCTIONS`(약 38–39행)를 `npm-v0.6.0` 원문으로 새로 고정했다. 0.7.0 재대조에서
+     모든 문장이 같다. 위치만 바뀌었다(`remediation.ts` static 머리말 약 90행, 검증 지시 주입 문구 약 93행, 상수 약 26–27행).
+     0.7.0에서 `remediation.ts`가 바뀐 것은 hosted verification의 `checks` 스키마 삭제(#1951)뿐이고 `patch` 프롬프트와 무관하다.
    - policy: 단계 프롬프트는 같았다. 진행 문구 `[1/3]`·`[2/3]`이 0.3.0(#1416)에서 바뀌어 리터럴과 복사 시점
      커밋을 `npm-v0.4.0`(커밋 `559b492b2`)으로 갱신했다. 그래서 npm 0.2.0 설치본에서는 `repro-u8` P7이 실패한다
      (의도한 드리프트 검출). 0.5.0은 `security-policy.ts`·`security-policy-cli.ts`를 바꾸지 않았다. 0.5.1은 공통 지시
@@ -150,7 +152,10 @@ tarball을 교체하지 말고 새 버전을 올린다 — 사용자가 체크�
      metadata." 리터럴과 복사 시점 커밋을 `npm-v0.5.1`(커밋 `b2fa51576`)로 갱신했다. 그래서 npm 0.5.0 설치본에서는
      `repro-u8` P7·P11이 실패한다(의도한 드리프트 검출). 0.6.0 재대조에서 프롬프트 리터럴과 진행 문구는 같다.
      diff 미리보기 구현만 Python difflib에서 Node로 바뀌었다(#1837). 시그니처가 같아 스킬은 영향이 없다(`repro-u8` P8 통과).
-   - validate: 0.5.0·0.5.1·0.6.0은 `references/standalone-validation.md`·`references/static-finding-assessment.md`를 바꾸지
+     0.7.0 재대조에서도 프롬프트 리터럴과 진행 문구는 같다. 1 MiB 정책 한도와 그 오류 문구가 지워졌다(#1883).
+     그래서 한도 문구는 0.6.0 이하 전용 조각(`sizeLimitFragments`)으로 나눴다. `repro-u8`이 0.6.0 이하 dist에서는
+     이 문구가 있는지, 0.7.0 이상 dist에서는 없는지 확인한다.
+   - validate: 0.5.0·0.5.1·0.6.0·0.7.0은 `references/standalone-validation.md`·`references/static-finding-assessment.md`를 바꾸지
      않았다.
 
    상류 저장소에서 `git diff npm-v<이전> npm-v<새 버전> -- <원본 파일>`로 원본을 보고, 바뀌었으면 리터럴과 복사
@@ -160,10 +165,10 @@ tarball을 교체하지 말고 새 버전을 올린다 — 사용자가 체크�
    | 고정 위치 | 상류 원본 | 드리프트 자동 감지 |
    | --- | --- | --- |
    | `skills/codex-security-scan-match/SKILL.md` 「상류 판정 문장」 | `sdk/typescript/src/scan-comparison.ts` `comparisonPrompt()` | 없음 — 컴파일된 `dist/scan-comparison.js`에 같은 문자열이 있지만 회귀 스크립트가 대조하지 않는다(블록 S는 카탈로그·조정 결과만 대조) |
-   | `skills/codex-security-policy/scripts/policy_draft.mjs` `UPSTREAM_*` | `sdk/typescript/src/security-policy.ts` `runSecurityPolicyStages()`(복사 시점 `npm-v0.5.1`, `npm-v0.6.0`에서 재대조 — 같음) | `repro-u8` P7·P11이 설치된 dist와 대조 |
+   | `skills/codex-security-policy/scripts/policy_draft.mjs` `UPSTREAM_*` | `sdk/typescript/src/security-policy.ts` `runSecurityPolicyStages()`(복사 시점 `npm-v0.5.1`, `npm-v0.6.0`·`npm-v0.7.0`에서 재대조 — 같음. 1 MiB 한도 문구는 0.6.0 이하 전용 `sizeLimitFragments`) | `repro-u8` P7·P11이 설치된 dist와 대조 |
    | `skills/codex-security-classify-severity/scripts/classify_severity.mjs` `UPSTREAM_CLASSIFY_INSTRUCTIONS` | `sdk/typescript/src/severity-review.ts` `severityReviewInstructions`(npm 0.5.0부터, #1662). 0.4.0 이하는 `sdk/typescript/src/classify-severity.ts` `classifySeverityInternal()` | 있음 — 스킬 `prepare`가 다르면 중단하고, `repro-u8` S12가 대조(`dist/severity-review.js`가 있으면 거기서, 없으면 `dist/classify-severity.js`에서) |
    | `skills/codex-security-classify-severity/scripts/classify_severity.mjs` `UPSTREAM_DEFAULT_RUBRIC_SHA256`(기본 루브릭의 SHA-256, 원문은 고정하지 않음) | `sdk/typescript/src/default-severity-rubric.ts`(npm 0.6.0부터, #1765) | 있음 — 스킬 `prepare`가 다르면 `defaultRubricDrift: true`로 알리고(중단하지 않음), `repro-u8` S12가 `dist/default-severity-rubric.js`와 대조 |
-   | `skills/codex-security-patch/SKILL.md` 「검증 지시의 위치와 상류 주입 문구」 | `sdk/typescript/src/remediation.ts`의 검증 프롬프트 조립(npm 0.5.1부터, #1684). 0.5.0 이하는 `sdk/typescript/src/cli.ts` `runSkill()`의 검증 프롬프트 블록. static 머리말과 `STATIC_VERIFICATION_INSTRUCTIONS`는 `remediation.ts`(`npm-v0.6.0`, #1854) | 없음 — 컴파일된 `dist/remediation.js`(0.5.0 이하 `dist/cli.js`)에 같은 문자열이 있지만 회귀 스크립트가 대조하지 않는다 |
+   | `skills/codex-security-patch/SKILL.md` 「검증 지시의 위치와 상류 주입 문구」 | `sdk/typescript/src/remediation.ts`의 검증 프롬프트 조립(npm 0.5.1부터, #1684). 0.5.0 이하는 `sdk/typescript/src/cli.ts` `runSkill()`의 검증 프롬프트 블록. static 머리말과 `STATIC_VERIFICATION_INSTRUCTIONS`는 `remediation.ts`(`npm-v0.6.0`, #1854. `npm-v0.7.0`에서 재대조 — 같음) | 없음 — 컴파일된 `dist/remediation.js`(0.5.0 이하 `dist/cli.js`)에 같은 문자열이 있지만 회귀 스크립트가 대조하지 않는다 |
    | (고정 리터럴 없음) `skills/codex-security-validate/SKILL.md` 단독 모드 | 플러그인 `references/standalone-validation.md`·`references/static-finding-assessment.md`(상류 `validate`가 프롬프트에 싣는 두 문서, #1423) | 해당 없음 — 스킬이 런타임에 두 문서를 읽는다. 상류가 두 문서 말고 다른 지시를 프롬프트에 더하면 잡히지 않으므로 `sdk/typescript/src/standalone-validation-prompt.ts`의 diff를 본다 |
 
 2. 새 플러그인으로 자기 채점 스크립트 다섯(`repro-u4.sh`, `repro-u1-search-command.sh`,
@@ -212,13 +217,26 @@ tarball을 교체하지 말고 새 버전을 올린다 — 사용자가 체크�
    | npm 0.6.0 | `repro-u4`(OK 80)·`repro-u1`(95)·`repro-u7`(70)·`repro-u5`(714)·`repro-u8`(321) 모두 exit 0. `repro-u3` 관측 S5 0·S6 0·S9 1·S9b 0 |
    | npm 0.5.1 | `repro-u4`(OK 80)·`repro-u1`(95)·`repro-u7`(70)·`repro-u5`(714)·`repro-u8`(292, S13 0.6.0 전용 NOTE 1건) 모두 exit 0. `repro-u3` 관측 0.6.0과 같다 |
    | npm 0.5.0 이하 | 이번에 다시 돌리지 않음. 결과는 위 정합 때 기록 그대로다 |
+
+   npm 0.7.0 정합에서는 인벤토리 도우미의 경로 판정이 늘었다. `repro-u4` G0(부트스트랩 `inScopeInventory`·
+   `diffRankInput` kind를 사본 파일과 대조, G·I·J 블록은 그 kind의 명령으로 실행), `repro-u1` H14a-8·H14b-8~9
+   (두 키), H14g(1 MiB 정책 한도는 0.6.0 이하만), `repro-u8` P4·P4c(정책 크기 한도는 0.6.0 이하만)이다.
+   스크립트가 0.7.0과 0.6.0 이하를 함께 지원하므로 **0.7.0과 0.6.0 설치본 양쪽에서** 돌린다.
+
+   npm 0.7.0 정합(2026-10-26)에서는 다음을 확인했다.
+
+   | 설치본 | 결과 |
+   | --- | --- |
+   | npm 0.7.0 | `repro-u4`(OK 81)·`repro-u1`(96)·`repro-u7`(70)·`repro-u5`(714)·`repro-u8`(332) 모두 exit 0, FAIL·SKIP·NOTE 0. `repro-u3` 관측 S5 0·S6 0·S9 1·S9b 0 |
+   | npm 0.6.0 | `repro-u4`(OK 81)·`repro-u1`(96)·`repro-u7`(70)·`repro-u5`(714)·`repro-u8`(324) 모두 exit 0, FAIL·SKIP·NOTE 0. `repro-u3` 관측 0.7.0과 같다 |
+   | npm 0.5.1 이하 | 이번에 다시 돌리지 않음. 결과는 위 정합 때 기록 그대로다 |
 3. 변화가 있으면 해당 SKILL.md와 매뉴얼(특히 3.4절 표)을 갱신. 스캔 스킬의 버전 경고 기준
    (매니페스트 축)과 각 스킬의 "기준 실측 버전"(npm 축)을 함께 올린다.
 4. 새 버전으로 재배포하고 릴리즈 노트에 검증된 조합을 갱신.
 
 ### 7.1 상류 태그가 npm에 아직 없을 때
 
-> npm 0.2.0, 0.4.0(0.3.0 포함), 0.5.0, 0.5.1, 0.6.0은 레지스트리에 있었다. 그때는 아래 빌드 없이 `npm install -g --prefix /tmp/<dir>
+> npm 0.2.0, 0.4.0(0.3.0 포함), 0.5.0, 0.5.1, 0.6.0, 0.7.0은 레지스트리에 있었다. 그때는 아래 빌드 없이 `npm install -g --prefix /tmp/<dir>
 > @openai/codex-security@<버전>`으로 격리 설치하고 7.2절 방법으로 검증했다.
 
 상류가 `npm-v<버전>` 태그를 만든 뒤에도 npm 레지스트리 배포는 늦을 수 있다(0.1.32가 그랬다). 그때는 태그

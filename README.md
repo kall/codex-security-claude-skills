@@ -18,7 +18,7 @@ is installed at runtime.
 Download the release tarball and install it. Or just paste this into a Claude Code session:
 
 ```
-Install https://github.com/kall/codex-security-claude-skills/releases/tag/v0.6.0
+Install https://github.com/kall/codex-security-claude-skills/releases/tag/v0.7.0
 ```
 
 ```bash
@@ -67,16 +67,19 @@ Full usage, environment variables, and troubleshooting:
 
 Claude Code (subscription login) · Python 3.10+ · git · the codex-security bundled plugin.
 Node 22+ is needed for the plugin's npm install, the scan's candidate normalization (npm 0.2.0
-moved it to an upstream Node helper), scoped-path and diff scans (npm 0.3.0 moved `bind-repo-scopes` and
+moved it to an upstream Node helper), the full-scan inventory (npm 0.7.0 moved it to the upstream Node
+helper), scoped-path and diff scans (npm 0.3.0 moved `bind-repo-scopes` and
 `copy-deep-review-input` to the Node helper), the scan's SECURITY.md policy resolution (upstream Node helper),
 `codex-security-policy` and `codex-security-classify-severity`, and for querying the official CLI's history.
 Linux/macOS (Windows via WSL).
 
-Verified combination: `@openai/codex-security@0.6.0` (plugin manifest `0.1.95`). npm 0.1.26 through
-0.6.0 all report manifest `0.1.95`, so the manifest version warning cannot tell them apart. The skills
+Verified combination: `@openai/codex-security@0.7.0` (plugin manifest `0.1.95`). npm 0.1.26 through
+0.7.0 all report manifest `0.1.95`, so the manifest version warning cannot tell them apart. The skills
 detect version-specific behavior from plugin files instead, and `--check` also shows the npm version.
-Install npm 0.6.0. On isolated installs of npm 0.6.0 and 0.5.1, `repro-u8` exits 0 (on 0.5.1 it prints one
-NOTE: check S13 is 0.6.0-only). The other four scripts (`repro-u4`, `repro-u1`, `repro-u7`, `repro-u5`) also exit 0 on both. The result for
+Install npm 0.7.0. On isolated installs of npm 0.7.0 and 0.6.0, all five self-check scripts (`repro-u4`,
+`repro-u1`, `repro-u7`, `repro-u5`, `repro-u8`) report FAIL 0. The result for 0.5.1 is from the v0.6.0 release
+and was not re-run this time: on isolated installs of npm 0.6.0 and 0.5.1, `repro-u8` exited 0 (on 0.5.1 it prints one
+NOTE: check S13 is 0.6.0-only), and the other four scripts also exited 0 on both. The result for
 0.5.0 is from the v0.5.1 release and was not re-run this time: only checks P7 and P11 of `repro-u8` failed,
 because one line of the shared policy instructions changed in 0.5.1 and the pinned literal follows 0.5.1
 (an intended drift detection). The results below for 0.4.0 and
@@ -87,9 +90,10 @@ pinned literal now follows 0.3.0+ (an intended drift detection). npm 0.1.32 and 
 re-verified this time.
 
 From npm 0.2.0 the scan skills need the npm package: an upstream source checkout has no built Node
-helper, so candidate normalization is unavailable and the scans stop at step 0. npm 0.3.0, 0.4.0, 0.5.0, 0.5.1, and 0.6.0 add
+helper, so candidate normalization is unavailable and the scans stop at step 0. npm 0.3.0, 0.4.0, 0.5.0, 0.5.1, 0.6.0, and 0.7.0 add
 more state-database migrations (per-scan severity tables in 0.3.0, issue receipts in 0.4.0, scan source scopes
-in 0.5.0, deep-scan worker thread history in 0.5.1, severity review counts and external source reports in 0.6.0); back up
+in 0.5.0, deep-scan worker thread history in 0.5.1, severity review counts and external source reports in 0.6.0,
+deep-scan migrations 54–57 in 0.7.0); back up
 `~/.codex/state/plugins/codex-security` before upgrading a global install.
 
 The deep-lite skill changed with npm 0.4.0: upstream removed the ranking helpers, so deep-lite now reviews
@@ -108,7 +112,21 @@ With npm 0.6.0, `codex-security-patch` and `codex-security-verify-fix` also supp
 change), and verify-fix asks for no run approval. A static `fixed` states "static verification — runtime checks
 not run". Standard mode keeps the two-stage approval.
 
-**Do not run `codex-security skills add` (npm 0.6.0 still has it).** It deletes `~/.claude/skills/codex-security-<command>`
+npm 0.7.0 also moved the full-scan inventory helpers to the Node helper (upstream breaking change #1432).
+`generate_in_scope_files.py`, `generate_rank_input.py`, and `rank_preview.py` are gone; `launch_codex_security_mcp
+--helper generate-in-scope-files|make-diff-rank-input|make-repo-scope-input` replaces them with the same arguments.
+**From 0.7.0 even a full scan needs Node.** The helper still finds `rg` on PATH, so a search command is still needed.
+The file list matches the 0.6.0 Python script (measured). Bootstrap reports the new keys `inScopeInventory` and
+`diffRankInput`, and `install.sh --check` shows them as the `인벤토리` and `diff 목록` lines.
+
+npm 0.7.0 removed the 1 MiB SECURITY.md limit (#1883). The policy skill keeps the 1 MiB check when the installed
+upstream still has the limit (0.6.0 and earlier). On 0.7.0 it skips that check, but the guidance (the target policy,
+inherited and nested policies) must still fit the skill's 80,000-character prompt limit; otherwise `prepare` stops. Upstream shortened its
+skill documents a lot (#1676), but the skills' procedures and safety contracts stay the same; patch keeps both the
+pre-patch investigation and the candidate review passes on every version. Upstream verify-fix answers in Markdown
+in interactive use (#1836); this skill replaces the CLI, so it keeps the JSON result.
+
+**Do not run `codex-security skills add` (npm 0.7.0 still has it).** It deletes `~/.claude/skills/codex-security-<command>`
 and replaces it with a link to an upstream skill that only calls the login-requiring CLI. Six names collide
 with these skills (scan, policy, patch, validate, verify-fix, classify-severity). `install.sh --check`
 reports overwritten skills; reinstall with `bash skills/install.sh --force` (`--copy --force` for copies).

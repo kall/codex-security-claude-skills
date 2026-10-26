@@ -56,7 +56,8 @@ IN_SCOPE_BASENAME = "in_scope_files.txt"
 REVIEW_LOG_BASENAME = "review_log.jsonl"
 
 #: 인벤토리가 없거나 빈 원인 후보 — 줄바꿈이 든 경로(npm 0.1.29부터).
-#: 상류 generate_in_scope_files.py 는 스코프 안 경로 이름에 \n·\r 이 있으면 경로
+#: 상류 인벤토리 도우미(npm 0.6.0 이하 generate_in_scope_files.py, npm 0.7.0 Node 헬퍼
+#: generate-in-scope-files)는 스코프 안 경로 이름에 \n·\r 이 있으면 경로
 #: 이름 없이 "Repository contains a path that cannot fit in the file inventory" 로
 #: exit 2 한다. 출력은 원자적으로 쓰므로 새 인벤토리 파일이 생기지 않는다.
 #: 정산은 인벤토리를 재생성하지 않으므로 원인 후보만 안내한다.
@@ -358,14 +359,15 @@ def reconcile_coverage(
             "in_scope_files.txt 가 비어 있습니다 — --allow-empty-inventory 로 통과시켰습니다. "
             "diff·deep 범위에 리뷰 대상 파일이 없는 정직한 0건이면 정상입니다. "
             "전체 스캔이거나 인벤토리 생성 실패가 의심되면 스코프 인자, 상류 "
-            "generate_in_scope_files.py 의 종료 상태, 부트스트랩이 보고한 searchCommand 를 "
+            "인벤토리 도우미(generate_in_scope_files.py 또는 Node 헬퍼 generate-in-scope-files)의 "
+            "종료 상태, 부트스트랩이 보고한 searchCommand 를 "
             "확인하세요(정산은 인벤토리를 재생성하지 않습니다). " + NEWLINE_PATH_HINT
         )
         result.warnings.append(result_warning)
     elif not in_scope:
         # 전체 스캔에서 빈 인벤토리는 하드 실패다(P5-KTD3). 인벤토리는 커버리지
         # 분모이고 정산은 그것을 재생성하지 않으므로, 비어 있으면 어떤 완결성
-        # 주장도 근거가 없다. 인벤토리 생성을 상류 generate_in_scope_files.py 에
+        # 주장도 근거가 없다. 인벤토리 생성을 상류 인벤토리 도우미에
         # 위임한 뒤로는 분모의 정확성이 우리 통제 밖에 있어, 이 지점이 전면
         # 실패를 잡는 유일한 관문이다.
         # (0.1.18 기준에서는 경고였다 — 상류 위임과 함께 승격했다.)
@@ -373,7 +375,8 @@ def reconcile_coverage(
             "in_scope_files.txt 가 비어 있습니다 — 인벤토리 단계가 파일을 하나도 찾지 "
             "못했습니다. 커버리지 분모가 비어 있으면 완결성을 주장할 수 없으므로 정산을 "
             "중단합니다.\n"
-            "확인할 것: 스코프 인자, 상류 generate_in_scope_files.py 의 종료 상태, "
+            "확인할 것: 스코프 인자, 상류 인벤토리 도우미(generate_in_scope_files.py 또는 "
+            "Node 헬퍼 generate-in-scope-files)의 종료 상태, "
             "부트스트랩이 보고한 searchCommand(해석된 ripgrep 경로).\n"
             f"{NEWLINE_PATH_HINT}\n"
             "정산은 인벤토리를 재생성하지 않습니다.",
@@ -862,7 +865,8 @@ def run(args: argparse.Namespace, out) -> tuple[int, dict[str, Any]]:
         raise ReconcileError(
             "in_scope_files.txt 를 찾을 수 없습니다 — 인벤토리 단계가 완료되지 않았습니다.\n"
             f"다음 경로를 찾아봤습니다:\n{tried}\n"
-            "상류 generate_in_scope_files.py 의 종료 상태와 오류 문구를 먼저 확인하세요.\n"
+            "상류 인벤토리 도우미(generate_in_scope_files.py 또는 Node 헬퍼 "
+            "generate-in-scope-files)의 종료 상태와 오류 문구를 먼저 확인하세요.\n"
             f"{NEWLINE_PATH_HINT}",
             EXIT_INPUT_ERROR,
         )

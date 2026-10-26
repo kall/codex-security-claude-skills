@@ -13,7 +13,7 @@ description: >-
 # codex-security-verify-fix — 수정 검증 (읽기 전용)
 
 codex-security 플러그인의 `verify-fix` 스킬을 Claude가 직접 수행한다. 기준 실측 버전은
-**npm 0.6.0(매니페스트 0.1.95)**다. 입력으로 받은 각 finding이 **현재 체크아웃에서 실제로
+**npm 0.7.0(매니페스트 0.1.95)**다. 입력으로 받은 각 finding이 **현재 체크아웃에서 실제로
 수정됐는지**만 판정한다. 이 스킬은 **저장소를 절대 변경하지 않는다** — 수정·패치 적용이 필요하면
 `codex-security-patch`로 넘긴다.
 
@@ -31,20 +31,29 @@ instructions and shared assessment reference included below. Do not reload these
 npm 0.6.0에서는 `042ce4171`(#1854)이 상류 문서에 검증 모드 문단을 넣었다(태그 `npm-v0.6.0` = 커밋 `13dcc6fec`
 재대조). 워크플로 4단계는 "In standard mode"로 한정됐고, `inconclusive` 사유의 "unavailable relevant checks"는
 "unavailable checks required by the selected mode"로 바뀌었다. 아래 「검증 모드」에 반영했다. 머리말 줄과
-`references/static-finding-assessment.md`는 이 구간에서 바뀌지 않았다. fix-finding과 달리 `artifact-storage.md`를 읽으라는 줄은 없다. 따라서 이
+`references/static-finding-assessment.md`는 이 구간에서 바뀌지 않았다. npm 0.7.0에서는 `e1dd428df`(#1836
+fix(skill): allow readable interactive verification results)가 결과 계약을 바꿨다(태그 `npm-v0.7.0` = 커밋
+`f05a0b096` 재대조). 대화형이면 읽기 쉬운 Markdown을 쓰고, 호출자가 JSON이나 자동화 결과 계약을 요구할 때만
+JSON 객체 1개를 낸다("CLI verification workflows explicitly request this contract"). 판정 열거형과 근거
+요건은 두 형식에서 같다. `## When to Use`의 "JSON 결과 계약을 적용하지 않고" 문구도 이에 맞춰 빠졌다.
+같은 구간에 `remediation.ts`에서 hosted verification 전용 `checks` 확장(검사 배열)이 지워졌다(`b88e775a6`
+#1951 — CLI 판정 계약 `id`·`status`·`evidence`로 통일). 이 스킬의 결과 계약은 원래 그 세 필드라 바뀌지
+않는다. 머리말 줄, 검증 모드 문단, 워크플로, `references/static-finding-assessment.md`는 그대로다.
+fix-finding과 달리 `artifact-storage.md`를 읽으라는 줄은 없다. 따라서 이
 스킬의 정합 작업에서 확인할 것은 상류 발동 조건 서술과, 이 문서가 참조하는 **다른 스킬의 계약
 변화**(특히 `codex-security-patch`의 승인 게이트 재구성)다. 상류만 다시 읽고 "변경 없음"으로 끝내면
 헛짚는다.
 
 **발동 조건(npm 0.1.26부터).** 상류 `skills/verify-fix/SKILL.md`에 `## When to Use` 절이 생겼다. 보안
-수정 검증을 명시적으로 요청했을 때만 이 스킬을 쓰고, 그 밖의 작업에는 JSON 결과 계약을 적용하지
-말라는 내용이다. 이 스킬은 명시 요청으로만 발동하므로 발동하면 아래 결과 계약을 항상 적용한다.
+수정 검증을 명시적으로 요청했을 때만 이 스킬을 쓰고, 그 밖의 작업에는 사용자가 요청한 흐름과 응답 형식을
+따르라는 내용이다(npm 0.6.0 이하는 "JSON 결과 계약을 적용하지 말라"). 이 스킬은 명시 요청으로만 발동하므로
+발동하면 아래 결과 계약을 항상 적용한다.
 `codex-security-patch`가 수정 뒤에 테스트를 돌리는 것은 이 스킬의 호출이 아니다.
 
 **검증 지시 입력은 받지 않는다.** `codex-security-patch`의 검증 지시(R15)는 이 스킬의 입력이 아니다.
 이 스킬은 저장소를 바꾸지 않는 판정 전용이라, 환경 준비·빌드·정리처럼 상태를 바꿀 수 있는 사용자
 검증 절차를 실행하지 않는다. 상류 CLI의 `verify-fix` 명령에도 이 입력(`--validation-prompt-file`)이 없다
-(npm 0.6.0 재확인. 0.6.0에서 더해진 선택지는 `--verification-mode`뿐이다).
+(npm 0.6.0·0.7.0 재확인. 0.6.0에서 더해진 선택지는 `--verification-mode`뿐이고 0.7.0은 그대로다. `remediation.ts`에 기존 수정 검증용 지시 머리말 문장이 있지만 CLI `verify-fix` 옵션으로는 넘길 수 없다).
 
 ## 검증 모드 — standard / static (npm 0.6.0부터)
 
@@ -69,7 +78,9 @@ npm 0.6.0에서는 `042ce4171`(#1854)이 상류 문서에 검증 모드 문단�
 **static 허용 명령(codex-security-patch·codex-security-verify-fix 공통 목록).** 두 문서에 같은 목록을
 둔다. 한쪽을 바꾸면 다른 쪽도 같이 바꾼다. 이 목록 밖의 명령은 실행하지 않는다.
 
-1. 파일 읽기·검색 도구(Claude Code의 Read·Grep·Glob).
+1. 파일 읽기·검색 도구(Claude Code의 Read·Grep·Glob). **Bash로 실행하는 `grep`·`rg`·`find`·`cat`은 이 항목에
+   들지 않는다** — 허용하지 않는다. 검색이 필요하면 Grep 도구, 파일 나열은 Glob 도구를 쓴다. Bash 검색은
+   설정 파일(예: `RIPGREP_CONFIG_PATH`)이나 셸 확장을 거칠 수 있어 목록 밖 명령으로 취급한다.
 2. 0단계 `bootstrap.py` 실행.
 3. 검증 지시 파일의 `stat`·`realpath` 검사(검증 지시를 받는 codex-security-patch만 해당).
 4. 아래 형태의 git 읽기 명령 3개. `<trusted_child_env>` = bootstrap의 `trustedChildEnvShell`,
@@ -84,7 +95,12 @@ npm 0.6.0에서는 `042ce4171`(#1854)이 상류 문서에 검증 모드 문단�
 이 형태가 필요한 이유: `--no-ext-diff --no-textconv`만으로는 저장소 로컬 `.git/config`의
 `core.fsmonitor`가 실행된다(npm 0.6.0 스모크 실측). 플래그 없는 `git diff`는 `diff.external`도 실행한다.
 `trustedChildEnvShell`은 `GIT_CONFIG_*`로 `core.fsmonitor`·`core.hooksPath`·`core.pager`·`diff.external`
-등을 무력화하고 `GIT_CONFIG_GLOBAL=/dev/null`·`GIT_CONFIG_NOSYSTEM=1`을 준다. `--no-optional-locks`는
+등을 무력화하고 `GIT_CONFIG_GLOBAL=/dev/null`·`GIT_CONFIG_NOSYSTEM=1`을 준다. 저장소가 `.gitattributes`로 이름을
+고르는 **filter·diff 드라이버**(`filter.<이름>.clean`·`smudge`·`process`, `diff.<이름>.command`·`textconv`)도
+무력화한다. bootstrap이 저장소 local config(`include.path` 포함)를 `git config --local --includes --list`로 열거해
+정의된 드라이버 키마다 빈 값을 덮는다(`bootstrap.py` `git_driver_overrides`. 0.7.0 스모크 실측: 일반 git에서는
+filter clean·smudge 카나리가 발동했고, 이 환경에서는 발동하지 않았다). 열거는 **bootstrap 실행 시점**의
+config 기준이다. 그 뒤 저장소 config가 바뀌었을 수 있으면 0단계 bootstrap을 다시 실행해 새 값을 쓴다. `--no-optional-locks`는
 `status`가 index를 다시 쓰지 않게 한다.
 
 standard 모드에서도 git 읽기 명령(`rev-parse`·`status`·`diff`)은 위 4번 형태로 실행한다.
@@ -178,7 +194,10 @@ standard 모드에만 있다. static 모드에서는 이 절과 「미승인 시
 
 ## 결과 계약
 
-정확히 다음 JSON 객체 1개를 산출한다(그 뒤에 한국어 요약을 덧붙인다):
+이 스킬은 상류 CLI `codex-security verify-fix`의 대체다. 상류 결과 계약은 "CLI 검증 흐름은 JSON 계약을
+명시적으로 요청한다"고 하므로(npm 0.7.0 `## Result Contract`) 이 스킬은 형식을 JSON으로 고정한다. 읽기
+쉬운 설명은 뒤에 붙이는 한국어 보고가 맡는다. 정확히 다음 JSON 객체 1개를 산출한다(그 뒤에 한국어 요약을
+덧붙인다):
 
 ```json
 {

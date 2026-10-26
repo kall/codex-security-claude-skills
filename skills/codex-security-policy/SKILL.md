@@ -12,10 +12,11 @@ description: >-
 
 npm CLI의 `codex-security policy`는 OpenAI 모델을 세 번 호출해 SECURITY.md 초안을 만든다.
 구독 사용자는 이 명령을 쓸 수 없다. 이 스킬은 모델 호출 세 번을 **읽기 전용 격리 서브에이전트**로
-바꾸고, 나머지 호스트 동작은 상류 코드로 재현한다. 기준 실측 버전은 **npm 0.6.0(매니페스트 0.1.95)**다.
+바꾸고, 나머지 호스트 동작은 상류 코드로 재현한다. 기준 실측 버전은 **npm 0.7.0(매니페스트 0.1.95)**다.
 
 - **초안만 만든다(P6-KTD9).** CLI `policy`와 같다. 상류 plugin `define-security-policy/SKILL.md`
-  4절(승인 후 저장소 편집)은 CLI에 없는 단계라 이 스킬 범위 밖이다(후속 작업으로 연기). 사용자가
+  4절(npm 0.6.0 이하 "Preview, Approve, and Verify", 0.7.0부터 "Apply and Verify" — 저장소 편집)은 CLI에
+  없는 단계라 이 스킬 범위 밖이다(후속 작업으로 연기). 사용자가
   초안을 검토하고 직접 복사한다.
 - **산출물은 저장소 밖에만 쓴다(R19).** `<stateDir>/policies/<repo>/codex-security-<repo>-policy-XXXXXX`
   (0700) 아래에 파일 5개를 0600으로 쓴다. 비덮어쓰기가 원칙이고, 상류와 같이 두 번 쓰는
@@ -43,7 +44,9 @@ npm CLI의 `codex-security policy`는 OpenAI 모델을 세 번 호출해 SECURIT
   `npm-v0.2.0`(커밋 `4949af70`)과 비교하면 진행 표시 `[1/3]`·`[2/3]` 문구만 바뀌었다
   (`14c706bab` #1416, npm 0.3.0부터). 단계 프롬프트·오류 문구·매니페스트 필드는 같다. 그 전 기준은 `npm-v0.1.29`(커밋
   `6620a380`)였고 `npm-v0.1.32`까지 바뀌지 않았다. 0.2.0에서는 policy 단계 첫 문장이 위협 모델 파일 대신 매니페스트의
-  `threatModel.content`를 읽으라고 바뀌었다. **npm 0.1.32 이하 설치본에서도 이 스킬은 0.2.0 흐름을 쓴다.**
+  `threatModel.content`를 읽으라고 바뀌었다. 태그 `npm-v0.6.0`(커밋 `13dcc6fe`)과 `npm-v0.7.0`(커밋
+  `f05a0b09`)에서 다시 대조했다. 프롬프트 리터럴·진행 문구·매니페스트 필드는 그대로다. 0.7.0에서 바뀐 것은
+  1 MiB 정책 한도 삭제뿐이다(아래 "정책 크기 한도"). **npm 0.1.32 이하 설치본에서도 이 스킬은 0.2.0 흐름을 쓴다.**
   그래서 policy 단계 첫 문장이 그 버전의 상류 프롬프트와 다르고(서브에이전트는 매니페스트의 모델을 읽으므로
   초안 작성은 같게 동작한다), finalizer에 `--write-threat-model`이 없어 `threatmodel.md`가 생기지 않는다
   (`threatModelPath: null`과 경고. 모델은 `policy-draft.json`에 남는다). `repro-u8`은 그 사본에서 P7·P11
@@ -53,6 +56,17 @@ npm CLI의 `codex-security policy`는 OpenAI 모델을 세 번 호출해 SECURIT
   `repro-u8-policy-severity.sh`가 P7에서 리터럴 조각을 설치된 dist와 대조하고, P11에서 상류
   `runSecurityPolicyStages`에 가짜 모델을 넣어 받은 세 프롬프트와 **문자 단위로** 대조한다. 다음 상류
   정합 작업은 이 두 블록부터 돌린다.
+- **정책 크기 한도는 설치된 버전을 따른다.** npm 0.6.0 이하 상류는 1 MiB(1,048,576 바이트)를 넘는
+  SECURITY.md를 읽지 않고(`SECURITY.md exceeds the policy resolver's 1 MiB limit.`), policy 초안도 같은
+  한도로 막았다. npm 0.7.0은 `0b70ee90f`(#1883 fix: accept large security policy files)로
+  `security-policy.ts`·`resolve-security-md` 헬퍼·`define-security-policy/SKILL.md`에서 이 한도를 모두
+  지웠다. `policy_draft.mjs`는 설치된 `dist/security-policy.js`에 위 오류 문구가 남아 있을 때만 한도를
+  재현한다(인벤토리 크기 검사와 초안 크기 검사 둘 다). 0.7.0 이상에는 상류 크기 한도가 없다. 그래도 이
+  스킬에는 **프롬프트 상한 80,000자**(아래 2단계, P6-KTD5)가 있다. 상속 SECURITY.md 가이던스는 단계 프롬프트에
+  그대로 들어가므로, 가이던스와 프롬프트가 이 상한을 넘으면 이 스킬은 진행할 수 없다. 상류에 한도가 없어도
+  결과는 같다. `prepare`가 가이던스를 해결한 직후 architecture 단계 프롬프트(세 단계 중 가장 작다)를 조립해
+  검사한다. 넘으면 출력 디렉터리를 남기지 않고 멈춘다. 가이던스에는 상속 정책, 대상 정책 자신, 컴포넌트
+  아래 정책이 모두 들어간다. 그래서 0.7.0에서 크기와 관계없이 받아들이는 것은 무관한 컴포넌트의 정책뿐이다.
 - **상류 plugin 파일은 서브에이전트가 런타임에 읽는다.** `references/threat-model.md`,
   `skills/define-security-policy/SKILL.md`, 그리고 그 SKILL이 지시하는 `references/security-guidance.md`.
 - **상류 `artifact-storage.md` 저장 정책은 적용하지 않는다(P6-KTD8).** 서브에이전트가 읽는
@@ -82,7 +96,7 @@ Git worktree 루트**로 명시한다.
 | 조건 | 사용자 안내(한국어) |
 | --- | --- |
 | `ok: false` | `stage`·`error`를 그대로 전한다 |
-| `securityMdHelper.available: false` | `securityMdHelper.reason`을 전한다. "헬퍼 파일 없음"이면 상류 소스 체크아웃이다 — `npm install -g @openai/codex-security`(npm 0.1.27 이상, 권장 0.6.0) 설치본을 쓰라고 안내 |
+| `securityMdHelper.available: false` | `securityMdHelper.reason`을 전한다. "헬퍼 파일 없음"이면 상류 소스 체크아웃이다 — `npm install -g @openai/codex-security`(npm 0.1.27 이상, 권장 0.7.0) 설치본을 쓰라고 안내 |
 | `sdk.dist: null` | `sdk.reason`을 전한다. 상류 함수가 든 `dist/`가 없다 — 위와 같은 설치 안내 |
 | `node: null` | "신뢰할 수 있는 Node 없음"과 `securityMdHelper.reason` |
 
@@ -114,7 +128,7 @@ env -i <trusted_child_env> <node> <policy_script> <하위 명령> …
 - 출력은 JSON 1개다(`prompt`만 원문 텍스트). exit 0 = 성공, 2 = 거부·실패(`error`와 상류 원문
   `upstreamError`가 실림), 1 = 사용법 오류.
 
-**시작 고지**: 플러그인 경로와 `pluginVersion`(기준 0.1.95, npm 0.6.0 — 다르면 "플러그인 버전이
+**시작 고지**: 플러그인 경로와 `pluginVersion`(기준 0.1.95, npm 0.7.0 — 다르면 "플러그인 버전이
 기준과 다름 — 상류 계약이 바뀌었을 수 있음" 경고), 대상 저장소, 컴포넌트, 그리고 **"이 스킬은
 저장소 파일을 바꾸지 않는다"**를 알린다.
 
@@ -127,20 +141,26 @@ env -i <trusted_child_env> <node> <policy_script> prepare --sdk-dist <sdk_dist> 
 - `--path`는 저장소 루트 기준 컴포넌트 디렉터리다(기본 `.`). 작은따옴표로 인용한다. 사용자가 지식
   베이스(아키텍처 문서 등)를 주면 `--knowledge-base '<경로>'`를 더한다. 상류와 달리 복사·변환하지
   않고 그 경로를 서브에이전트 허용 읽기 루트에 넣는다.
-- `prepare`가 하는 일(순서대로): 플러그인 지원 파일 4개 확인 → 헬퍼 `--list` 인벤토리와 크기 검사 →
+- `prepare`가 하는 일(순서대로): 플러그인 지원 파일 4개 확인 → (npm 0.6.0 이하만) 헬퍼 `--list` 인벤토리와 1 MiB 크기 검사 →
   상류 대상 해석(둘러싼 worktree 루트 = `repository`, 상대 경로 = `scope`) → 상류 인벤토리·보호 루트·
   스냅샷(`previousPolicySha256`, `inheritedPolicySha256`) → 상태 디렉터리 위치 검사(**디렉터리를
   만들기 전에**) → 상류 출력 디렉터리 준비(mkdtemp, 0700, 모든 worktree 밖, 현재 uid 소유, 상위가
   group/world 쓰기 불가) → 상류 가이던스 해석 → 스냅샷 재확인 → `previous-SECURITY.md` 선기록.
 - 결과 JSON에서 쓰는 값: `outputDir`(인용본 `shellQuoted.outputDir`), `stageResultFiles`,
-  `ownerAnswersFile`, `stageLabels`, `allowedReadRoots`, `oversizedUnrelatedPolicies`.
-- `oversizedUnrelatedPolicies`가 있으면 "이 컴포넌트와 무관한 1 MiB 초과 정책"으로 참고 보고한다.
+  `ownerAnswersFile`, `stageLabels`, `allowedReadRoots`, `policySizeLimit`, `oversizedUnrelatedPolicies`.
+- `policySizeLimit`는 설치된 상류가 강제하는 정책 크기 한도다. npm 0.6.0 이하는 `1048576`, 0.7.0 이상은
+  `null`(상류 한도 없음)이다. `null`이면 크기 검사를 하지 않으므로 `oversizedUnrelatedPolicies`는 항상 빈 배열이다.
+  상류 한도가 없어도 프롬프트 상한은 남는다. `guidanceCharacters`가 크면(약 75,000자 이상) 이미 위 사전 검사에서
+  거부됐을 것이고, 통과했어도 뒤 단계(앞 단계 질문·메모가 더 붙음)가 `prompt`에서 상한을 넘을 수 있다.
+- `oversizedUnrelatedPolicies`가 비어 있지 않으면(npm 0.6.0 이하) "이 컴포넌트와 무관한 1 MiB 초과 정책"으로
+  참고 보고한다.
 
 **실패하면 중단하고 `error`와 `upstreamError`를 그대로 전한다.** 자주 나오는 경우:
 
 | 원인 | 조치 |
 | --- | --- |
-| 컴포넌트의 정책 체인에 1 MiB 초과 SECURITY.md | 경로·크기를 보고한다. 해결 전에 멈추므로 출력 디렉터리는 생기지 않는다. 사용자가 줄이거나 나눈 뒤 다시 실행 |
+| (npm 0.6.0 이하) 컴포넌트의 정책 체인에 1 MiB 초과 SECURITY.md | 경로·크기를 보고한다. 해결 전에 멈추므로 출력 디렉터리는 생기지 않는다. 사용자가 줄이거나 나눈 뒤 다시 실행 |
+| 가이던스 과대 — architecture 단계 프롬프트가 80,000자 상한 초과(npm 0.7.0에서 1 MiB 넘는 대상·상속·하위 정책 포함) | `guidanceCharacters`·문자 수·`policyPaths`를 보고한다. 출력 디렉터리는 남지 않는다. 해당 SECURITY.md를 줄이거나 나누라고, 또는 인증된 상류 CLI(`codex-security policy`)를 쓰라고 안내. 분할 실행하지 않는다 |
 | 플러그인 지원 파일 없음(`mcp/helpers.mjs` 등) | npm 설치본 안내 |
 | 부트스트랩 신뢰 경계가 worktree 루트보다 좁음 | 안내된 `--target-repo`로 0단계부터 다시 |
 | 상태 디렉터리가 저장소 안이거나 저장소를 포함 | `CODEX_SECURITY_STATE_DIR`를 저장소 밖으로 옮기라고 안내 |
@@ -177,6 +197,12 @@ env -i <trusted_child_env> <node> <policy_script> prepare --sdk-dist <sdk_dist> 
      아래 대체 유형을 쓴다. 어느 쪽이든 실제로 실행한 유형을 최종 보고에 적는다.
    - 없으면 쓰기 도구가 없는 가장 좁은 유형(예: Explore)을 쓴다. 그 유형에 Bash가 있으면 도구 제한은
      **프롬프트 지시로만** 성립한다. 어떤 유형을 썼는지 최종 보고에 적는다.
+   - **유형 이름이 아니라 실제 도구 목록을 확인한다.** 호스트가 보여 주는 에이전트 목록의 도구 칸을 읽는다.
+     같은 이름(예: Explore)이라도 환경에 따라 Glob·Grep 없이 Read만 받을 수 있다(0.7.0 스모크 실측). 그러면
+     서브에이전트가 파일을 나열하지 못해 architecture 단계 커버리지가 줄어든다. Read·Grep·Glob를 모두 가진
+     읽기 전용 유형이 없으면, 진행 전에 사용자에게 알리고 위 `codex-security-policy-reader` 정의를 두라고
+     권한다. Read만으로 진행하면 그 사실을 최종 보고와 커버리지 한계로 적는다. 상류 프롬프트는 원문 고정이라
+     파일 인벤토리를 프롬프트에 넣어 보완하지 않는다.
    - 서브에이전트를 쓸 수 없으면 **중단한다.** 부모 세션(Bash·Write 보유)이 저장소 내용을 직접 읽고
      초안을 쓰지 않는다.
 3. **반환 저장**: 서브에이전트의 반환 텍스트를 `stageResultFiles[<단계>]` 경로에 **Write 도구로
@@ -302,7 +328,9 @@ env -i <trusted_child_env> <node> <policy_script> finish --output-dir <outputDir
 `repository`, `scope`, `createdAt`, `revision`, `previousPolicySha256`, `inheritedPolicySha256`, `model`,
 `reasoningEffort`, `pluginVersion`, `customPlugin`, `status`(`threat_model_ready`/`blocked`/`completed`),
 `threatModel`(`{format: "markdown", content, scope: {includePaths: [scope], excludePaths: []}, origin: "generated"}`),
-`reviewNotes`(상류와 같은 합집합 순서. threat_model 단계 직후에는 architecture → threat_model 순으로 중복 제거 없이 잇는다). 값 두 개가
+`reviewNotes`(상류와 같은 순서로 각 단계의 `reviewNotes` 뒤에 그 단계의 `questions`를 붙인다. threat_model 단계 직후에는
+architecture notes → architecture questions → threat_model notes → threat_model questions를 중복 제거 없이 잇는다. 예: 4+4+5+6 =
+19개. finish에서는 policy → architecture → threat_model 순으로 같은 방식으로 잇고 중복을 제거한다). 값 두 개가
 상류와 다르다. `model`은 `"claude-subagent (Claude Code)"`다 — 초안을 만든 것은 OpenAI 모델이 아니라
 Claude Code 서브에이전트이므로 그 사실을 그대로 적는다. `reasoningEffort`는 해당 설정이 없어 `null`이다.
 `customPlugin`은 `CODEX_SECURITY_PLUGIN_ROOT`로 플러그인을 직접 지정했을 때 `true`다.
