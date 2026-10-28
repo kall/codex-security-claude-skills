@@ -13,7 +13,7 @@ description: >-
 결박되어 있어 동등 재현이 불가능하다. 이 스킬은 **정직한 축소판**이다 — 동등하지 않음을 이름·고지·
 요약에 명시한다(KTD3).
 
-**기준: npm 0.8.0(태그 `npm-v0.8.0`).** npm 0.2.0~0.7.0 설치본에서도 같은 절차로 동작한다(아래
+**기준: npm 0.8.1(태그 `npm-v0.8.1`).** npm 0.2.0~0.8.0 설치본에서도 같은 절차로 동작한다(아래
 「인벤토리」의 버전 메모, 실측: `docs/verification/phase4-deep-lite-pipeline.md`).
 
 **상류 저장 정책(`references/artifact-storage.md`)은 적용하지 않는다(P6-KTD8).** 근거와 범위는 Phase 1

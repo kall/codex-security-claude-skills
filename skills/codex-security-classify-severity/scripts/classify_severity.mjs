@@ -1,7 +1,7 @@
 // classify_severity.mjs — codex-security-classify-severity 스킬의 결정론 부분.
 // 서브에이전트 판정(finding × 리뷰 횟수만큼)과 사용자 보고는 부모 세션이 한다.
 //
-// 상류 `codex-security classify-severity`(기준 npm 0.8.0 — 계약은 0.6.0 과 같음, 0.2.0~0.5.1 도 지원)를 **상류 dist 함수 그대로** 돌린다.
+// 상류 `codex-security classify-severity`(기준 npm 0.8.1 — 계약은 0.6.0 과 같음, 0.2.0~0.5.1 도 지원)를 **상류 dist 함수 그대로** 돌린다.
 // 모델 호출 자리(runReadOnlyCodex → startReadOnlyCodexThread 의 `options.codex`)에만 가짜 Codex 를 넣는다.
 //   근거(주입 가능성): sdk/typescript/src/classify-severity.ts
 //     36행  ClassifySeverityOptions.codex ("@internal Test client for the shared read-only runtime")
@@ -32,6 +32,7 @@
 //     severity-store.ts·scan-comparison.ts·classify-scan-severity.ts·default-severity-rubric.ts 모두 0.6.0 과 같다.
 //     classify-scan-severity.ts 는 바뀌지 않았다(options 를 그대로 넘기므로 classificationRuns 도 전달된다).
 //   재대조(태그 npm-v0.8.0 = 커밋 71bd7ae0e9bc859fb8fe9bc4b590b8f8998b19aa): 위 여섯 파일 모두 0.7.0 과 같다.
+//   재대조(태그 npm-v0.8.1 = 커밋 1f2f96d562b98216257e7f7cdacd40c446b97f70): 위 여섯 파일 모두 0.8.0 과 같다.
 //
 // 그래서 이 파일이 **소유하지 않는 것**(상류 코드가 한다): 스캔 해석·봉인 확인, finding 선택 규칙,
 // 루브릭·지식 베이스 읽기(0.2.0 prepareKnowledgeBase / 0.4.0 readKnowledgeBaseDocuments), 0.6.0 기본 루브릭,
@@ -488,7 +489,7 @@ async function severityContract(sdkDist) {
   if (hasDefaultRubric !== (runsSchema !== null)) {
     throw new GatewayError(
       "설치된 상류 dist 의 심각도 계약을 판별할 수 없다(기본 루브릭 모듈과 classificationRunsSchema 중 하나만 있다). " +
-        "이 스킬이 검토한 npm 0.2.0~0.8.0 설치본으로 다시 실행하라.",
+        "이 스킬이 검토한 npm 0.2.0~0.8.1 설치본으로 다시 실행하라.",
     );
   }
   if (!hasDefaultRubric) return { reviews: false, defaultRubric: null, runsSchema: null };
