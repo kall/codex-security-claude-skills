@@ -15,7 +15,8 @@
    1d54bd702(#1548)는 SDK runtime.ts 의 save-scan-comparison --help 프로브(stdin·related 지원
    여부)를 지우고 현재 프로토콜(--matches-json-stdin + related)을 요구한다.
    npm-v0.7.0 = f05a0b096 에서 재대조: 0.4.0 이후 바뀐 것은 0.5.1 의 읽기 전용 스레드 설정(요청 메타데이터)뿐이고,
-   0.5.1 → 0.7.0 은 scan-comparison.ts·finding-catalogue.ts 변경 없음. 비교·조정 로직은 같다)
+   0.5.1 → 0.7.0 은 scan-comparison.ts·finding-catalogue.ts 변경 없음. 비교·조정 로직은 같다.
+   npm-v0.8.0 = 71bd7ae0e 도 두 파일 변경 없음)
 판정 규칙(서브에이전트 프롬프트 문장)은 SKILL.md 가, 검증·조정 규칙은 이 코드가 소유한다(P5-KTD4).
 
 흐름(상류 matchScanFindingsInternal 과 같은 순서, P6-KTD3):

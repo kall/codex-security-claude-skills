@@ -13,8 +13,8 @@ description: >-
 
 상류 npm CLI의 `codex-security classify-severity`는 finding마다 OpenAI 모델을 호출한다(npm 0.6.0부터는
 finding마다 `--runs`번, 기본 3번). 구독 사용자는 이 명령을 쓸 수 없다. 이 스킬은 **모델 호출 자리만** 도구
-없는 격리 서브에이전트로 바꾸고, 나머지는 모두 상류 코드로 실행한다. 기준 실측 버전은 **npm 0.7.0**이다.
-npm 0.7.0의 분류 계약은 0.6.0과 같다(아래 "0.7.0 재대조"). npm 0.2.0~0.5.1도 같은 스크립트로 동작한다(그 버전
+없는 격리 서브에이전트로 바꾸고, 나머지는 모두 상류 코드로 실행한다. 기준 실측 버전은 **npm 0.8.0**이다.
+npm 0.7.0·0.8.0의 분류 계약은 0.6.0과 같다(아래 "0.7.0 재대조"·"0.8.0 재대조"). npm 0.2.0~0.5.1도 같은 스크립트로 동작한다(그 버전
 계약으로 — 아래 "버전별 계약"). `repro-u8` S 블록이 0.7.0·0.6.0과 0.5.1에서 확인한다.
 
 ### 버전별 계약
@@ -76,6 +76,11 @@ finding 10개에 30번이다. `prepare` 결과의 `subagentCalls`가 이번 실�
     세 표에 `classification_runs` 열을 더했다. `severity-classification.json`에 `classificationRuns`가 실린다.
   - CLI: `classify-severity --runs N`(1–10, 기본 3).
   - `classify-scan-severity.ts`는 바뀌지 않았다. options를 그대로 넘기므로 `classificationRuns`도 전달된다.
+- **0.8.0 재대조**(태그 `npm-v0.8.0` = 커밋 `71bd7ae0e9bc859fb8fe9bc4b590b8f8998b19aa`): `severity-review.ts`·`default-severity-rubric.ts`·
+  `classify-severity.ts`·`classify-scan-severity.ts`·`severity-store.ts`·`scan-comparison.ts`가 0.7.0과 같다
+  (`git diff npm-v0.7.0 npm-v0.8.0` 비어 있음). 설치본 `dist/severity-review.js`·`dist/default-severity-rubric.js`·
+  `dist/classify-severity.js`도 0.7.0과 바이트 단위로 같다. 0.8.0이 coverage.json을 매니페스트 `scan.reviewState`로
+  옮겼지만(#1762) 분류 경로는 `findings.json`만 읽으므로 영향이 없다.
 - **0.7.0 재대조**(태그 `npm-v0.7.0` = 커밋 `f05a0b096cc881242ddf34a4d6b3ce0f322f3cf9`): `severity-review.ts`·
   `default-severity-rubric.ts`·`classify-severity.ts`·`classify-scan-severity.ts`·`severity-store.ts`·
   `scan-comparison.ts`가 0.6.0과 같다(`git diff npm-v0.6.0 npm-v0.7.0` 비어 있음). 기본 루브릭 SHA-256도
@@ -163,7 +168,7 @@ env -i <trusted_child_env> <node> <classify_script> <하위 명령> --sdk-dist <
 - 출력은 JSON 1개다(`prompt`만 원문 텍스트). exit 0 = 성공, 2 = 거부·실패(`error`와 상류 원문
   `upstreamError`가 실림), 1 = 사용법 오류.
 
-**시작 고지**: 플러그인 경로와 `pluginVersion`(기준 npm 0.7.0 — 다르면 "플러그인 버전이 기준과
+**시작 고지**: 플러그인 경로와 `pluginVersion`(기준 npm 0.8.0 — 다르면 "플러그인 버전이 기준과
 다름 — 상류 계약이 바뀌었을 수 있음" 경고), 스캔 입력, 루브릭 유무(0.6.0 이상에서 없으면 "상류 기본 루브릭"),
 리뷰 횟수와 서브에이전트 호출 수(`prepare`의 `classificationRuns`·`subagentCalls`), 그리고 **"스캔 산출물과
 저장소 파일은 바꾸지 않고 `severity-classification.json`과 워크벤치 평가만 쓴다"**를 알린다.

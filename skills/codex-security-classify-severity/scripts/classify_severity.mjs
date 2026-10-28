@@ -1,7 +1,7 @@
 // classify_severity.mjs — codex-security-classify-severity 스킬의 결정론 부분.
 // 서브에이전트 판정(finding × 리뷰 횟수만큼)과 사용자 보고는 부모 세션이 한다.
 //
-// 상류 `codex-security classify-severity`(기준 npm 0.7.0 — 계약은 0.6.0 과 같음, 0.2.0~0.5.1 도 지원)를 **상류 dist 함수 그대로** 돌린다.
+// 상류 `codex-security classify-severity`(기준 npm 0.8.0 — 계약은 0.6.0 과 같음, 0.2.0~0.5.1 도 지원)를 **상류 dist 함수 그대로** 돌린다.
 // 모델 호출 자리(runReadOnlyCodex → startReadOnlyCodexThread 의 `options.codex`)에만 가짜 Codex 를 넣는다.
 //   근거(주입 가능성): sdk/typescript/src/classify-severity.ts
 //     36행  ClassifySeverityOptions.codex ("@internal Test client for the shared read-only runtime")
@@ -31,6 +31,7 @@
 //   재대조(태그 npm-v0.7.0 = 커밋 f05a0b096cc881242ddf34a4d6b3ce0f322f3cf9): classify-severity.ts·severity-review.ts·
 //     severity-store.ts·scan-comparison.ts·classify-scan-severity.ts·default-severity-rubric.ts 모두 0.6.0 과 같다.
 //     classify-scan-severity.ts 는 바뀌지 않았다(options 를 그대로 넘기므로 classificationRuns 도 전달된다).
+//   재대조(태그 npm-v0.8.0 = 커밋 71bd7ae0e9bc859fb8fe9bc4b590b8f8998b19aa): 위 여섯 파일 모두 0.7.0 과 같다.
 //
 // 그래서 이 파일이 **소유하지 않는 것**(상류 코드가 한다): 스캔 해석·봉인 확인, finding 선택 규칙,
 // 루브릭·지식 베이스 읽기(0.2.0 prepareKnowledgeBase / 0.4.0 readKnowledgeBaseDocuments), 0.6.0 기본 루브릭,
@@ -121,7 +122,7 @@ const DOCUMENT_ONLY_TEXT = new Set([".pdf", ".docx"]);
 //   (classify-severity.ts 150–153행 [severityReviewInstructions, JSON.stringify({rubric, knowledgeBase, finding})]
 //   .join("\n\n") — 리뷰 N회가 이 한 프롬프트를 같이 쓴다). 오류 문구도 같다.
 // 재대조: 태그 npm-v0.7.0 = 커밋 f05a0b096cc881242ddf34a4d6b3ce0f322f3cf9 — severity-review.ts·classify-severity.ts
-//   변경 없음. 지시 8문단·조립·오류 문구가 같다.
+//   변경 없음. 지시 8문단·조립·오류 문구가 같다. 태그 npm-v0.8.0 = 커밋 71bd7ae0e 도 같다.
 // 이 리터럴은 프롬프트를 **만드는 데 쓰지 않는다.** 프롬프트는 상류 런타임이 조립한 원문을 가짜 Codex 로
 // 받아 쓴다. 리터럴은 받은 원문의 지시부가 우리가 검토한 문장과 **문자 단위로 같은지** 확인하는 데만
 // 쓴다. 다르면(상류가 문장을 바꾸거나 지시부에 데이터를 넣기 시작하면) 신뢰 구획에 무엇이 들어가는지
@@ -145,7 +146,8 @@ const UPSTREAM_INSTRUCTION_TEXT = UPSTREAM_CLASSIFY_INSTRUCTIONS.join("\n\n");
 // 출처: sdk/typescript/src/default-severity-rubric.ts(66행, 커밋 8c00f36cd #1765), 태그 npm-v0.6.0 = 커밋
 //   13dcc6fec00aaf4c23a6fa7e375ccc1726b22836 에서 템플릿 리터럴 본문을 해시했다(설치본 dist 값과 같음).
 //   재대조: 태그 npm-v0.7.0 = 커밋 f05a0b096cc881242ddf34a4d6b3ce0f322f3cf9 — default-severity-rubric.ts 변경 없음,
-//   0.7.0 설치본 dist 의 defaultSeverityRubric SHA-256 도 같은 값이다.
+//   0.7.0 설치본 dist 의 defaultSeverityRubric SHA-256 도 같은 값이다. 태그 npm-v0.8.0 = 커밋 71bd7ae0e 도
+//   변경 없음(0.8.0 설치본 dist/default-severity-rubric.js 가 0.7.0 과 바이트 단위로 같다).
 const UPSTREAM_DEFAULT_RUBRIC_SHA256 = "f0b96eb697d7a5c103bf67c2cf94852e164bd57aa69e0036326df6baee7673d2";
 // 상류 오류 문구(classify-severity.ts / classify-scan-severity.ts / severity-store.ts). 보고에 원문으로 싣는다.
 const UPSTREAM_MESSAGES = {
@@ -246,7 +248,7 @@ function parseUpstreamPrompt(input) {
   const dataLine = cut < 0 ? input : input.slice(cut + 2);
   if (instructions !== UPSTREAM_INSTRUCTION_TEXT) {
     throw new GatewayError(
-      "상류 분류 프롬프트의 지시부가 이 스킬이 고정한 영문 리터럴(npm-v0.1.29, v0.7.0 까지 같음)과 다르다. 상류가 바뀌었다 — " +
+      "상류 분류 프롬프트의 지시부가 이 스킬이 고정한 영문 리터럴(npm-v0.1.29, v0.8.0 까지 같음)과 다르다. 상류가 바뀌었다 — " +
         "신뢰 구획에 들어갈 문장을 다시 검토하기 전에는 진행하지 않는다. classify_severity.mjs 의 " +
         "UPSTREAM_CLASSIFY_INSTRUCTIONS 출처 주석을 따라 상류 classify-severity.ts 를 다시 대조하라.",
       { upstreamPromptDrift: true },
@@ -486,7 +488,7 @@ async function severityContract(sdkDist) {
   if (hasDefaultRubric !== (runsSchema !== null)) {
     throw new GatewayError(
       "설치된 상류 dist 의 심각도 계약을 판별할 수 없다(기본 루브릭 모듈과 classificationRunsSchema 중 하나만 있다). " +
-        "이 스킬이 검토한 npm 0.2.0~0.7.0 설치본으로 다시 실행하라.",
+        "이 스킬이 검토한 npm 0.2.0~0.8.0 설치본으로 다시 실행하라.",
     );
   }
   if (!hasDefaultRubric) return { reviews: false, defaultRubric: null, runsSchema: null };
