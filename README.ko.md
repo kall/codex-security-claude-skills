@@ -17,7 +17,7 @@ LLM 두뇌 역할은 Claude Code 세션 자신이 맡고, 검증·ID 파생·봉
 릴리즈 tarball을 받아 설치한다. 아니면 Claude Code 세션에 이 문구를 그대로 복사/붙여넣기해도 된다:
 
 ```
-https://github.com/kall/codex-security-claude-skills/releases/tag/v0.8.0 이거 설치해줘
+https://github.com/kall/codex-security-claude-skills/releases/tag/v0.8.1 이거 설치해줘
 ```
 
 ```bash
@@ -68,10 +68,11 @@ Node 22+는 플러그인 npm 설치, 스캔의 후보 정규화(npm 0.2.0부터 
 `codex-security-policy`·`codex-security-classify-severity`, 공식 CLI 이력 조회에 필요하다.
 Linux·macOS(Windows는 WSL).
 
-검증된 조합: `@openai/codex-security@0.8.0` (플러그인 매니페스트 `0.1.95`). npm 0.1.26~0.8.0은 모두
+검증된 조합: `@openai/codex-security@0.8.1` (플러그인 매니페스트 `0.1.95`). npm 0.1.26~0.8.1은 모두
 매니페스트 `0.1.95`라서 매니페스트 버전 경고로 구분되지 않는다. 스킬은 버전 대신 플러그인 파일로 버전별 동작을
-판별하고, `--check`는 npm 버전도 함께 보여 준다. npm 0.8.0을 설치한다. 자기채점 스크립트 다섯 개(`repro-u4`·`repro-u1`·
-`repro-u7`·`repro-u5`·`repro-u8`)는 npm 0.8.0·0.7.0 격리 설치본에서 모두 FAIL 0이다. 아래 0.6.0 결과는 v0.7.0 때
+판별하고, `--check`는 npm 버전도 함께 보여 준다. npm 0.8.1을 설치한다. 자기채점 스크립트 다섯 개(`repro-u4`·`repro-u1`·
+`repro-u7`·`repro-u5`·`repro-u8`)는 npm 0.8.1 격리 설치본에서 모두 FAIL 0이다. npm 0.8.0·0.7.0 결과는 v0.8.0 때
+같은 스크립트로 잰 기록이고(모두 FAIL 0), 이번에는 다시 돌리지 않았다. 아래 0.6.0 결과는 v0.7.0 때
 기록이고, 이번에는 다시 돌리지 않았다. 다섯 개 모두 exit 0이었다. 아래 0.5.1 결과는 v0.6.0 때
 기록이고, 이번에는 다시 돌리지 않았다. `repro-u8`은 npm 0.6.0·0.5.1 격리
 설치본에서 모두 exit 0이었다(0.5.1에서는 0.6.0 전용 검사 S13이 NOTE 1건을 낸다). 나머지 스크립트 네 개(`repro-u4`·`repro-u1`·`repro-u7`·`repro-u5`)도
@@ -86,7 +87,7 @@ npm 0.2.0에서는 `repro-u4`·`repro-u1`·`repro-u7`·`repro-u5`가 통과한�
 npm 0.2.0부터 스캔 스킬은 npm 설치본이 필요하다. 상류 소스 체크아웃에는 빌드된 Node 헬퍼가 없어 후보
 정규화를 할 수 없고, 스캔이 0단계에서 멈춘다. npm 0.3.0·0.4.0·0.5.0·0.5.1·0.6.0·0.7.0은 상태 DB 마이그레이션이 더 늘었다(0.3.0 스캔별 심각도 표,
 0.4.0 issue receipt 표, 0.5.0 스캔 소스 범위 열, 0.5.1 deep 스캔 워커 스레드 표, 0.6.0 심각도 리뷰 횟수 열과 외부 소스 리포트 표,
-0.7.0 deep 스캔 관련 마이그레이션 54~57. 0.8.0은 더하지 않았다). 전역 설치본을 올리기 전에 `~/.codex/state/plugins/codex-security`를 백업한다.
+0.7.0 deep 스캔 관련 마이그레이션 54~57. 0.8.0·0.8.1은 더하지 않았다). 전역 설치본을 올리기 전에 `~/.codex/state/plugins/codex-security`를 백업한다.
 
 deep-lite 스킬은 npm 0.4.0에 맞춰 바뀌었다. 상류가 랭킹 헬퍼를 지웠으므로, 파일을 랭킹해 상위만 고르지 않고
 인벤토리 전체를 서로 독립인 2패스로 리뷰한다. 비용은 표준 스캔의 약 2배다.
@@ -121,7 +122,7 @@ npm 0.8.0은 `coverage.json`을 없애고 리뷰 기록을 매니페스트 안(`
 `bindRepoScopes.coverageArg`를 알려 주고, 이 값이 `false`이면 스킬은 매니페스트만 바인딩하고 `coverage.includePaths`를
 직접 맞춘다.
 
-**`codex-security skills add`(npm 0.8.0에도 있음)를 실행하지 않는다.** 이 명령은 `~/.claude/skills/codex-security-<명령>`을
+**`codex-security skills add`(npm 0.8.1에도 있음)를 실행하지 않는다.** 이 명령은 `~/.claude/skills/codex-security-<명령>`을
 지우고, 로그인이 필요한 CLI를 부르기만 하는 상류 스킬 링크로 바꾼다. 이 저장소의 스킬 6개(scan, policy, patch,
 validate, verify-fix, classify-severity)와 이름이 겹친다. `install.sh --check`가 덮어쓰인 스킬을 알려 준다.
 `bash skills/install.sh --force`(복사본이면 `--copy --force`)로 다시 설치한다.
