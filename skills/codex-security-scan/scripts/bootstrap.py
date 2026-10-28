@@ -17,7 +17,7 @@
   6. 후보 정규화 경로(`candidateNormalizer`) — Python 스크립트 또는 5번의 Node 헬퍼.
      이것도 관측이다. 불가일 때 멈출지는 스킬이 정한다.
   7. 정본 위협 모델의 markdown 형식 지원(`threatModelMarkdown`) — 플러그인 스키마로 판별한다.
-  8. 버전별 계약 차이 관측(전부 파일로 판별한다. 매니페스트 버전은 npm 0.1.26~0.7.0 이
+  8. 버전별 계약 차이 관측(전부 파일로 판별한다. 매니페스트 버전은 npm 0.1.26~0.8.0 이
      모두 0.1.95 라 구분하지 못한다):
      - `npmVersion` — 플러그인 루트의 형제 package.json 의 version(npm 설치본일 때만).
      - `coverageCompleteness` — coverage 스키마에 `completeness` 가 있는가(npm 0.2.0 이하).
@@ -26,6 +26,9 @@
      - `inScopeInventory`·`diffRankInput` — 인벤토리 도우미(`generate-in-scope-files`·
        `make-diff-rank-input`)의 실행 경로. npm 0.6.0 이하는 Python 스크립트, npm 0.7.0 은
        그 스크립트를 지우고 5번의 Node 헬퍼로 옮겼다(상류 05cceee24 #1432).
+     - `bindRepoScopes.coverageArg` — `bind-repo-scopes` 가 `--coverage` 를 받는가. npm 0.8.0 은
+       coverage 를 매니페스트 `scan.reviewState` 로 옮기며(상류 621bad47e #1762, 같은 커밋이
+       `scripts/review_state.py` 를 더함) 헬퍼에서 그 인자를 지웠다.
 
 이 JSON이 이후 모든 단계(register-cli-scan, 산출물 작성, finalize)의 경로
 source-of-truth 다. 스킬 문서는 이 스크립트를 한 번 호출하고 그 결과만 사용한다.
@@ -144,6 +147,7 @@ MAX_RANK_SCRIPT_SIZE = 4 * 1024 * 1024
 # 같은 런처의 `--helper generate-in-scope-files|make-diff-rank-input` 으로 옮겼다(상류
 # 05cceee24 #1432). 인자 이름은 같다.
 INVENTORY_SCRIPT_RELATIVE = Path("scripts") / "generate_in_scope_files.py"
+REVIEW_STATE_SCRIPT_RELATIVE = Path("scripts") / "review_state.py"
 
 # 자식 환경은 **허용 목록**으로 짠다. 거부 목록은 구조가 틀렸다 — 위협면이
 # "우리가 부르는 서드파티 바이너리(git/npm/python/rg)가 읽는 임의의 환경변수"
@@ -1576,7 +1580,7 @@ def coverage_requires_completeness(plugin_root: Path, target_repo: Path) -> bool
 def resolve_npm_version(plugin_root: Path, target_repo: Path) -> str | None:
     """npm 패키지 version. 플러그인 루트가 `<패키지>/_bundled_plugin` 일 때만 읽는다.
 
-    매니페스트 버전(pluginVersion)은 npm 0.1.26~0.7.0 이 모두 0.1.95 라서 이 값이
+    매니페스트 버전(pluginVersion)은 npm 0.1.26~0.8.0 이 모두 0.1.95 라서 이 값이
     사람이 읽는 유일한 구분 축이다. 동작 분기에는 쓰지 않는다(분기는 파일 존재 프로브).
     """
     if plugin_root.name != "_bundled_plugin":
@@ -1638,6 +1642,22 @@ def resolve_worklist_helper(
             f"Node 헬퍼로 이동) Node 헬퍼도 쓸 수 없음: {helper['reason']}"
         ),
     }
+
+
+def bind_scopes_takes_coverage(plugin_root: Path, target_repo: Path, resolved: dict) -> bool | None:
+    """`bind-repo-scopes` 가 `--coverage PATH` 를 받는가. 쓸 수 없는 헬퍼면 None.
+
+    Python 하위 명령(npm 0.2.0 이하)과 npm 0.3.0~0.7.0 Node 헬퍼는 필수로 받는다. npm 0.8.0
+    (상류 621bad47e #1762)은 그 인자를 지워 `Unknown option '--coverage'` 로 exit 2 를 낸다.
+    같은 커밋이 `scripts/review_state.py` 를 더했으므로 그 파일로 판별한다 — 헬퍼 번들은
+    압축돼 있어 사용법 문자열을 읽을 수 없고, 판별하려고 실행하지는 않는다.
+    """
+    if not resolved["available"]:
+        return None
+    if resolved["kind"] == "python":
+        return True
+    script = plugin_root / REVIEW_STATE_SCRIPT_RELATIVE
+    return not (not within_target(target_repo, script) and is_regular_file(script))
 
 
 def resolve_inventory_helper(
@@ -2179,6 +2199,9 @@ def main(argv: list[str]) -> int:
     coverage_completeness = coverage_requires_completeness(plugin_root_path, target_repo)
     bind_repo_scopes = resolve_worklist_helper(
         plugin_root_path, target_repo, helper, "bind-repo-scopes"
+    )
+    bind_repo_scopes["coverageArg"] = bind_scopes_takes_coverage(
+        plugin_root_path, target_repo, bind_repo_scopes
     )
     copy_deep_review_input = resolve_worklist_helper(
         plugin_root_path, target_repo, helper, "copy-deep-review-input"

@@ -203,7 +203,7 @@ expect_exit 2 "$?" "E finalize (실패 기대)"
 #   deferred 0건 + needs_follow_up surface -> invocations 없음(SARIF 만으로는 불완전을 모름)
 #
 # 어느 형상인지는 버전 문자열이 아니라 플러그인 스키마로 고른다(매니페스트 버전은
-# npm 0.1.26~0.7.0 이 모두 0.1.95 다). 스킬 bootstrap 의 coverageCompleteness 와 같은 축이다.
+# npm 0.1.26~0.8.0 이 모두 0.1.95 다). 스킬 bootstrap 의 coverageCompleteness 와 같은 축이다.
 # ---------------------------------------------------------------------------
 step "F. SARIF 성공 판정 형상 (완전 / deferred 있음 / deferred 없는 불완전)"
 COVERAGE_COMPLETENESS="$(PY -c 'import json,sys
@@ -1118,6 +1118,9 @@ fi
 #       그 하위 명령을 지우고 런처의 `--helper bind-repo-scopes` 로 옮겼다(상류 f894583a3 #1607).
 #       스킬은 bootstrap 의 bindRepoScopes.kind 로 고른다. 여기서는 그 kind 를 그대로 받아
 #       스킬 문서의 명령형으로 실행하고, manifest·coverage 의 includePaths 가 바뀌는지 본다.
+#       npm 0.8.0 은 헬퍼에서 --coverage 를 지웠다(상류 621bad47e #1762). 그 사본에서는
+#       bindRepoScopes.coverageArg=false 로 인자를 빼고, 매니페스트만 바뀌는지와 --coverage 를
+#       주면 거부되는지(L1c 대조군)를 본다.
 #   L2. copy-deep-review-input — 같은 이동. diff-scan 이 copyDeepReviewInput.kind 로 고른다.
 #       입력은 I 블록이 만든 실제 diff 랭킹 입력이다.
 #   L3. 새 finding 은 scan-draft 스키마로 검증된다(상류 c380befb9 #1633). 구 별칭
@@ -1154,29 +1157,65 @@ else
   else
     bad "L0: bootstrap kind 가 사본과 다릅니다 — bind=$BIND_KIND copy=$COPY_KIND 기대=$WANT_KIND"
   fi
+  # coverageArg: npm 0.8.0 헬퍼는 --coverage 를 받지 않고 매니페스트만 바꾼다(상류 621bad47e
+  # #1762). 같은 커밋이 scripts/review_state.py 를 더했으므로 기대값을 그 파일로 정한다.
+  BIND_COV="$(PY -c 'import json,sys; print((json.load(open(sys.argv[1])).get("bindRepoScopes") or {}).get("coverageArg"))' "$RUN/boot.json")"
+  if [ "$WANT_KIND" = node-helper ] && [ -f "$PLUGIN/scripts/review_state.py" ]; then
+    WANT_COV=False
+  else
+    WANT_COV=True
+  fi
+  if [ "$BIND_COV" = "$WANT_COV" ]; then
+    ok "L0b: bootstrap 의 bindRepoScopes.coverageArg=$BIND_COV (사본과 일치)"
+  else
+    bad "L0b: bindRepoScopes.coverageArg=$BIND_COV, 기대 $WANT_COV"
+  fi
   SCAN_L="$RUN/scan-l"
   mkdir -p "$SCAN_L"
   cp "$FIXTURES"/scan-manifest.json "$FIXTURES"/coverage.json "$SCAN_L/"
   printf '["src/app.py", "lib"]\n' > "$RUN/l-scopes.json"
+  # 스킬 6단계 명령형: coverageArg 가 True 일 때만 --coverage 를 붙인다.
+  L1_COV_ARGS=()
+  [ "$BIND_COV" = True ] && L1_COV_ARGS=(--coverage "$SCAN_L/coverage.json")
   run_worklist_helper "$BIND_KIND" bind-repo-scopes --scopes-file "$RUN/l-scopes.json" \
-    --manifest "$SCAN_L/scan-manifest.json" --coverage "$SCAN_L/coverage.json" \
-    >"$RUN/l1.out" 2>&1
+    --manifest "$SCAN_L/scan-manifest.json" "${L1_COV_ARGS[@]}" >"$RUN/l1.out" 2>&1
   l1_rc=$?
-  expect_exit 0 "$l1_rc" "L1 bind-repo-scopes($BIND_KIND)"
+  expect_exit 0 "$l1_rc" "L1 bind-repo-scopes($BIND_KIND, coverageArg=$BIND_COV)"
   [ "$l1_rc" = 0 ] || sed 's/^/     /' "$RUN/l1.out" | tail -3
-  if PY - "$SCAN_L" <<'EOF'
+  # coverageArg 가 False 이면 헬퍼는 coverage.json 을 건드리지 않는다. 스킬이 같은 배열을 직접 쓴다.
+  if PY - "$SCAN_L" "$BIND_COV" <<'EOF'
 import json, pathlib, sys
 scan = pathlib.Path(sys.argv[1])
 manifest = json.loads((scan / "scan-manifest.json").read_text())
 coverage = json.loads((scan / "coverage.json").read_text())
 want = ["src/app.py", "lib"]
-got = (manifest["scan"]["scope"].get("includePaths"), coverage.get("includePaths"))
-raise SystemExit(0 if got == (want, want) else 1)
+got_manifest = manifest["scan"]["scope"].get("includePaths")
+got_coverage = coverage.get("includePaths")
+if sys.argv[2] == "True":
+    raise SystemExit(0 if (got_manifest, got_coverage) == (want, want) else 1)
+raise SystemExit(0 if got_manifest == want and got_coverage != want else 1)
 EOF
   then
-    ok "L1 manifest·coverage 의 includePaths 가 요청 경로로 바뀜"
+    if [ "$BIND_COV" = True ]; then
+      ok "L1 manifest·coverage 의 includePaths 가 요청 경로로 바뀜"
+    else
+      ok "L1 manifest 의 includePaths 만 요청 경로로 바뀜(coverage.json 은 스킬이 맞춘다)"
+    fi
   else
-    bad "L1 includePaths 가 요청 경로로 바뀌지 않았습니다"
+    bad "L1 includePaths 가 기대대로 바뀌지 않았습니다(coverageArg=$BIND_COV)"
+  fi
+  # 대조군: coverageArg 가 False 인 사본에 --coverage 를 주면 거부된다(분기가 필요한 이유).
+  if [ "$BIND_COV" = False ]; then
+    cp "$FIXTURES"/scan-manifest.json "$FIXTURES"/coverage.json "$SCAN_L/"
+    run_worklist_helper "$BIND_KIND" bind-repo-scopes --scopes-file "$RUN/l-scopes.json" \
+      --manifest "$SCAN_L/scan-manifest.json" --coverage "$SCAN_L/coverage.json" >"$RUN/l1c.out" 2>&1
+    expect_exit 2 "$?" "L1c 대조군: coverageArg=False 사본에 --coverage"
+    if grep -q "Unknown option '--coverage'" "$RUN/l1c.out"; then
+      ok "L1c 거부 문구가 스킬 리페어 루프의 인용과 같음"
+    else
+      bad "L1c 거부 문구가 다릅니다"
+      sed 's/^/     /' "$RUN/l1c.out" | tail -3
+    fi
   fi
   if [ -s "$RUN/diff1.rank.jsonl" ]; then
     run_worklist_helper "$COPY_KIND" copy-deep-review-input \
