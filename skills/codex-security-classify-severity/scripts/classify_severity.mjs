@@ -249,7 +249,7 @@ function parseUpstreamPrompt(input) {
   const dataLine = cut < 0 ? input : input.slice(cut + 2);
   if (instructions !== UPSTREAM_INSTRUCTION_TEXT) {
     throw new GatewayError(
-      "상류 분류 프롬프트의 지시부가 이 스킬이 고정한 영문 리터럴(npm-v0.1.29, v0.8.0 까지 같음)과 다르다. 상류가 바뀌었다 — " +
+      "상류 분류 프롬프트의 지시부가 이 스킬이 고정한 영문 리터럴(npm-v0.1.29, v0.8.1 까지 같음)과 다르다. 상류가 바뀌었다 — " +
         "신뢰 구획에 들어갈 문장을 다시 검토하기 전에는 진행하지 않는다. classify_severity.mjs 의 " +
         "UPSTREAM_CLASSIFY_INSTRUCTIONS 출처 주석을 따라 상류 classify-severity.ts 를 다시 대조하라.",
       { upstreamPromptDrift: true },
