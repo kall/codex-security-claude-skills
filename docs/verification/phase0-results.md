@@ -1628,3 +1628,52 @@ Python 3.14.8, Node v22.23.2. SKIP은 0건이다.
 6. policy 매니페스트 `reviewNotes` 구성 서술, patch·verify-fix의 git filter·diff 드라이버 무력화 서술과 static 허용 목록(Bash 검색 금지), 서브에이전트 유형을 실제 도구 목록으로 확인하라는 지시를 바로잡았다.
 
 확인하지 못한 것: diff `--working-tree` 실행, policy `policy` 단계·`finish`, 큰 SECURITY.md 저장소의 전체 스캔 봉인, classify 재판정 경로, 워크벤치 `complete` 실패 분기, 줄바꿈 경로 인벤토리 실패의 종단 재현, 인증이 필요한 명령.
+
+## 부록 — npm 0.8.0(매니페스트 0.1.95) 재실측 (2026-10-28)
+
+기준선을 npm 0.7.0에서 상류 태그 `npm-v0.8.0`(커밋 `71bd7ae0e9bc859fb8fe9bc4b590b8f8998b19aa`)으로 올리면서 재실측한 결과다. 상세는 `docs/plans/2026-10-28-1500-chore-codex-security-080-alignment.md`다.
+
+### 정합 작업 전 (수정 전 스킬, npm 0.8.0)
+
+`repro-u4`는 exit 1(FAIL 2)이었다. L1에서 `bind-repo-scopes: error: Unknown option '--coverage'`(exit 2)가 났고, 그래서 includePaths도 바뀌지 않았다(#1762). `repro-u7`은 I17h 1건이 같은 원인으로 실패했다. `repro-u1`·`repro-u5`·`repro-u8`은 통과했고 `repro-u3` 요약은 0.7.0과 같았다.
+
+### 정합 작업 뒤 재검증
+
+| 스크립트 | npm 0.8.0 | npm 0.7.0 |
+| --- | --- | --- |
+| `repro-u4.sh` | exit 0, OK 84 | exit 0, OK 82 |
+| `repro-u1-search-command.sh` | exit 0, OK 96 | exit 0, OK 96 |
+| `repro-u7-coverage-recovery.sh` | exit 0, OK 73 | exit 0, OK 73 |
+| `repro-u5-match-validator.sh` | exit 0, OK 714 | exit 0, OK 714 |
+| `repro-u8-policy-severity.sh` | exit 0, OK 332 | exit 0, OK 332 |
+| `repro-u3.sh` 요약 | S5 0, S6 0, S9 1, S9b 0 | 같음 |
+
+두 버전 모두 FAIL·SKIP·NOTE 0이다. Python 3.14, Node v24.22.1. `repro-u4` L1c(0.8.0 사본에 `--coverage`를 주면 거부)가 분기의 필요성을 대조군으로 보인다. `repro-u7` I17h에서 coverage 동기화를 지운 변이는 finalize가 `coverage.includePaths: must match manifest scope`로 거부해 실패했다.
+
+수동 확인: 0.8.0 finalizer로 fixture(`coverageRef` 없음)를 봉인하면 `coverageRef: "coverage.json"`이 들어가고 `artifacts`에 `findings.json`·`coverage.json`이 남는다. `scan.mode`·`scan.review`는 생기지 않는다. `report.md`는 "Canonical artifacts: `scan-manifest.json` and `findings.json`"이라고 쓰고 `Reviewed Surfaces` 절은 남는다.
+
+### 종단간 스모크 테스트 (npm 0.8.0)
+
+| 대상 | 결과 |
+| --- | --- |
+| 전체 스캔 | register → contract → feedback → SECURITY.md 해결 → 인벤토리 → 정규화 → 정산 → finalize → `complete`. 봉인 번들에 coverage.json이 남고 `scan.mode`·`scan.review`·`scan.reviewState`는 없다. 상류 `scans list`에도 보인다 |
+| 경로 지정(워크벤치) `--paths app` | contract `requiredIncludePaths=["app"]`를 두 파일에 반영. `coverageArg=false`라 `--coverage` 없이 bind → exit 0 → `complete` |
+| 경로 지정(워크벤치 없음) | coverage 동기화를 빠뜨리면 finalize exit 2(`coverage.includePaths: must match manifest scope`). 6단계 1번대로 맞추면 통과 |
+| diff `refs`·`working_tree` | `make-diff-rank-input` → `copy-deep-review-input` → diff 인벤토리 → 정규화 → finalize → `complete` 둘 다 통과 |
+| deep-lite | 2패스 4행 → 정규화 병합 3행 → finalize → `complete` |
+| policy `prepare`(#1535) | `vendor/`를 무시하는 저장소에서 `--path .`의 `policyPaths`가 `SECURITY.md`·`app/SECURITY.md`(0.7.0은 `vendor/pkg/SECURITY.md`도 포함). `--path vendor/pkg`는 대상 자신의 정책을 남긴다. 스캔 0단계 `resolve-security-md`는 0.7.0과 같다 |
+| classify-severity | 기본 루브릭, runs 3 × finding 3 = 9건, 다수결(high·high·medium → high), `publishReadable=true`. 재실행은 3건 모두 재사용 |
+| scan-match | 0.8.0 번들 2개(전체 → deep-lite). catalogue·finalize·save exit 0. 상류 `scans compare` new 2, persisting 1 |
+| 실행 카나리 | `.git/config` `core.fsmonitor` 카나리가 보호 경로에서는 한 번도 발동하지 않았다(맨 `git status`·`git commit` 대조군은 매번 발동) |
+
+모델 판단(위협 모델, 후보, 판정, classify 답, scan-match 응답)은 포크 에이전트가 직접 썼다. 그래서 classify·scan-match는 결정론 경로만 검증했다.
+
+찾아 고친 것:
+
+1. **(중) 0.8.0의 `examples/completed-scan/`은 새 형상이다.** 스킬은 "상류 `examples/completed-scan/`의 형상을 따른다"고 썼는데, 그 예제에는 `scan.mode`·`scan.review`가 있고 coverage.json이 없다. 그대로 따르면 R6와 새 형상 금지 규칙과 충돌한다. 0.8.0부터는 `examples/legacy-completed-scan/`을 따르라고 고쳤다.
+2. 정산이 includePaths 불일치를 잡지 못했다(`status: pass`, 경고 없음). finalize가 거부하므로 회복은 되지만, 0.8.0에서는 빠뜨리기 쉽다. 정산이 경고를 내게 했다(`repro-u7` I5y).
+3. 스캔·policy·classify-severity의 시작 고지 기준 버전이 0.7.0이라 0.8.0에서 "기준과 다름" 경고가 나갈 상태였다. 0.8.0으로 올렸다.
+
+고치지 않은 것(0.8.0과 무관한 기존 동작): 파일 길이를 넘는 `startLine`이 finalize와 정산을 통과한다(정규화기는 거부한다). R10은 경로만 검사한다. 스캔 디렉터리 상위가 group-writable이면 `register`가 `Scan output parent must not be group- or world-writable without the sticky bit.`로 거부되고 글루가 `failureKind: "gate"`로 분류한다(기본 `~/.codex` 경로에서는 생기지 않는다).
+
+확인하지 못한 것: 상류 0.8.0 CLI가 만든 새 형상 번들(coverage.json 없음)에 scan-match·classify-severity를 쓰는 경우(모델 인증이 필요해 만들지 못했다), patch·verify-fix 정적 모드(상류 `remediation.ts` 변경 없음), 인증이 필요한 명령.

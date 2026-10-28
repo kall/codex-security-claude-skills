@@ -912,6 +912,21 @@ def run(args: argparse.Namespace, out) -> tuple[int, dict[str, Any]]:
             f"in_scope_files.txt 의 {len(in_scope_outside)}개 항목이 소스 루트를 벗어나 "
             f"집계에서 제외했습니다 (예: {in_scope_outside[0]}).",
         )
+    # npm 0.8.0 의 bind-repo-scopes 는 매니페스트만 바꾸므로(상류 #1762) coverage 쪽을 빠뜨리기 쉽다.
+    # finalize 가 `coverage.includePaths: must match manifest scope` 로 거부하기 전에 알린다.
+    manifest_path = os.path.join(scan_dir, "scan-manifest.json")
+    if os.path.exists(manifest_path):
+        scan = _load_json_object(manifest_path, "scan-manifest.json").get("scan")
+        scope = scan.get("scope") if isinstance(scan, dict) else None
+        if isinstance(scope, dict) and "includePaths" in scope:
+            if coverage.get("includePaths") != scope["includePaths"]:
+                recon.warnings.append(
+                    "coverage.json 의 includePaths "
+                    f"{json.dumps(coverage.get('includePaths'), ensure_ascii=False)} 가 매니페스트 "
+                    f"scan.scope.includePaths {json.dumps(scope['includePaths'], ensure_ascii=False)} 와 "
+                    "다릅니다 — finalize 가 거부합니다. 경로 지정 스캔이면 bind-repo-scopes 뒤에 "
+                    "coverage.json 의 includePaths 를 같은 배열로 맞추세요(bindRepoScopes.coverageArg=false)."
+                )
 
     coverage_written = False
     if recon.changes and not args.dry_run:

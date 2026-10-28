@@ -145,15 +145,17 @@ bash skills/install.sh --copy --force --check
 
 ## 검증된 조합
 
-- 번들 플러그인: \`@openai/codex-security@0.7.0\` (플러그인 매니페스트 \`0.1.95\`)
-  — npm 0.1.26~0.7.0 은 모두 매니페스트 \`0.1.95\` 라서 매니페스트 버전 경고로 구분되지 않는다. \`--check\` 가
-  npm 버전을 함께 보여 준다. npm 0.7.0 을 설치한다. 0.2.0 부터 스캔 스킬도 npm 설치본이 필요하다(후보 정규화가
+- 번들 플러그인: \`@openai/codex-security@0.8.0\` (플러그인 매니페스트 \`0.1.95\`)
+  — npm 0.1.26~0.8.0 은 모두 매니페스트 \`0.1.95\` 라서 매니페스트 버전 경고로 구분되지 않는다. \`--check\` 가
+  npm 버전을 함께 보여 준다. npm 0.8.0 을 설치한다. 0.2.0 부터 스캔 스킬도 npm 설치본이 필요하다(후보 정규화가
   Node 헬퍼로 옮겨짐). 0.3.0·0.4.0·0.5.0·0.5.1·0.6.0·0.7.0 은 상태 DB 마이그레이션이 더 늘었으므로 전역 설치본을 올리기 전에 상태
   디렉터리(~/.codex/state/plugins/codex-security)를 백업한다.
 - npm 0.6.0 부터 codex-security-classify-severity 는 루브릭이 없어도 상류 기본 루브릭으로 모델이 판정하고,
   finding 마다 독립 리뷰를 기본 3회 한다(\`--runs 1–10\`). 재사용되지 않는 finding 마다 서브에이전트를 N회 부른다.
   0.5.1 이하는 이전 계약(루브릭 없으면 모델 호출 없음) 그대로다.
 - npm 0.7.0 부터 전체 스캔 인벤토리도 상류 Node 헬퍼가 만든다(#1432). Node 가 없으면 전체 스캔도 할 수 없다.
+- npm 0.8.0 은 coverage.json 을 매니페스트 scan.reviewState 로 옮기고(#1762) bind-repo-scopes 의 --coverage 를 지웠다.
+  스킬은 coverage.json 형상을 유지하고, 경로 지정 스캔은 부트스트랩 bindRepoScopes.coverageArg 로 명령을 고른다.
   SECURITY.md 1 MiB 한도가 없어졌다(#1883). policy 스킬은 0.6.0 이하에서만 1 MiB 를 검사한다.
 - Python 3.10+ / git / Node 22+(플러그인 npm 설치, 스캔 후보 정규화, 전체 스캔 인벤토리(0.7.0 부터), 경로 지정·diff 스캔의 작업 목록 도우미,
   SECURITY.md 정책 해결, codex-security-policy·codex-security-classify-severity)

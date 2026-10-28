@@ -193,8 +193,8 @@ finalizer·`complete-scan`은 이 경로를 받아들인다(`repro-u4.sh` I 블�
 (리페어 루프 R12) → `workbench_glue.py complete`(게이트 실패 3선택지 분기). Phase 1·2 SKILL.md의
 해당 절차를 그대로 따른다.
 
-- **`bind-repo-scopes`가 필요하면** Phase 1 6단계의 `bindRepoScopes.kind` 분기를 따른다. npm 0.3.0부터
-  `generate_rank_input.py bind-repo-scopes`가 없다(Node 헬퍼로 이동).
+- **`bind-repo-scopes`가 필요하면** Phase 1 6단계의 `bindRepoScopes.kind`·`coverageArg` 분기를 따른다. npm 0.3.0부터
+  `generate_rank_input.py bind-repo-scopes`가 없다(Node 헬퍼로 이동). npm 0.8.0 헬퍼는 `--coverage`를 받지 않는다(상류 #1762).
 - **커버리지 완결성**: `coverage.completeness`는 Phase 1 5단계 규칙(`coverageCompleteness`)을 따른다.
   npm 0.3.0부터는 쓰지 않고, 남은 작업은 `deferred`와 `needs_follow_up` surface로만 표현한다.
 - **정산은 `--json`과 함께 호출한다** — 최종 보고가 `coverage.coverageComplete`·`deferredCount`·

@@ -65,7 +65,7 @@ fallbacks"보다 우선한다고 쓰기 때문이다. 그래서 상류 문서가
      조건은 두 경로에 같다.
      **diff 스캔은 붙이지 않는다** — diff 모드는 `git` 만 쓴다(실측). 대신 `trustedPathEnv` 는 쓴다.
    - 성공 시 단일 JSON을 출력한다:
-     `{"ok": true, "pluginRoot", "pluginVersion", "pluginSource", "npmVersion", "python": {"path","version"}, "searchCommand": {"path","source","pathPrefix","version"}, "node": {"path","source","version"}, "securityMdHelper": {"available","launcher","node","reason"}, "candidateNormalizer": {"available","kind","reason"}, "threatModelMarkdown", "coverageCompleteness", "bindRepoScopes": {"available","kind","reason"}, "copyDeepReviewInput": {"available","kind","reason"}, "inScopeInventory": {"available","kind","reason"}, "diffRankInput": {"available","kind","reason"}, "sdk": {"dist","cli","reason"}, "scanDir", "scansRoot", "stateDir", "repoRoot"}`.
+     `{"ok": true, "pluginRoot", "pluginVersion", "pluginSource", "npmVersion", "python": {"path","version"}, "searchCommand": {"path","source","pathPrefix","version"}, "node": {"path","source","version"}, "securityMdHelper": {"available","launcher","node","reason"}, "candidateNormalizer": {"available","kind","reason"}, "threatModelMarkdown", "coverageCompleteness", "bindRepoScopes": {"available","kind","reason","coverageArg"}, "copyDeepReviewInput": {"available","kind","reason"}, "inScopeInventory": {"available","kind","reason"}, "diffRankInput": {"available","kind","reason"}, "sdk": {"dist","cli","reason"}, "scanDir", "scansRoot", "stateDir", "repoRoot"}`.
      `npmVersion`·`node`·`securityMdHelper`·`candidateNormalizer`·`threatModelMarkdown`·
      `coverageCompleteness`·`bindRepoScopes`·`copyDeepReviewInput`·`inScopeInventory`·`diffRankInput`·`sdk`는
      **관측 필드**다.
@@ -114,15 +114,15 @@ fallbacks"보다 우선한다고 쓰기 때문이다. 그래서 상류 문서가
      대상 저장소 밖의 Git을 고른다(상류 `50b0e186`). 이 변수는 `env -i`로 구성한 자식 환경에 들어가지
      않고, `workbench_glue.py`도 상속값을 지운다(`repro-u7` I18). 상류 SDK도 사용자 값을 쓰지 않는다.
    - **시작 고지**: 선택된 플러그인의 절대 경로, `pluginVersion`, `npmVersion`을 사용자에게 알린다.
-     `pluginVersion`이 이 번역 지침 작성 기준(**매니페스트 0.1.95**, npm 0.7.0)과 다르면 "플러그인 버전이
+     `pluginVersion`이 이 번역 지침 작성 기준(**매니페스트 0.1.95**, npm 0.8.0)과 다르면 "플러그인 버전이
      매핑 기준과 다름 — 워크플로 지시가 바뀌었을 수 있음"을 경고한다. 이 값은 매니페스트
-     버전이며 npm 패키지 버전과 다른 축이다(npm 0.7.0 = 매니페스트 0.1.95).
-     `npmVersion`이 `null`이 아니고 `0.7.0`과 다르면 같은 경고를 낸다. `null`(소스 체크아웃 등)이면
+     버전이며 npm 패키지 버전과 다른 축이다(npm 0.8.0 = 매니페스트 0.1.95).
+     `npmVersion`이 `null`이 아니고 `0.8.0`과 다르면 같은 경고를 낸다. `null`(소스 체크아웃 등)이면
      npm 버전을 알 수 없다고만 적는다. `npmVersion`은 고지용이다. 동작 분기는 아래 파일 프로브로 한다.
    - **표기 규약**: 이 저장소의 문서는 두 축을 **항상 이름으로 구분해** 쓴다 — `npm 0.7.0`,
      `매니페스트 0.1.95`. 축 없이 "플러그인 0.1.x"로 쓰지 않는다. 두 축의 숫자 범위가 겹쳐서
      (npm 0.1.20과 매니페스트 0.1.20이 둘 다 존재) 축을 생략하면 어느 쪽인지 알 수 없다.
-   - **경고로 구분되지 않는 구간(P6-KTD1)**: npm 0.1.26~0.7.0은 모두 매니페스트 0.1.95다. 그래서
+   - **경고로 구분되지 않는 구간(P6-KTD1)**: npm 0.1.26~0.8.0은 모두 매니페스트 0.1.95다. 그래서
      이 경고는 이 구간의 버전을 구분하지 못한다. 버전 대신 **파일 존재로 판별한 필드**를 쓴다.
      - npm 0.1.26에는 Node 헬퍼(`securityMdHelper`)가 없어서 3번 정책 해결이 고지와 함께
        건너뛰어진다(`securityMdHelper.available: false`). 헬퍼는 npm 0.1.27부터 있다.
@@ -136,6 +136,11 @@ fallbacks"보다 우선한다고 쓰기 때문이다. 그래서 상류 문서가
      - npm 0.3.0부터 `generate_rank_input.py`에 `bind-repo-scopes`·`copy-deep-review-input` 하위 명령이
        없고 Node 헬퍼로 옮겨졌다(상류 #839·#843). `bindRepoScopes.kind`·`copyDeepReviewInput.kind`가
        `python`이면 0.2.0 이하, `node-helper`면 0.3.0 이후 경로다.
+     - npm 0.8.0은 `bind-repo-scopes` 헬퍼에서 `--coverage` 인자를 지웠다(상류 621bad47e #1762). 헬퍼는
+       매니페스트만 바꾼다. `bindRepoScopes.coverageArg`가 그 판별값이다(`true`면 인자를 받고, `false`면
+       받지 않는다. 헬퍼를 쓸 수 없으면 `null`). 같은 변경으로 상류의 새 형상은 coverage.json 대신
+       매니페스트 `scan.reviewState`를 쓴다. 이 스킬은 0.8.0에서도 coverage.json을 쓰는 레거시 형상을
+       유지한다 — 상류 finalizer가 coverage.json이 있고 새 형상 필드가 없으면 그 형상으로 봉인한다(실측, 5단계).
      - npm 0.7.0은 인벤토리 도우미 `scripts/generate_in_scope_files.py`·`generate_rank_input.py`·
        `rank_preview.py`를 지우고 같은 런처의 `--helper generate-in-scope-files|make-diff-rank-input|
        make-repo-scope-input`으로 옮겼다(상류 05cceee24 #1432). 인자 이름은 같다.
@@ -143,7 +148,7 @@ fallbacks"보다 우선한다고 쓰기 때문이다. 그래서 상류 문서가
        경로다. 출력 집합과 실패 동작(줄바꿈 경로 exit 2, 빈 스코프는 빈 목록으로 exit 0)은 두 경로가
        같다(`repro-u4.sh` G·I·J 블록, 0.6.0·0.7.0 실측).
 
-     검증된 조합인 npm 0.7.0 설치를 권장한다. npm 0.6.0도 동작한다(자기채점 스크립트가 두 버전을
+     검증된 조합인 npm 0.8.0 설치를 권장한다. npm 0.7.0도 동작한다(자기채점 스크립트가 두 버전을
      모두 검사한다). npm 0.1.32 이하는 0.2.0 기준 검토 때 확인한 경로를 남겨 두었지만 이번에 다시
      검증하지 않았다. 버전별 동작은 해당 절에 적었다.
    - **후보 정규화 확인**: `candidateNormalizer.available`이 `false`이면 **중단**한다. 후보가 1건이라도
@@ -461,15 +466,32 @@ candidates, map recorded outcomes in this order"로 적고, 원장을 공급하�
 draft — R6 금지 필드 없음), `findings.json`, `coverage.json`을 쓴다. `report.md`는 **직접 쓰지 않는다**
 (finalizer 생성). 3개 파일이 디스크에 존재하는지 확인한다.
 
+**npm 0.8.0의 새 형상(`reviewState`)은 쓰지 않는다.** 0.8.0은 coverage.json을 없애고 리뷰 기록을 미봉인
+매니페스트의 `scan.reviewState`로 옮겼다(상류 621bad47e #1762). 새 스캔의 봉인 번들은 `scan-manifest.json`·
+`findings.json`뿐이고, 봉인 때 `scan.reviewState`가 `scan.review`(`excludedPaths`만)로 줄어든다. 상류 문서
+(`core-scan.md`·`final-report.md`·`scan-contract.md`)도 `coverage.*` 대신 `reviewState.*`로 쓴다. 이 스킬은
+**지원하는 모든 버전에서 coverage.json 형상을 쓴다.** 0.8.0 finalizer는 미봉인 매니페스트에 새 형상 필드가 없고
+coverage.json이 있으면 그 형상으로 검사·봉인하고 coverage.json을 봉인 산출물에 남긴다(`finalize_scan_contract.py`의 레거시
+분기, `repro-u4`·`repro-u7` 실측). 정산(`coverage_reconcile.py`)도 coverage.json을 읽는다. 그래서 매니페스트에
+`scan.reviewState`·`scan.review`·`scan.mode`를 쓰지 않는다. `coverageRef`는 R6대로 쓰지 않는다 — 0.8.0 finalizer는
+미봉인 매니페스트에 `scan.review`·`scan.reviewState`가 없고 `<scan_dir>/coverage.json`이 있으면 `coverageRef`를
+스스로 넣는다.
+0.8.0 `report.md`는 형상과 관계없이 "Canonical artifacts: `scan-manifest.json` and `findings.json`"이라고
+쓰고 `Inventory strategy` 줄을 싣지 않는다(상류 `report_projection.py`). coverage.json은 그래도 봉인된다.
+
 **`coverage.surfaces[]` 필수 필드.** 각 surface에 `id`·`label`·`disposition`·`receiptRefs`를 **모두** 쓴다.
 `id`는 비어 있지 않은 문자열이다(관례로 소문자 slug, 예: `surface_archive_extraction`). 영수증이 없으면
 `receiptRefs: []`다. 상류 `final-report.md`의 "The workbench derives … IDs for new surfaces"(npm 0.6.0 이하는
-"assigns")와 "Do not put … top-level receipt references into semantic draft arguments"는 MCP draft 도구
-(`record_codex_security_scan_draft`) 경로의 설명이다. 셸로 쓴 draft를
+"assigns". 0.8.0은 "The workbench assigns IDs to new surfaces")와 "Do not put … top-level receipt references
+into semantic draft arguments"(0.8.0은 "Omit host-owned … `reviewState.receiptRefs` … from semantic drafts")는
+MCP draft 도구(`record_codex_security_scan_draft`) 경로의 설명이다. 셸로 쓴 draft를
 finalizer에 바로 넘기는 이 스킬 경로에서는 아무도 채워 주지 않으므로, 그대로 따르면 봉인이 실패한다
 (`coverage.surfaces[0].id: expected a non-empty string`, 2026-10-17 0.4.0 스모크 테스트).
 
-**정본 JSON 메타 필드의 출처.** 상류 `examples/completed-scan/`의 형상을 따른다. 아래 값은 모델이 짓지 않는다.
+**정본 JSON 메타 필드의 출처.** 상류 `examples/completed-scan/`의 형상을 따른다. npm 0.8.0부터는
+`examples/legacy-completed-scan/`을 따른다 — 0.8.0의 `examples/completed-scan/`은 새 형상(매니페스트 `scan.mode`·
+`scan.review`, coverage.json 없음)이라 이 스킬의 coverage.json 형상과 맞지 않는다(위 5단계 "새 형상" 문단). 아래 값은
+모델이 짓지 않는다.
 
 | 필드 | 출처 |
 | --- | --- |
@@ -543,7 +565,7 @@ npm 0.4.0 `final-report.md`는
 
 ### 6. 완료(Finalize)
 1. **scoped-path 스캔이면** finalize 직전에 필수 호출(KTD7). 0단계 `bindRepoScopes.kind`로 명령을 고른다.
-   인자는 두 경로가 같다.
+   `--coverage <scan_dir>/coverage.json`은 `bindRepoScopes.coverageArg`가 `true`일 때만 붙인다.
    - `python`(npm 0.2.0 이하):
      ```bash
      PYTHONDONTWRITEBYTECODE=1 <python_command> <plugin_dir>/scripts/generate_rank_input.py bind-repo-scopes --scopes-file <요청 경로 JSON 배열 파일> --manifest <scan_dir>/scan-manifest.json --coverage <scan_dir>/coverage.json
@@ -553,9 +575,15 @@ npm 0.4.0 `final-report.md`는
      env -i <trusted_child_env> CODEX_MCP_NODE_PATH=<node> <security_md_launcher> --helper bind-repo-scopes --scopes-file <요청 경로 JSON 배열 파일> --manifest <scan_dir>/scan-manifest.json --coverage <scan_dir>/coverage.json
      ```
      `env -i`와 `CODEX_MCP_NODE_PATH`를 쓰는 이유는 0단계 3번과 같다(P6-KTD6).
+   - `node-helper`이고 `coverageArg`가 `false`(npm 0.8.0, 상류 #1762): 위 명령에서 `--coverage <scan_dir>/coverage.json`을
+     뺀다. 붙이면 `bind-repo-scopes: error: Unknown option '--coverage'`로 exit 2다(`repro-u4.sh` L1c).
    - `available`이 `false`이면 scoped-path 스캔을 진행하지 않는다. `bindRepoScopes.reason`을 전한다.
 
-   두 경로 모두 `scan.scope.includePaths`와 `coverage.includePaths`를 요청 경로로 바꾼다(`repro-u4.sh` L1).
+   `coverageArg`가 `true`이면 헬퍼가 `scan.scope.includePaths`와 `coverage.includePaths`를 요청 경로로 바꾼다
+   (`repro-u4.sh` L1). `false`이면 헬퍼는 `scan.scope.includePaths`만 바꾼다. 그때는 `coverage.json`의
+   `includePaths`를 `--scopes-file`과 같은 배열로 직접 맞춘다(`repro-u7` I17h). 맞추지 않으면 finalize가
+   `coverage.includePaths: must match manifest scope`로 거부한다(아래 리페어 루프). 2번 정산이 이 불일치를 먼저
+   경고한다(`repro-u7` I5y).
    리포지터리 전체 스캔이면 생략한다. manifest에 `scan.scope` 객체가 미리 있어야 한다.
 2. **자체 정산 게이트(R9·R10)** — bind 다음, finalize 직전:
    ```bash
@@ -592,7 +620,8 @@ npm 0.4.0 `final-report.md`는
 1. stderr **마지막 오류 줄**을 읽는다. 형태는 대개 `<필드 경로>: <기대 형식>`이다.
 2. 해당 **draft JSON만** 수정한다(금지 필드는 여전히 작성 금지). 예:
    - `expected a stable lowercase rule slug` → `ruleId`를 소문자 slug로 (`Path-Traversal` → `path-traversal.*`).
-   - `coverage includePaths` 불일치 → `coverage.json`의 `includePaths`를 manifest `scan.scope.includePaths`와 맞춤.
+   - `coverage includePaths` 불일치(`coverage.includePaths: must match manifest scope`) → `coverage.json`의 `includePaths`를 manifest `scan.scope.includePaths`와 맞춤.
+     npm 0.8.0의 `bind-repo-scopes`는 coverage를 바꾸지 않으므로 경로 지정 스캔에서 이 오류가 나기 쉽다(6단계 1번).
    - `expected a file inside the scan directory` → 정본 JSON 3종이 `<scan_dir>` 바로 아래에 있는지 확인.
    - `CODEX_SECURITY_STARTED_AT` 관련 → 환경변수 주입 확인.
    - `Scan result contains invalid findings; repair the finding records before completion. findings.findings[N].<필드>: <사유>`

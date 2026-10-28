@@ -13,7 +13,7 @@ description: >-
 결박되어 있어 동등 재현이 불가능하다. 이 스킬은 **정직한 축소판**이다 — 동등하지 않음을 이름·고지·
 요약에 명시한다(KTD3).
 
-**기준: npm 0.7.0(태그 `npm-v0.7.0`).** npm 0.2.0~0.6.0 설치본에서도 같은 절차로 동작한다(아래
+**기준: npm 0.8.0(태그 `npm-v0.8.0`).** npm 0.2.0~0.7.0 설치본에서도 같은 절차로 동작한다(아래
 「인벤토리」의 버전 메모, 실측: `docs/verification/phase4-deep-lite-pipeline.md`).
 
 **상류 저장 정책(`references/artifact-storage.md`)은 적용하지 않는다(P6-KTD8).** 근거와 범위는 Phase 1
@@ -143,7 +143,8 @@ validation(compact 1회) → attack-path(compact 1회) → canonical JSON(순서
 
 - **`bind-repo-scopes`의 위치**: npm 0.2.0은 `generate_rank_input.py bind-repo-scopes`(Python), npm 0.3.0부터는
   Node 헬퍼(`launch_codex_security_mcp --helper bind-repo-scopes`, 인자 같음)다. 0.4.0~0.6.0의 Python
-  스크립트에는 이 서브커맨드가 없다(exit 2, 실측). 0.7.0에는 그 스크립트가 없다. 명령은 Phase 1 6단계 1번이 정본이다. 저장소 전체
+  스크립트에는 이 서브커맨드가 없다(exit 2, 실측). 0.7.0에는 그 스크립트가 없다. 0.8.0 헬퍼는 `--coverage`를 받지 않는다
+  (`bindRepoScopes.coverageArg`가 `false`, 상류 #1762). 명령은 Phase 1 6단계 1번이 정본이다. 저장소 전체
   스캔이면 부르지 않는다.
 - **정산의 빈 인벤토리**: `coverage_reconcile.py`는 빈 `in_scope_files.txt`를 하드 실패(exit 3)로
   처리한다. deep-lite는 인벤토리 전체를 리뷰하므로 빈 인벤토리는 인벤토리 단계 실패이거나 정말 빈

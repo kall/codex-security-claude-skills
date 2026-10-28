@@ -115,6 +115,9 @@ const OWNER_ANSWERS_NAME = "owner-answers.json";
 //   나머지 프롬프트 리터럴·진행 문구·매니페스트 필드는 같다.
 // 재대조: 태그 npm-v0.6.0 = 커밋 13dcc6fec00aaf4c23a6fa7e375ccc1726b22836 — 프롬프트 리터럴·진행 문구 같음.
 //   바뀐 것은 diff 미리보기 구현(Python difflib → Node, #1837)뿐이다.
+// 재대조: 태그 npm-v0.8.0 = 커밋 71bd7ae0e9bc859fb8fe9bc4b590b8f8998b19aa — 프롬프트 리터럴·진행 문구·오류 문구 같음
+//   (security-policy-cli.ts 변경 없음). 바뀐 것은 정책 탐색이 Git 무시 파일을 빼는 것(716e74d72 #1535)뿐이고,
+//   그 탐색은 상류 inspectSecurityPolicySources 를 그대로 import 해 쓰므로 이 파일이 따라 할 것이 없다.
 // 재대조: 태그 npm-v0.7.0 = 커밋 f05a0b096cc881242ddf34a4d6b3ce0f322f3cf9 — 프롬프트 리터럴·진행 문구·
 //   매니페스트 필드·나머지 오류 문구 같음(security-policy-cli.ts 변경 없음). 바뀐 것은 1 MiB 한도 삭제뿐이다
 //   (0b70ee90f #1883: MAX_SECURITY_MD_BYTES·validatePolicySize 와 오류 문구 UPSTREAM_MESSAGES.size 삭제,

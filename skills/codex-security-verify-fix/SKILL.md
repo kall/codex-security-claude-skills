@@ -13,7 +13,7 @@ description: >-
 # codex-security-verify-fix — 수정 검증 (읽기 전용)
 
 codex-security 플러그인의 `verify-fix` 스킬을 Claude가 직접 수행한다. 기준 실측 버전은
-**npm 0.7.0(매니페스트 0.1.95)**다. 입력으로 받은 각 finding이 **현재 체크아웃에서 실제로
+**npm 0.8.0(매니페스트 0.1.95)**다. 입력으로 받은 각 finding이 **현재 체크아웃에서 실제로
 수정됐는지**만 판정한다. 이 스킬은 **저장소를 절대 변경하지 않는다** — 수정·패치 적용이 필요하면
 `codex-security-patch`로 넘긴다.
 
@@ -33,7 +33,7 @@ npm 0.6.0에서는 `042ce4171`(#1854)이 상류 문서에 검증 모드 문단�
 "unavailable checks required by the selected mode"로 바뀌었다. 아래 「검증 모드」에 반영했다. 머리말 줄과
 `references/static-finding-assessment.md`는 이 구간에서 바뀌지 않았다. npm 0.7.0에서는 `e1dd428df`(#1836
 fix(skill): allow readable interactive verification results)가 결과 계약을 바꿨다(태그 `npm-v0.7.0` = 커밋
-`f05a0b096` 재대조). 대화형이면 읽기 쉬운 Markdown을 쓰고, 호출자가 JSON이나 자동화 결과 계약을 요구할 때만
+`f05a0b096` 재대조. npm 0.8.0(커밋 `71bd7ae0e`)은 `skills/verify-fix/`·`remediation.ts`를 바꾸지 않았다). 대화형이면 읽기 쉬운 Markdown을 쓰고, 호출자가 JSON이나 자동화 결과 계약을 요구할 때만
 JSON 객체 1개를 낸다("CLI verification workflows explicitly request this contract"). 판정 열거형과 근거
 요건은 두 형식에서 같다. `## When to Use`의 "JSON 결과 계약을 적용하지 않고" 문구도 이에 맞춰 빠졌다.
 같은 구간에 `remediation.ts`에서 hosted verification 전용 `checks` 확장(검사 배열)이 지워졌다(`b88e775a6`

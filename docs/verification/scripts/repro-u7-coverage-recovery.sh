@@ -486,6 +486,41 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# I5y. 매니페스트와 coverage 의 includePaths 불일치 경고(npm 0.8.0, 상류 621bad47e #1762).
+#      0.8.0 bind-repo-scopes 는 매니페스트만 바꾼다. coverage 를 맞추지 않으면 finalize 가
+#      `coverage.includePaths: must match manifest scope` 로 거부하므로, 정산이 먼저 알린다.
+# ---------------------------------------------------------------------------
+step "I5y. includePaths 불일치 경고"
+SCAN_IP_OK="$(make_scan ip-ok 'src/extract.py
+' "$REVIEWED" - '[]')"
+SCAN_IP_BAD="$(make_scan ip-bad 'src/extract.py
+' "$REVIEWED" - '[]')"
+PY - "$SCAN_IP_BAD/scan-manifest.json" <<'EOF'
+import json, pathlib, sys
+path = pathlib.Path(sys.argv[1])
+manifest = json.loads(path.read_text())
+manifest["scan"]["scope"]["includePaths"] = ["src/extract.py"]
+path.write_text(json.dumps(manifest, indent=2))
+EOF
+PY "$RECONCILE" --scan-dir "$SCAN_IP_OK" --source-root "$SRC" --json >"$RUN/i5y1.json" 2>"$RUN/i5y1.err"
+expect_exit 0 "$?" "I5y-1 includePaths 가 같은 정산"
+PY "$RECONCILE" --scan-dir "$SCAN_IP_BAD" --source-root "$SRC" --json >"$RUN/i5y2.json" 2>"$RUN/i5y2.err"
+expect_exit 0 "$?" "I5y-2 includePaths 가 다른 정산(경고만, 차단하지 않음)"
+PY - "$RUN/i5y1.json" "$RUN/i5y2.json" <<'EOF'
+import json, sys
+def hits(path):
+    return [w for w in json.load(open(path)).get("warnings", []) if "includePaths" in w]
+same, differ = hits(sys.argv[1]), hits(sys.argv[2])
+raise SystemExit(0 if not same and len(differ) == 1 and "src/extract.py" in differ[0] else 1)
+EOF
+if [ "$?" = 0 ]; then
+  ok "I5y: 불일치일 때만 includePaths 경고 1건(대조군: 같으면 없음)"
+else
+  bad "I5y: includePaths 경고가 기대와 다릅니다"
+  sed 's/^/     /' "$RUN/i5y2.json" | head -20
+fi
+
+# ---------------------------------------------------------------------------
 # I6. --json 의 스트림 분리 — JSON 은 stdout, 사람용 요약은 stderr.
 #     최종 보고가 JSON 키를 인용하므로 stdout 이 순수 JSON 이어야 한다.
 # ---------------------------------------------------------------------------
@@ -1599,8 +1634,24 @@ for name, payload in documents.items():
     (scan_dir / name).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
 EOF
     printf '["app"]\n' >"$I17H/scopes.json"
-    i17h_bind --scopes-file "$I17H/scopes.json" --manifest "$I17H/scan/scan-manifest.json" \
-      --coverage "$I17H/scan/coverage.json" >"$I17H/bind.out" 2>"$I17H/bind.err" || return 1
+    # npm 0.8.0 헬퍼는 --coverage 를 받지 않는다(상류 621bad47e #1762, 같은 커밋이
+    # scripts/review_state.py 를 더함). 그때 스킬은 같은 배열을 coverage.json 에 직접 쓴다
+    # (부트스트랩 bindRepoScopes.coverageArg=false 분기, 스캔 스킬 6단계 1번).
+    if [ -f "$PLUGIN/scripts/review_state.py" ]; then
+      i17h_bind --scopes-file "$I17H/scopes.json" --manifest "$I17H/scan/scan-manifest.json" \
+        >"$I17H/bind.out" 2>"$I17H/bind.err" || return 1
+      PY - "$I17H/scan/coverage.json" "$I17H/scopes.json" <<'EOF' || return 1
+import json, sys
+from pathlib import Path
+coverage = Path(sys.argv[1])
+payload = json.loads(coverage.read_text())
+payload["includePaths"] = json.loads(Path(sys.argv[2]).read_text())
+coverage.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+EOF
+    else
+      i17h_bind --scopes-file "$I17H/scopes.json" --manifest "$I17H/scan/scan-manifest.json" \
+        --coverage "$I17H/scan/coverage.json" >"$I17H/bind.out" 2>"$I17H/bind.err" || return 1
+    fi
     PY -I -B "$PLUGIN/scripts/finalize_scan_contract.py" --scan-dir "$I17H/scan" --source-root "$DREPO" \
       >"$I17H/finalize.out" 2>"$I17H/finalize.err" || return 1
     PY "$GLUE" --bootstrap "$I17H/boot.json" complete --scan-id "$sid" \

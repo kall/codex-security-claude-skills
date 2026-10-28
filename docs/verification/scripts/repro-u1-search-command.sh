@@ -1212,7 +1212,7 @@ else
   bad "H14a-4: threatModelMarkdown=$H14A4_GOT, 스키마 기대=$H14A4_WANT"
 fi
 
-# H14a-5. npm 패키지 version(npmVersion). 매니페스트 버전은 npm 0.1.26~0.7.0 이 모두 0.1.95 라서
+# H14a-5. npm 패키지 version(npmVersion). 매니페스트 버전은 npm 0.1.26~0.8.0 이 모두 0.1.95 라서
 #         사람이 읽는 구분 축은 이 값뿐이다. 기대값은 package.json 을 직접 읽어 정한다.
 H14A5_WANT="$(PY - "$PLUGIN" <<'EOF'
 import json, pathlib, sys
@@ -1251,11 +1251,21 @@ for H14A7_CMD in bind-repo-scopes copy-deep-review-input; do
   else
     H14A7_KIND=node-helper
   fi
+  # bindRepoScopes 는 coverageArg 도 싣는다. npm 0.8.0 은 헬퍼에서 --coverage 를 지웠다(상류 621bad47e
+  # #1762). 같은 커밋이 scripts/review_state.py 를 더했으므로 기대값을 그 파일로 정한다.
+  H14A7_EXTRA=""
   case "$H14A7_CMD" in
-    bind-repo-scopes) H14A7_KEY=bindRepoScopes ;;
+    bind-repo-scopes)
+      H14A7_KEY=bindRepoScopes
+      if [ "$H14A7_KIND" = node-helper ] && [ -f "$PLUGIN/scripts/review_state.py" ]; then
+        H14A7_EXTRA=', "coverageArg": False'
+      else
+        H14A7_EXTRA=', "coverageArg": True'
+      fi
+      ;;
     *) H14A7_KEY=copyDeepReviewInput ;;
   esac
-  H14A7="$(jget "$RUN/h14a.json" 'd.get("'"$H14A7_KEY"'") == {"available": True, "kind": "'"$H14A7_KIND"'", "reason": None}')"
+  H14A7="$(jget "$RUN/h14a.json" 'd.get("'"$H14A7_KEY"'") == {"available": True, "kind": "'"$H14A7_KIND"'", "reason": None'"$H14A7_EXTRA"'}')"
   if [ "$H14A7" = "True" ]; then
     ok "H14a-7: $H14A7_KEY.kind=$H14A7_KIND"
   else
@@ -1369,7 +1379,7 @@ touch "$NOHELPER/scripts/generate_in_scope_files.py"
 printf '{"properties": {"deferred": {}}}\n' >"$NOHELPER/schemas/coverage.schema.json"
 NBOOT_PLUGIN="$NOHELPER" nboot "$RUN/h14b9.json" "$NODE_DIR:$EMPTY_BIN"
 expect_exit 0 "$?" "H14b-9 bind-repo-scopes 하위 명령만 있는 사본으로 부트스트랩"
-H14B9="$(jget "$RUN/h14b9.json" 'd.get("bindRepoScopes") == {"available": True, "kind": "python", "reason": None} and (d.get("copyDeepReviewInput") or {}).get("kind") is None and d.get("coverageCompleteness") is False and d.get("inScopeInventory") == {"available": True, "kind": "python", "reason": None} and d.get("diffRankInput") == {"available": True, "kind": "python", "reason": None}')"
+H14B9="$(jget "$RUN/h14b9.json" 'd.get("bindRepoScopes") == {"available": True, "kind": "python", "reason": None, "coverageArg": True} and (d.get("copyDeepReviewInput") or {}).get("kind") is None and d.get("coverageCompleteness") is False and d.get("inScopeInventory") == {"available": True, "kind": "python", "reason": None} and d.get("diffRankInput") == {"available": True, "kind": "python", "reason": None}')"
 if [ "$H14B9" = "True" ]; then
   ok "H14b-9: 하위 명령별로 판정(bind·diffRank·inventory=python, copy=불가)·completeness 없는 스키마는 false"
 else
