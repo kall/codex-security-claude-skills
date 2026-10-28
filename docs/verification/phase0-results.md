@@ -1677,3 +1677,20 @@ Python 3.14.8, Node v22.23.2. SKIP은 0건이다.
 고치지 않은 것(0.8.0과 무관한 기존 동작): 파일 길이를 넘는 `startLine`이 finalize와 정산을 통과한다(정규화기는 거부한다). R10은 경로만 검사한다. 스캔 디렉터리 상위가 group-writable이면 `register`가 `Scan output parent must not be group- or world-writable without the sticky bit.`로 거부되고 글루가 `failureKind: "gate"`로 분류한다(기본 `~/.codex` 경로에서는 생기지 않는다).
 
 확인하지 못한 것: 상류 0.8.0 CLI가 만든 새 형상 번들(coverage.json 없음)에 scan-match·classify-severity를 쓰는 경우(모델 인증이 필요해 만들지 못했다), patch·verify-fix 정적 모드(상류 `remediation.ts` 변경 없음), 인증이 필요한 명령.
+
+## 부록 — npm 0.8.1(매니페스트 0.1.95) 재실측 (2026-10-29)
+
+기준선을 npm 0.8.0에서 상류 태그 `npm-v0.8.1`(커밋 `1f2f96d562b98216257e7f7cdacd40c446b97f70`)으로 올리면서 재실측한 결과다. 상세는 `docs/plans/2026-10-29-1000-chore-codex-security-081-alignment.md`다.
+
+수정 전 스킬로 돌린 결과가 그대로 최종 결과다. 이번 변경은 문서와 주석, 안내 문구뿐이다.
+
+| 스크립트 | npm 0.8.1 |
+| --- | --- |
+| `repro-u4.sh` | exit 0, OK 84 |
+| `repro-u1-search-command.sh` | exit 0, OK 96 |
+| `repro-u7-coverage-recovery.sh` | exit 0, OK 73 |
+| `repro-u5-match-validator.sh` | exit 0, OK 714 |
+| `repro-u8-policy-severity.sh` | exit 0, OK 332 |
+| `repro-u3.sh` 요약 | S5 0, S6 0, S9 1, S9b 0 |
+
+FAIL·SKIP·NOTE 0이다. Python 3.14, Node v24.22.1. 부트스트랩은 `npmVersion: "0.8.1"`, `bindRepoScopes.coverageArg: false`를 냈다. 종단간 스모크 테스트는 다시 하지 않았다(이유는 정합 기록 3절).
