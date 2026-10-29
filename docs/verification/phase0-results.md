@@ -1693,4 +1693,23 @@ Python 3.14.8, Node v22.23.2. SKIP은 0건이다.
 | `repro-u8-policy-severity.sh` | exit 0, OK 332 |
 | `repro-u3.sh` 요약 | S5 0, S6 0, S9 1, S9b 0 |
 
-FAIL·SKIP·NOTE 0이다. Python 3.14, Node v24.22.1. 부트스트랩은 `npmVersion: "0.8.1"`, `bindRepoScopes.coverageArg: false`를 냈다. 종단간 스모크 테스트는 다시 하지 않았다(이유는 정합 기록 3절).
+FAIL·SKIP·NOTE 0이다. Python 3.14, Node v24.22.1. 부트스트랩은 `npmVersion: "0.8.1"`, `bindRepoScopes.coverageArg: false`를 냈다.
+
+### 종단간 스모크 테스트 (npm 0.8.1, 릴리즈 뒤 2026-10-29)
+
+릴리즈 때는 건너뛰었다가, 기존 러닝(정합마다 스모크 한 번)과 어긋나 릴리즈 뒤에 돌렸다. 같은 픽스처로 0.8.0과 나란히 실행했다.
+
+| 대상 | 결과 |
+| --- | --- |
+| 전체 스캔 | register → contract → feedback → `resolve-security-md` → `generate-in-scope-files`(11개) → 정규화 → 정산(`pass`, 경고 0) → finalize → `complete`. 인벤토리 목록이 0.8.0과 같다 |
+| 경로 지정 `--paths app` | `coverageArg=false`라 `--coverage` 없이 bind → coverage.includePaths 직접 맞춤 → `complete`. 인벤토리 5개, 0.8.0과 같다 |
+| diff `refs`·`working_tree` | `make-diff-rank-input` → `copy-deep-review-input` → diff 인벤토리 → `complete`. rank 입력·인벤토리가 0.8.0과 바이트 단위로 같다 |
+| deep-lite | 2패스 원시 6행 → 정규화 병합 4행 → `complete`. 0.8.0과 같다 |
+| 내보내기 csv·json·sarif | 모두 rc 0, 크기가 0.8.0과 같다. 새 AVIT 형식은 템플릿 없이 부르면 `--export-format servicenow-avit requires --avit-template`로 거부한다 |
+| 실행 카나리 | `.git/config` `core.fsmonitor` 카나리가 보호 경로에서는 발동하지 않았다(맨 `git status` 대조군은 발동) |
+
+인벤토리에는 Perl 파일, Latin-1 바이트 파일, 비ASCII 파일명, 바이너리가 들어가고 Git 무시 `vendor/`는 빠졌다(0.8.0과 같음). 봉인 결과는 모두 `coverageRef: coverage.json`이다.
+
+찾아 고친 것(0.8.1 회귀가 아닌 기존 문서 공백): **finding의 `identity`가 5단계 필수 필드 목록에 없었다.** 상류 스키마의 required에는 없지만 finalizer가 객체를 요구해, 빠지면 `finding.identity: expected an object`로 거부한다(0.7.0~0.8.1 같은 코드, 0.8.1 실측). 필수 목록과 리페어 루프에 넣었다.
+
+확인하지 못한 것: 하이픈이 든 저장소 이름으로 #2102(`safe_segment`) 경로 실행. 코드상 글루의 `register-cli-scan`은 부트스트랩이 정한 스캔 디렉터리를 쓰므로 이 함수를 거치지 않는다(추론). policy·classify-severity·scan-match·patch·verify-fix는 이번 스모크 범위 밖이다(해당 상류 원본 변경 없음).
