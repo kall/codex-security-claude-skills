@@ -554,7 +554,9 @@ npm 0.4.0 `final-report.md`는
    고치지 않고 거부한다(상류 `scan-contract.md`). 같은 검사에서 필수 필드는 `ruleId`·`title`·`summary`·
    `severity.level`·`confidence.level`·`confidence.rationale`·`taxonomy.category`·`taxonomy.cwe`(근거가
    없으면 빈 배열)·`locations`(1개 이상)·`remediation`·`provenance.source`(이 스킬이 찾은 finding은
-   `local_plugin`)다.
+   `local_plugin`)다. **`identity`도 필수다**: `{"anchor": "<소문자 slug>"}`(선택 `instance`). 상류 스키마의
+   required 목록에는 없지만 finalizer가 객체를 요구한다(0.7.0~0.8.1 코드, 0.8.1 실측: 빠지면
+   `finding.identity: expected an object`로 거부).
 3. 각 `explanation`이 "이 단계의 공격자 제어 값 → 다음 호출·상태 → 불변식 보존 또는 위반"의 **연결
    추론**인가. 코드를 다시 읽어주는 문장이 아니다.
 4. `attackPath.summary`가 **재현 방법**을 담고, `rootCause.summary`가 **코드가 그 제품 동작을 만드는
@@ -631,6 +633,8 @@ npm 0.4.0 `final-report.md`는
      - `missing required schema property` → 5단계 자기검사 2항의 필수 필드를 채운다. 근거 없는 값을
        지어내지 않는다(`taxonomy.cwe`는 근거가 없으면 빈 배열).
      - `string does not match schema pattern` → `ruleId`·`identity.anchor`·`codeEvidence[].id`를 소문자 slug로.
+     - `finding.identity: expected an object` → finding마다 `identity: {"anchor": "<소문자 slug>"}`를 쓴다
+       (5단계 자기검사 2항). anchor는 근본 원인을 가리키는 모델 소유 식별자다(R 규칙 "모델 소유 식별자").
    - `coverage.surfaces[N].id: expected a non-empty string` → surface마다 `id`를 쓴다(5단계 "`coverage.surfaces[]`
      필수 필드").
    - `coverage.schema.surfaces[N].receiptRefs: missing required schema property` → 영수증이 없어도
