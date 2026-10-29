@@ -234,9 +234,18 @@ PYEOF
 # --------------------------------------------------------------------------
 mkdir -p "$REPO_ROOT/$OUT_DIR"
 TARBALL="$REPO_ROOT/$OUT_DIR/${PKG_NAME}.tar.gz"
-# 결정론적 tarball: 정렬된 파일 목록, 소유자/그룹 제거.
+# 결정론적 tarball: 같은 커밋이면 언제 어디서 빌드해도 바이트 단위로 같다.
+# - 정렬된 파일 목록, 소유자/그룹 제거
+# - 모든 항목의 mtime 을 HEAD 커밋 시각으로 고정(빌드 시각이 들어가면 재빌드마다 달라진다)
+# - 권한을 umask·체크아웃과 무관하게 정규화(실행 비트만 보존)
+# - gzip 헤더에 이름·시각을 넣지 않는다(-n)
+SOURCE_EPOCH="$(git -C "$REPO_ROOT" log -1 --format=%ct HEAD 2>/dev/null)" || {
+  echo "오류: HEAD 커밋 시각을 읽을 수 없다 — 릴리즈는 git 체크아웃의 커밋된 트리에서 빌드한다" >&2
+  exit 1
+}
 tar --sort=name --owner=0 --group=0 --numeric-owner \
-    -czf "$TARBALL" -C "$STAGE" "$PKG_NAME"
+    --mtime="@${SOURCE_EPOCH}" --mode='u+rwX,go+rX,go-w' \
+    -cf - -C "$STAGE" "$PKG_NAME" | gzip -n -9 > "$TARBALL"
 
 ( cd "$REPO_ROOT/$OUT_DIR" && sha256sum "${PKG_NAME}.tar.gz" > SHA256SUMS )
 
