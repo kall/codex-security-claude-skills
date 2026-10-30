@@ -1713,3 +1713,44 @@ FAIL·SKIP·NOTE 0이다. Python 3.14, Node v24.22.1. 부트스트랩은 `npmVer
 찾아 고친 것(0.8.1 회귀가 아닌 기존 문서 공백): **finding의 `identity`가 5단계 필수 필드 목록에 없었다.** 상류 스키마의 required에는 없지만 finalizer가 객체를 요구해, 빠지면 `finding.identity: expected an object`로 거부한다(0.7.0~0.8.1 같은 코드, 0.8.1 실측). 필수 목록과 리페어 루프에 넣었다.
 
 확인하지 못한 것: 하이픈이 든 저장소 이름으로 #2102(`safe_segment`) 경로 실행. 코드상 글루의 `register-cli-scan`은 부트스트랩이 정한 스캔 디렉터리를 쓰므로 이 함수를 거치지 않는다(추론). policy·classify-severity·scan-match·patch·verify-fix는 이번 스모크 범위 밖이다(해당 상류 원본 변경 없음).
+
+## 부록 — npm 0.8.2(매니페스트 0.1.95) 재실측 (2026-10-30)
+
+기준선을 npm 0.8.1에서 상류 태그 `npm-v0.8.2`(커밋 `79ff4bde8a4685b9c31ad8f449bdb40df8f468f7`)로 올리면서 재실측한 결과다. 상세는 `docs/plans/2026-10-30-1000-chore-codex-security-082-alignment.md`다.
+
+### 정합 작업 전 (수정 전 스킬, npm 0.8.2)
+
+`repro-u8`이 exit 1(FAIL 113)이었다. policy `prepare`가 `TypeError: runtime.requirePrivatePolicyOutputDirectory is not a function`으로 멈춰 P3부터 P11까지가 실패했다(#2120). `repro-u4`(OK 84)·`repro-u1`(96)·`repro-u7`(73)·`repro-u5`(714)는 통과했고 `repro-u3` 요약은 0.8.1과 같았다.
+
+### 정합 작업 뒤 재검증
+
+| 스크립트 | npm 0.8.2 | npm 0.8.1 |
+| --- | --- | --- |
+| `repro-u4.sh` | exit 0, OK 84 | (v0.8.1 기록) |
+| `repro-u1-search-command.sh` | exit 0, OK 96 | (v0.8.1 기록) |
+| `repro-u7-coverage-recovery.sh` | exit 0, OK 73 | (v0.8.1 기록) |
+| `repro-u5-match-validator.sh` | exit 0, OK 714 | (v0.8.1 기록) |
+| `repro-u8-policy-severity.sh` | exit 0, OK 332 | exit 0, OK 332 |
+| `repro-u3.sh` 요약 | S5 0, S6 0, S9 1, S9b 0 | (v0.8.1 기록) |
+
+FAIL·SKIP·NOTE 0이다. Node v24.22.1. 스킬 `.mjs`가 `loadUpstream`으로 쓰는 상류 dist 멤버 98개를 0.8.2·0.8.1 dist와 대조했고, 버전 사이에 없는 것은 바뀐 함수 쌍뿐이었다.
+
+### 종단간 스모크 테스트 (npm 0.8.2)
+
+같은 픽스처로 0.8.1과 나란히 돌렸다.
+
+| 대상 | 결과 |
+| --- | --- |
+| policy 전 단계 | prepare → architecture → 소유자 답 → threat_model → policy → finish(`draft`, 매니페스트 `completed`, 검토 목록 9개). 출력 디렉터리 0700, 파일 0600, 작업 디렉터리 정리, 저장소 무변경. 헤드리스 문구, finish 직전 SECURITY.md 변경 거부(`policy-changed`)도 확인. 0.8.1과 같다 |
+| #2120 관측 | 상태 디렉터리 상위가 0775면 register가 여전히 `Scan output parent must not be group- or world-writable without the sticky bit.`로 거부한다. 스캔 디렉터리 자체가 0755면 0.8.2는 받아들이고 0.8.1은 `Scan directory must not be accessible to other users (chmod 700).`로 거부한다 |
+| 전체·경로 지정·diff refs·working_tree·deep-lite | 모두 정산 `pass` → finalize → `complete`. 인벤토리와 diff 입력이 0.8.1과 바이트 단위로 같다. 봉인은 `coverageRef: coverage.json` |
+| 내보내기 csv·json·sarif | 모두 rc 0, 0.8.1과 ID만 다르다 |
+| classify-severity | 기본 루브릭, 3회 × 3건 다수결, 재실행 재사용. 0.8.1과 같다 |
+| scan-match | compare·catalogue·finalize·save rc 0 |
+| 실행 카나리 | 보호 경로에서 미발동, 맨 `git status` 대조군은 발동 |
+
+모델 판단(policy 세 단계 답, classify 답, scan-match 응답)은 포크 에이전트가 직접 썼다. 그래서 이 부분은 결정론 경로만 검증했다. 0.8.2에서 새 결함은 없었다.
+
+리뷰(focused, 독립 적대적 리뷰 1회. Codex 교차 모델 경로는 인증이 없어 전송 전에 실패해 로컬 리뷰어로 대체)가 문제 해결 표에 남은 낡은 기준 버전(0.7.0·0.8.1)을 찾아 고쳤다.
+
+확인하지 못한 것: 스캔 디렉터리 0755에서 complete까지, patch·verify-fix 정적 모드(상류 `remediation.ts` 변경 없음), policy 출력 디렉터리 선택의 실패 경로(두 함수가 모두 없을 때, 비공개 검사 거부 시 정리) 단언.
