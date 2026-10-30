@@ -18,7 +18,7 @@ is installed at runtime.
 Download the release tarball and install it. Or just paste this into a Claude Code session:
 
 ```
-Install https://github.com/kall/codex-security-claude-skills/releases/tag/v0.8.1
+Install https://github.com/kall/codex-security-claude-skills/releases/tag/v0.8.2
 ```
 
 ```bash
@@ -73,10 +73,10 @@ helper), scoped-path and diff scans (npm 0.3.0 moved `bind-repo-scopes` and
 `codex-security-policy` and `codex-security-classify-severity`, and for querying the official CLI's history.
 Linux/macOS (Windows via WSL).
 
-Verified combination: `@openai/codex-security@0.8.1` (plugin manifest `0.1.95`). npm 0.1.26 through
-0.8.1 all report manifest `0.1.95`, so the manifest version warning cannot tell them apart. The skills
+Verified combination: `@openai/codex-security@0.8.2` (plugin manifest `0.1.95`). npm 0.1.26 through
+0.8.2 all report manifest `0.1.95`, so the manifest version warning cannot tell them apart. The skills
 detect version-specific behavior from plugin files instead, and `--check` also shows the npm version.
-Install npm 0.8.1. On an isolated install of npm 0.8.1, all five self-check scripts (`repro-u4`,
+Install npm 0.8.2. On isolated installs of npm 0.8.2 and 0.8.1, all five self-check scripts (`repro-u4`,
 `repro-u1`, `repro-u7`, `repro-u5`, `repro-u8`) report FAIL 0. The same scripts reported FAIL 0 on npm 0.8.0 and
 0.7.0 for the v0.8.0 release; they were not re-run this time. The result for 0.6.0 is from the v0.7.0 release
 and was not re-run this time: all five scripts exited 0. The result for 0.5.1 is from the v0.6.0 release
@@ -95,7 +95,7 @@ From npm 0.2.0 the scan skills need the npm package: an upstream source checkout
 helper, so candidate normalization is unavailable and the scans stop at step 0. npm 0.3.0, 0.4.0, 0.5.0, 0.5.1, 0.6.0, and 0.7.0 add
 more state-database migrations (per-scan severity tables in 0.3.0, issue receipts in 0.4.0, scan source scopes
 in 0.5.0, deep-scan worker thread history in 0.5.1, severity review counts and external source reports in 0.6.0,
-deep-scan migrations 54–57 in 0.7.0; 0.8.0 and 0.8.1 add none); back up
+deep-scan migrations 54–57 in 0.7.0; 0.8.0, 0.8.1 and 0.8.2 add none); back up
 `~/.codex/state/plugins/codex-security` before upgrading a global install.
 
 The deep-lite skill changed with npm 0.4.0: upstream removed the ranking helpers, so deep-lite now reviews
@@ -135,7 +135,10 @@ it. The same change removed `--coverage` from the `bind-repo-scopes` helper, so 
 need this release**. Bootstrap reports `bindRepoScopes.coverageArg`; when it is `false`, the skill binds the
 manifest only and sets `coverage.includePaths` itself.
 
-**Do not run `codex-security skills add` (npm 0.8.1 still has it).** It deletes `~/.claude/skills/codex-security-<command>`
+npm 0.8.2 renamed the upstream policy output-directory check (#2120). With earlier releases of these skills,
+`codex-security-policy` fails at `prepare` on npm 0.8.2; this release picks whichever function the installed copy has.
+
+**Do not run `codex-security skills add` (npm 0.8.2 still has it).** It deletes `~/.claude/skills/codex-security-<command>`
 and replaces it with a link to an upstream skill that only calls the login-requiring CLI. Six names collide
 with these skills (scan, policy, patch, validate, verify-fix, classify-severity). `install.sh --check`
 reports overwritten skills; reinstall with `bash skills/install.sh --force` (`--copy --force` for copies).
