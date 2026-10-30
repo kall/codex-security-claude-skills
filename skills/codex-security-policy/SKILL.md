@@ -12,7 +12,7 @@ description: >-
 
 npm CLI의 `codex-security policy`는 OpenAI 모델을 세 번 호출해 SECURITY.md 초안을 만든다.
 구독 사용자는 이 명령을 쓸 수 없다. 이 스킬은 모델 호출 세 번을 **읽기 전용 격리 서브에이전트**로
-바꾸고, 나머지 호스트 동작은 상류 코드로 재현한다. 기준 실측 버전은 **npm 0.8.1(매니페스트 0.1.95)**다.
+바꾸고, 나머지 호스트 동작은 상류 코드로 재현한다. 기준 실측 버전은 **npm 0.8.2(매니페스트 0.1.95)**다.
 
 - **초안만 만든다(P6-KTD9).** CLI `policy`와 같다. 상류 plugin `define-security-policy/SKILL.md`
   4절(npm 0.6.0 이하 "Preview, Approve, and Verify", 0.7.0부터 "Apply and Verify" — 저장소 편집)은 CLI에
@@ -49,7 +49,11 @@ npm CLI의 `codex-security policy`는 OpenAI 모델을 세 번 호출해 SECURIT
   1 MiB 정책 한도 삭제뿐이다(아래 "정책 크기 한도"). `npm-v0.8.0`(커밋 `71bd7ae0`)도 프롬프트 리터럴·진행 문구·
   매니페스트 필드가 같다. 0.8.0은 정책 탐색에서 Git이 무시하는 파일을 뺀다(`716e74d72` #1535 — 대상 컴포넌트의
   `SECURITY.md` 자신은 무시돼도 남는다). 이 스킬은 탐색에 상류 `inspectSecurityPolicySources`를 쓰므로 그대로 따른다.
-  `npm-v0.8.1`(커밋 `1f2f96d5`)은 `security-policy.ts`·`security-policy-cli.ts`를 바꾸지 않았다. **npm 0.1.32 이하 설치본에서도 이 스킬은 0.2.0 흐름을 쓴다.**
+  `npm-v0.8.1`(커밋 `1f2f96d5`)은 `security-policy.ts`·`security-policy-cli.ts`를 바꾸지 않았다. `npm-v0.8.2`(커밋
+  `79ff4bde`)도 두 파일과 프롬프트 리터럴이 같다. 다만 출력 디렉터리 검사 함수가 `runtime.ts`에서
+  `requirePrivatePolicyOutputDirectory` → `preparePolicyOutputDirectory`로 바뀌었다(`11a45947c` #2120. POSIX에서는
+  0700 대신 소유자만 검사). `prepare`는 사본에 있는 쪽을 부르고, 새로 만든 출력 디렉터리가 0700인지는 버전과
+  무관하게 스킬이 직접 검사한다(`repro-u8` P3). **npm 0.1.32 이하 설치본에서도 이 스킬은 0.2.0 흐름을 쓴다.**
   그래서 policy 단계 첫 문장이 그 버전의 상류 프롬프트와 다르고(서브에이전트는 매니페스트의 모델을 읽으므로
   초안 작성은 같게 동작한다), finalizer에 `--write-threat-model`이 없어 `threatmodel.md`가 생기지 않는다
   (`threatModelPath: null`과 경고. 모델은 `policy-draft.json`에 남는다). `repro-u8`은 그 사본에서 P7·P11
@@ -99,7 +103,7 @@ Git worktree 루트**로 명시한다.
 | 조건 | 사용자 안내(한국어) |
 | --- | --- |
 | `ok: false` | `stage`·`error`를 그대로 전한다 |
-| `securityMdHelper.available: false` | `securityMdHelper.reason`을 전한다. "헬퍼 파일 없음"이면 상류 소스 체크아웃이다 — `npm install -g @openai/codex-security`(npm 0.1.27 이상, 권장 0.8.1) 설치본을 쓰라고 안내 |
+| `securityMdHelper.available: false` | `securityMdHelper.reason`을 전한다. "헬퍼 파일 없음"이면 상류 소스 체크아웃이다 — `npm install -g @openai/codex-security`(npm 0.1.27 이상, 권장 0.8.2) 설치본을 쓰라고 안내 |
 | `sdk.dist: null` | `sdk.reason`을 전한다. 상류 함수가 든 `dist/`가 없다 — 위와 같은 설치 안내 |
 | `node: null` | "신뢰할 수 있는 Node 없음"과 `securityMdHelper.reason` |
 
@@ -131,7 +135,7 @@ env -i <trusted_child_env> <node> <policy_script> <하위 명령> …
 - 출력은 JSON 1개다(`prompt`만 원문 텍스트). exit 0 = 성공, 2 = 거부·실패(`error`와 상류 원문
   `upstreamError`가 실림), 1 = 사용법 오류.
 
-**시작 고지**: 플러그인 경로와 `pluginVersion`(기준 0.1.95, npm 0.8.1 — 다르면 "플러그인 버전이
+**시작 고지**: 플러그인 경로와 `pluginVersion`(기준 0.1.95, npm 0.8.2 — 다르면 "플러그인 버전이
 기준과 다름 — 상류 계약이 바뀌었을 수 있음" 경고), 대상 저장소, 컴포넌트, 그리고 **"이 스킬은
 저장소 파일을 바꾸지 않는다"**를 알린다.
 
