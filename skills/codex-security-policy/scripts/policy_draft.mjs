@@ -843,7 +843,20 @@ async function handlePrepare(args) {
   try {
     runtime.requireOutputOutsideRepositories(trustRoots, outputDir);
     runtime.requireModelSafeOutputDir(outputDir);
-    await runtime.requirePrivatePolicyOutputDirectory(outputDir);
+    // 상류 출력 디렉터리 검사. npm 0.8.2(11a45947c #2120)가 requirePrivatePolicyOutputDirectory 를
+    // preparePolicyOutputDirectory 로 바꾸고 POSIX 에서는 0700 대신 소유자만 검사한다(이미 있는 디렉터리 허용).
+    // 상류 policy 도 같은 자리에서 부르므로 사본에 있는 쪽을 쓴다. 이 디렉터리는 위 prepareOutputDir 가
+    // 새로 만든 것이라 0700 이 성립하므로, 비공개 검사는 버전과 무관하게 이 스킬이 계속 한다.
+    const checkPolicyOutputDirectory =
+      runtime.preparePolicyOutputDirectory ?? runtime.requirePrivatePolicyOutputDirectory;
+    if (typeof checkPolicyOutputDirectory !== "function") {
+      throw new GatewayError(
+        "상류 runtime.js 에 정책 출력 디렉터리 검사 함수(preparePolicyOutputDirectory·" +
+          "requirePrivatePolicyOutputDirectory)가 없다. 이 스킬이 검토한 npm 0.2.0~0.8.2 설치본으로 다시 실행하라.",
+      );
+    }
+    await checkPolicyOutputDirectory(outputDir);
+    await requirePrivateDirectory(outputDir, "정책 출력 디렉터리");
     await mkdir(workDir, { mode: 0o700 });
     created = true;
     await chmod(workDir, 0o700);
