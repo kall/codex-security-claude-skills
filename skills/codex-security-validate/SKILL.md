@@ -13,7 +13,7 @@ description: >-
 # codex-security-validate — finding 판정
 
 후보 finding을 검증하고 disposition을 기록한다. 판정 절차는 상류 플러그인 문서를 **읽어서** 따르고,
-이 문서에는 옮겨 적지 않는다. 기준 실측 버전은 **npm 0.8.1(매니페스트 0.1.95)**다.
+이 문서에는 옮겨 적지 않는다. 기준 실측 버전은 **npm 0.8.2(매니페스트 0.1.95)**다.
 
 입력에 따라 두 모드로 나뉜다. 두 모드의 상류 계약이 다르다.
 
@@ -45,7 +45,7 @@ description: >-
 npm 0.8.0(태그 `npm-v0.8.0` = 커밋 `71bd7ae0e9bc859fb8fe9bc4b590b8f8998b19aa`)은 이 스킬이 읽는 상류 문서를 바꾸지 않았다
 (`references/standalone-validation.md`·`references/static-finding-assessment.md`·`skills/validation/`·
 `sdk/typescript/src/standalone-validation-prompt.ts` 모두 `git diff npm-v0.7.0 npm-v0.8.0` 비어 있음).
-npm 0.8.1(커밋 `1f2f96d562b98216257e7f7cdacd40c446b97f70`)도 이 문서들을 바꾸지 않았다.
+npm 0.8.1(커밋 `1f2f96d562b98216257e7f7cdacd40c446b97f70`)·0.8.2(커밋 `79ff4bde`)도 이 문서들을 바꾸지 않았다.
 
 태그 `npm-v0.7.0` = 커밋 `f05a0b096cc881242ddf34a4d6b3ce0f322f3cf9`에서 대조했다.
 

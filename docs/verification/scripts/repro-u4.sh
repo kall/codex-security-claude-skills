@@ -203,7 +203,7 @@ expect_exit 2 "$?" "E finalize (실패 기대)"
 #   deferred 0건 + needs_follow_up surface -> invocations 없음(SARIF 만으로는 불완전을 모름)
 #
 # 어느 형상인지는 버전 문자열이 아니라 플러그인 스키마로 고른다(매니페스트 버전은
-# npm 0.1.26~0.8.1 이 모두 0.1.95 다). 스킬 bootstrap 의 coverageCompleteness 와 같은 축이다.
+# npm 0.1.26~0.8.2 가 모두 0.1.95 다). 스킬 bootstrap 의 coverageCompleteness 와 같은 축이다.
 # ---------------------------------------------------------------------------
 step "F. SARIF 성공 판정 형상 (완전 / deferred 있음 / deferred 없는 불완전)"
 COVERAGE_COMPLETENESS="$(PY -c 'import json,sys

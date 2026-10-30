@@ -17,7 +17,7 @@
   6. 후보 정규화 경로(`candidateNormalizer`) — Python 스크립트 또는 5번의 Node 헬퍼.
      이것도 관측이다. 불가일 때 멈출지는 스킬이 정한다.
   7. 정본 위협 모델의 markdown 형식 지원(`threatModelMarkdown`) — 플러그인 스키마로 판별한다.
-  8. 버전별 계약 차이 관측(전부 파일로 판별한다. 매니페스트 버전은 npm 0.1.26~0.8.1 이
+  8. 버전별 계약 차이 관측(전부 파일로 판별한다. 매니페스트 버전은 npm 0.1.26~0.8.2 가
      모두 0.1.95 라 구분하지 못한다):
      - `npmVersion` — 플러그인 루트의 형제 package.json 의 version(npm 설치본일 때만).
      - `coverageCompleteness` — coverage 스키마에 `completeness` 가 있는가(npm 0.2.0 이하).
@@ -1580,7 +1580,7 @@ def coverage_requires_completeness(plugin_root: Path, target_repo: Path) -> bool
 def resolve_npm_version(plugin_root: Path, target_repo: Path) -> str | None:
     """npm 패키지 version. 플러그인 루트가 `<패키지>/_bundled_plugin` 일 때만 읽는다.
 
-    매니페스트 버전(pluginVersion)은 npm 0.1.26~0.8.1 이 모두 0.1.95 라서 이 값이
+    매니페스트 버전(pluginVersion)은 npm 0.1.26~0.8.2 가 모두 0.1.95 라서 이 값이
     사람이 읽는 유일한 구분 축이다. 동작 분기에는 쓰지 않는다(분기는 파일 존재 프로브).
     """
     if plugin_root.name != "_bundled_plugin":

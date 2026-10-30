@@ -81,7 +81,7 @@ codex-security 플러그인의 `fix-finding` 스킬을 Claude가 직접 수행�
 - 이 구획이 필요한 이유: "상류가 이긴다"를 조건 없이 적용하면 상류 문서 개정 한 번으로 이
   저장소의 승인 게이트가 조용히 사라진다. 게이트의 존재 이유는 상류 문서가 아니라 신뢰 경계다.
 
-기준 실측 버전은 **npm 0.8.1(매니페스트 0.1.95)**다. 상류 `## Workbench Remediation Stages`
+기준 실측 버전은 **npm 0.8.2(매니페스트 0.1.95)**다. 상류 `## Workbench Remediation Stages`
 절은 워크벤치 연동 범위이므로 이 스킬에서 수행하지 않는다(범위 밖).
 
 **상류 문서 변경 주의(플러그인 npm 0.1.18~0.4.0):** 5게이트 검증 서술은 npm 0.1.21
@@ -193,7 +193,7 @@ static은 이 문서의 실행 제한을 **더 강하게** 만들 뿐이다. 2�
 태그 `npm-v0.4.0`(커밋 `559b492b22bb457aea8ff88c1bd41aacc2cec8bf`), 태그 `npm-v0.5.0`(커밋 `03414ad84e91a8638bde85af08c47fe957dc9323`), 태그 `npm-v0.5.1`(커밋 `b2fa51576d81cda5e311e7eb89131ffb13daad8b`),
 태그 `npm-v0.6.0`(커밋 `13dcc6fec00aaf4c23a6fa7e375ccc1726b22836`), 태그 `npm-v0.7.0`(커밋
 `f05a0b096cc881242ddf34a4d6b3ce0f322f3cf9`, 같은 함수 약 93–95행)에서 다시 대조했고 두 줄 모두 같다.
-태그 `npm-v0.8.0`(커밋 `71bd7ae0e9bc859fb8fe9bc4b590b8f8998b19aa`)은 `remediation.ts`를 바꾸지 않았다(설치본 `dist/remediation.js`도 0.7.0과 바이트 단위로 같다). 태그 `npm-v0.8.1`(커밋 `1f2f96d562b98216257e7f7cdacd40c446b97f70`)도 바꾸지 않았다.
+태그 `npm-v0.8.0`(커밋 `71bd7ae0e9bc859fb8fe9bc4b590b8f8998b19aa`)은 `remediation.ts`를 바꾸지 않았다(설치본 `dist/remediation.js`도 0.7.0과 바이트 단위로 같다). 태그 `npm-v0.8.1`(커밋 `1f2f96d562b98216257e7f7cdacd40c446b97f70`)·`npm-v0.8.2`(커밋 `79ff4bde`)도 바꾸지 않았다.
 0.7.0에서 `remediation.ts`가 바뀐 것은 hosted verification의 `checks` 확장 지시와 그 스키마 삭제뿐이다
 (`b88e775a6` #1951 — `patch` 프롬프트와 무관).
 0.2.0~0.4.0 구간에서 `patches` 결과 JSON 지시 줄도 들여쓰기 말고는 같다. 0.4.0에서 같은 프롬프트에

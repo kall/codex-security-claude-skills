@@ -1212,7 +1212,7 @@ else
   bad "H14a-4: threatModelMarkdown=$H14A4_GOT, 스키마 기대=$H14A4_WANT"
 fi
 
-# H14a-5. npm 패키지 version(npmVersion). 매니페스트 버전은 npm 0.1.26~0.8.1 이 모두 0.1.95 라서
+# H14a-5. npm 패키지 version(npmVersion). 매니페스트 버전은 npm 0.1.26~0.8.2 가 모두 0.1.95 라서
 #         사람이 읽는 구분 축은 이 값뿐이다. 기대값은 package.json 을 직접 읽어 정한다.
 H14A5_WANT="$(PY - "$PLUGIN" <<'EOF'
 import json, pathlib, sys
