@@ -31,7 +31,8 @@
 #       앞선 체크포인트 유지
 #   S6  시작 전 거부 — 없는 finding ID, 스캔 입력 개수, 반환 파일 누락, prepare 이후 입력 변경
 #   S7  루브릭 없음 → (0.5.1 이하) 상류 CLI 위임, 결과가 스킬 stateDir 워크벤치에 저장(대조군: STATE_DIR 누락)
-#       (0.6.0) inherit 거부 + 상류 기본 루브릭 경로(rubricSha256 = workflowDigest([기본 루브릭]))
+#       (0.6.0) inherit 거부 + 상류 기본 루브릭 경로(rubricSha256 = workflowDigest([기본 루브릭]),
+#       npm 0.8.3 이상은 원문의 일반 SHA-256 — dist/severity-rubric.js 유무로 고른다)
 #   S8  대상 저장소 node_modules/.bin/node 가 PATH 맨 앞이어도 어떤 호출도 실행하지 않음
 #   S9  NODE_OPTIONS 거부 · 셰뱅 없음
 #   S10 조립 프롬프트 80,000자 상한 → 시작 전 거부   S11 PDF·DOCX 지식 베이스 거부
@@ -962,8 +963,15 @@ dist_read "$SEV/s1r.json"
 expect_eq "true" "$(jget "$SEV/s1r.json" 'd["ok"]')" "S1 상류 readScanSeverityClassification 이 오류 없이 읽는다"
 expect_eq "[\"$FID_A\", \"$FID_B\"]" "$(jget "$SEV/s1r.json" '[a["findingId"] for a in (d.get("result") or {}).get("assessments",[])]')" "S1 선택 finding 전부의 평가를 반환"
 expect_eq '["assessed:high:High", "excluded:None:None"]' "$(jget "$SEV/s1r.json" '[":".join(str(a[k]) for k in ("decision","level","rubricLabel")) for a in (d.get("result") or {}).get("assessments",[])]')" "S1 결정·레벨·루브릭 라벨이 고정 반환값 그대로"
-expect_eq "$(RD digest --sdk-dist "$DIST" --json "{\"value\": [$(PY -c 'import json,sys; print(json.dumps(open(sys.argv[1]).read()))' "$SEV/in/rubric.md")]}" | PY -c 'import json,sys; print(json.load(sys.stdin)["sha256"])')" \
-  "$(jget "$SEV/s1r.json" '(d.get("result") or {}).get("rubricSha256")')" "S1 rubricSha256 = workflowDigest([루브릭 텍스트])"
+# npm 0.8.3(cafc6c2651 #2262)부터 보고용 rubricSha256 은 루브릭 원문(단일 문서)의 일반 SHA-256 이다.
+# 체크포인트 바인딩은 rubricCheckpointSha256(= workflowDigest)을 따로 쓴다. dist/severity-rubric.js 가 그 계약의 표지다.
+if [ -f "$DIST/severity-rubric.js" ]; then
+  expect_eq "$(PY -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$SEV/in/rubric.md")" \
+    "$(jget "$SEV/s1r.json" '(d.get("result") or {}).get("rubricSha256")')" "S1 rubricSha256 = SHA-256(루브릭 원문) (npm 0.8.3 이상)"
+else
+  expect_eq "$(RD digest --sdk-dist "$DIST" --json "{\"value\": [$(PY -c 'import json,sys; print(json.dumps(open(sys.argv[1]).read()))' "$SEV/in/rubric.md")]}" | PY -c 'import json,sys; print(json.load(sys.stdin)["sha256"])')" \
+    "$(jget "$SEV/s1r.json" '(d.get("result") or {}).get("rubricSha256")')" "S1 rubricSha256 = workflowDigest([루브릭 텍스트])"
+fi
 [ -f "$SCAN_DIR/severity-classification.json" ] && ok "S1 severity-classification.json 기록" || bad "S1 severity-classification.json 없음"
 expect_eq "0o600" "$(fmode "$SCAN_DIR/severity-classification.json" 2>/dev/null)" "S1 결과 파일 0600"
 expect_eq "2" "$(jget "$SCAN_DIR/severity-classification.json" 'len(d["assessments"])')" "S1 결과 파일 평가 수 = 선택 finding 수"
@@ -1048,8 +1056,14 @@ RC apply --work-dir "$S5W" >"$SEV/s5a.json"; code=$?
 expect_exit 2 "$code" "S5 assessed + level null → 거부"
 expect_eq "invalid|$FID_B|true" "$(jget "$SEV/s5a.json" '"|".join([str(d.get("status")), str(d.get("findingId")), str(d.get("retryAllowed")).lower()])')" "S5 어느 finding 인지 보고 + 1회 재판정 허용"
 contains "$(cat "$SEV/s5a.json")" "Severity classification returned an invalid assessment." "S5 상류 오류 문구"
-expect_eq "$R3SHA" "$(db_col "$FID_A" rubric_sha256)" "S5 앞선 finding(A)의 체크포인트는 저장돼 남음"
-[ "$(db_col "$FID_B" rubric_sha256)" != "$R3SHA" ] && ok "S5 거부된 finding(B)은 저장되지 않음" || bad "S5 거부된 반환이 저장됨"
+# 체크포인트 DB 열은 바인딩 digest 다. npm 0.8.3 이상은 보고용 rubricSha256 과 다른 workflowDigest([원문])다.
+if [ -f "$DIST/severity-rubric.js" ]; then
+  R3CK="$(RD digest --sdk-dist "$DIST" --json "{\"value\": [$(PY -c 'import json,sys; print(json.dumps(open(sys.argv[1]).read()))' "$SEV/in/rubric3.md")]}" | PY -c 'import json,sys; print(json.load(sys.stdin)["sha256"])')"
+else
+  R3CK="$R3SHA"
+fi
+expect_eq "$R3CK" "$(db_col "$FID_A" rubric_sha256)" "S5 앞선 finding(A)의 체크포인트는 저장돼 남음"
+[ "$(db_col "$FID_B" rubric_sha256)" != "$R3CK" ] && ok "S5 거부된 finding(B)은 저장되지 않음" || bad "S5 거부된 반환이 저장됨"
 dist_read "$SEV/s5r.json"
 contains "$(cat "$SEV/s5r.json")" "Severity classification is incomplete or its inputs changed" "S5 미완료 실행 뒤 publish 읽기 경로는 incomplete(상류와 같은 상태)"
 S5IDX="$(jget "$SEV/s5a.json" 'd.get("index")')"
@@ -1124,10 +1138,17 @@ expect_eq "$SEL_BEFORE" "$(PY -c 'import sqlite3,sys; print(sqlite3.connect(sys.
 RC prepare "${CS_ARGS[@]}" --scan-dir "$SCAN_DIR" >"$SEV/s7p.json"; code=$?
 expect_exit 0 "$code" "S7 prepare(루브릭 생략)"
 expect_eq "upstream-default|6|3" "$(jget "$SEV/s7p.json" '"|".join([str(d.get("rubricSource")), str(len(d.get("pending",[]))), str(d.get("classificationRuns"))])')" "S7 상류 기본 루브릭, 작업 항목 2×3"
-# 기대값: 설치된 dist 의 defaultSeverityRubric 을 이 스크립트가 직접 읽어 workflowDigest([원문]) 으로 계산
+# 기대값: 설치된 dist 의 defaultSeverityRubric 을 이 스크립트가 직접 읽어 계산한다(아래 계약 분기)
 env -i "${ENVS[@]}" "$NODE_B" --input-type=module -e 'import { pathToFileURL } from "node:url"; const m = await import(pathToFileURL(process.argv[1] + "/default-severity-rubric.js").href); process.stdout.write(JSON.stringify({ value: [m.defaultSeverityRubric] }));' "$DIST" >"$SEV/s7rubric.json"
-DEFAULT_SHA="$(RD digest --sdk-dist "$DIST" --json-file "$SEV/s7rubric.json" | PY -c 'import json,sys; print(json.load(sys.stdin)["sha256"])')"
-expect_eq "$DEFAULT_SHA" "$(jget "$SEV/s7p.json" 'd.get("rubricSha256")')" "S7 rubricSha256 = workflowDigest([상류 기본 루브릭])"
+# npm 0.8.3 이상은 기본 루브릭 스냅샷의 sha256(원문의 일반 SHA-256), 그 아래는 workflowDigest([원문]).
+if [ -f "$DIST/severity-rubric.js" ]; then
+  DEFAULT_SHA="$(PY -c 'import hashlib,json,sys; print(hashlib.sha256(json.load(open(sys.argv[1]))["value"][0].encode()).hexdigest())' "$SEV/s7rubric.json")"
+  S7_SHA_LABEL="SHA-256(상류 기본 루브릭) (npm 0.8.3 이상)"
+else
+  DEFAULT_SHA="$(RD digest --sdk-dist "$DIST" --json-file "$SEV/s7rubric.json" | PY -c 'import json,sys; print(json.load(sys.stdin)["sha256"])')"
+  S7_SHA_LABEL="workflowDigest([상류 기본 루브릭])"
+fi
+expect_eq "$DEFAULT_SHA" "$(jget "$SEV/s7p.json" 'd.get("rubricSha256")')" "S7 rubricSha256 = $S7_SHA_LABEL"
 expect_eq "false" "$(jget "$SEV/s7p.json" 'str(d.get("defaultRubricDrift")).lower()')" "S7 기본 루브릭이 검토한 원문(고정 SHA-256)과 같다"
 S7W="$(jget "$SEV/s7p.json" 'd["workDir"]')"
 expect_eq "True" "$(PY -c 'import json,sys; t=open(sys.argv[1]+"/upstream/1.txt").read(); r=json.load(open(sys.argv[2]))["value"]; print(json.loads(t[t.rindex(chr(10)*2)+2:])["rubric"]==r)' "$S7W" "$SEV/s7rubric.json")" "S7 상류 프롬프트 데이터의 rubric = [기본 루브릭 원문](상류가 넣음)"
@@ -1240,7 +1261,7 @@ contains "$(cat "$SEV/s11b.json")" "b.DOCX" "S11 문제 파일 지목"
 # ---------------------------------------------------------------------------
 step "S12. 프롬프트 구획과 상류 리터럴"
 RC upstream-literals >"$SEV/s12lit.json"
-PY - "$SEV/s12lit.json" "$DIST" <<'PYEOF' >"$SEV/s12lit.check"
+PY - "$SEV/s12lit.json" "$DIST" "$SEV/s7rubric.json" <<'PYEOF' >"$SEV/s12lit.check"
 import json, os, sys
 lit = json.load(open(sys.argv[1])); dist = sys.argv[2]
 read = lambda name: open(os.path.join(dist, name), encoding="utf-8").read()
@@ -1250,13 +1271,16 @@ missing = [s for s in lit["instructions"] if s not in read(instr)]
 for name, fragments in lit.items():
     if name.endswith(".js"):
         missing += [f"{name}: {s}" for s in fragments if s not in read(name)]
-# npm 0.6.0(#1765) 기본 루브릭: 설치된 dist 의 원문 SHA-256 이 스킬이 고정한 값과 같은가(원문은 복사하지 않음)
+# npm 0.6.0(#1765) 기본 루브릭: 설치된 dist 의 원문 SHA-256 이 스킬이 검토한 목록에 있는가(원문은 복사하지 않음).
+# 원문은 S7 이 Node 로 import 한 값을 쓴다. npm 0.9.1 dist 는 템플릿 리터럴이 아니라 일반 문자열로 내보낸다.
 if os.path.exists(os.path.join(dist, "default-severity-rubric.js")):
-    import hashlib, re
-    src = read("default-severity-rubric.js")
-    body = re.search(r"defaultSeverityRubric = `(.*?)`;", src, re.S)
-    if not body or hashlib.sha256(body.group(1).encode()).hexdigest() != lit.get("defaultRubricSha256"):
-        missing.append("default-severity-rubric.js: SHA-256 differs from pinned defaultRubricSha256")
+    import hashlib
+    try:
+        text = json.load(open(sys.argv[3]))["value"][0]
+    except Exception:
+        text = None
+    if text is None or hashlib.sha256(text.encode()).hexdigest() not in lit.get("defaultRubricSha256s", []):
+        missing.append("default-severity-rubric.js: SHA-256 not in reviewed defaultRubricSha256s")
 print("ok" if not missing and len(lit["instructions"]) == 8 else "missing " + json.dumps(missing))
 PYEOF
 expect_eq "ok" "$(cat "$SEV/s12lit.check")" "S12 고정 리터럴 8문단·상류 오류 문구가 설치된 dist 모듈에 그대로 있다"
