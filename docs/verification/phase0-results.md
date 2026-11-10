@@ -1754,3 +1754,44 @@ FAIL·SKIP·NOTE 0이다. Node v24.22.1. 스킬 `.mjs`가 `loadUpstream`으로 �
 리뷰(focused, 독립 적대적 리뷰 1회. Codex 교차 모델 경로는 인증이 없어 전송 전에 실패해 로컬 리뷰어로 대체)가 문제 해결 표에 남은 낡은 기준 버전(0.7.0·0.8.1)을 찾아 고쳤다.
 
 확인하지 못한 것: 스캔 디렉터리 0755에서 complete까지, patch·verify-fix 정적 모드(상류 `remediation.ts` 변경 없음), policy 출력 디렉터리 선택의 실패 경로(두 함수가 모두 없을 때, 비공개 검사 거부 시 정리) 단언.
+
+## 부록 — npm 0.9.1(매니페스트 0.1.95) 재실측 (2026-11-10)
+
+기준선을 npm 0.8.2에서 상류 태그 `npm-v0.9.1`(커밋 `fe1089ab51`, 0.8.3 포함, 0.9.0은 npm 미게시)로 올리면서 재실측한 결과다. 상세는 `docs/plans/2026-11-10-1100-chore-codex-security-091-alignment.md`다.
+
+### 정합 작업 전 (수정 전 스킬, npm 0.9.1)
+
+`repro-u8`이 exit 1(FAIL 6: S1·S5·S7·S12, 기본 루브릭·digest 계약 변경), `repro-u1`이 exit 1(FAIL 1: H14g, 헬퍼 번들 배치 변경)이었다. `repro-u4`(OK 84)·`repro-u7`(73)·`repro-u5`(714)는 통과했고 `repro-u3` 요약은 0.8.2와 같았다. 스킬이 `loadUpstream`으로 쓰는 dist 멤버 98개는 모두 남아 있었다(이미 대응한 옛 이름 하나만 없음). npm 0.8.3에서도 정합 전 스킬은 스캔 계열이 통과하고 `repro-u8`만 같은 6건이 실패했다.
+
+### 정합 작업 뒤 재검증
+
+| 스크립트 | npm 0.9.1 | npm 0.8.2 |
+| --- | --- | --- |
+| `repro-u4.sh` | exit 0, OK 84 | exit 0, OK 84 |
+| `repro-u1-search-command.sh` | exit 0, OK 96 | exit 0, OK 96 |
+| `repro-u7-coverage-recovery.sh` | exit 0, OK 73 | exit 0, OK 73 |
+| `repro-u5-match-validator.sh` | exit 0, OK 714 | exit 0, OK 714 |
+| `repro-u8-policy-severity.sh` | exit 0, OK 332 | exit 0, OK 332 |
+| `repro-u3.sh` 요약 | S5 0, S6 0, S9 1, S9b 0 | 같음 |
+
+FAIL·SKIP·NOTE 0이다. Node v24.22.2.
+
+### 종단간 스모크 테스트 (npm 0.9.1)
+
+같은 픽스처로 0.8.2와 나란히 돌렸다.
+
+| 대상 | 결과 |
+| --- | --- |
+| 전체 스캔 | register → … → finalize → `complete`. 봉인은 `coverageRef: coverage.json`. informational finding이 있으면 `report.md`가 "This report omits details for 1 informational finding. See `findings.json` or export the findings as SARIF or CSV."를 싣는다(0.8.2에는 없음). 상류 `scans list`에 보인다 |
+| 경로 지정·diff refs·working_tree·deep-lite | 모두 `complete`. 다섯 시나리오의 `in_scope_files.txt`·rank 입력·diff 리뷰 입력·후보 원장이 0.8.2와 바이트 단위로 같다 |
+| classify-severity | 기본 루브릭 `defaultRubricDrift: false`, `rubricSha256` = 원문 SHA-256(`b718f831…`), 결과 파일에 `rubricRevision: 1`. 3회 × 3건 다수결, 재실행 재사용, 상류 `publish scan --dry-run` 반영 |
+| scan-match | compare → catalogue → finalize → save rc 0(두 스캔 모두 standard라 `crossModeOccurrenceIds` 없음) |
+| policy | prepare → architecture → threat_model → policy → finish(`draft`), 0700/0600, 저장소 무변경. Git 무시 정책 제외 |
+| patch·verify-fix 정적 모드(결정론 부분) | 신뢰 환경 git 읽기 명령 rc 0, 카나리 0회 |
+| 실행 카나리 | 보호 경로에서 0회, 보호 없는 대조군은 `git status`·`git diff`에서 발동 |
+
+모델 판단(후보·finding, classify 답, scan-match 응답, policy 단계 반환)은 포크 에이전트가 직접 썼다. 그래서 이 부분은 결정론 경로만 검증했다. 0.9.1에서 새 결함은 없었다.
+
+리뷰(focused, 독립 적대적 리뷰 1회. Codex 교차 모델은 로그인되어 있지 않아 로컬 리뷰어로 대체)는 지적 0건이었다. 남은 위험으로 짚은 낡은 주석과 0.8.3 행 서술은 고쳤다.
+
+확인하지 못한 것: 상류 CLI가 만든 새 형상 번들(coverage.json 없음) 사용, standard↔deep 교차 모드 scan-match(상류 공식 Deep 스캔 필요), 모델 판단 품질.
