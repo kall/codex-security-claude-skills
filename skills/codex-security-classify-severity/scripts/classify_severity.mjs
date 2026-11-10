@@ -1,7 +1,7 @@
 // classify_severity.mjs — codex-security-classify-severity 스킬의 결정론 부분.
 // 서브에이전트 판정(finding × 리뷰 횟수만큼)과 사용자 보고는 부모 세션이 한다.
 //
-// 상류 `codex-security classify-severity`(기준 npm 0.8.2 — 계약은 0.6.0 과 같음, 0.2.0~0.5.1 도 지원)를 **상류 dist 함수 그대로** 돌린다.
+// 상류 `codex-security classify-severity`(기준 npm 0.9.1 — 계약은 0.6.0 과 같음, 0.2.0~0.5.1 도 지원)를 **상류 dist 함수 그대로** 돌린다.
 // 모델 호출 자리(runReadOnlyCodex → startReadOnlyCodexThread 의 `options.codex`)에만 가짜 Codex 를 넣는다.
 //   근거(주입 가능성): sdk/typescript/src/classify-severity.ts
 //     36행  ClassifySeverityOptions.codex ("@internal Test client for the shared read-only runtime")
@@ -150,7 +150,19 @@ const UPSTREAM_INSTRUCTION_TEXT = UPSTREAM_CLASSIFY_INSTRUCTIONS.join("\n\n");
 //   재대조: 태그 npm-v0.7.0 = 커밋 f05a0b096cc881242ddf34a4d6b3ce0f322f3cf9 — default-severity-rubric.ts 변경 없음,
 //   0.7.0 설치본 dist 의 defaultSeverityRubric SHA-256 도 같은 값이다. 태그 npm-v0.8.0 = 커밋 71bd7ae0e 도
 //   변경 없음(0.8.0 설치본 dist/default-severity-rubric.js 가 0.7.0 과 바이트 단위로 같다).
-const UPSTREAM_DEFAULT_RUBRIC_SHA256 = "f0b96eb697d7a5c103bf67c2cf94852e164bd57aa69e0036326df6baee7673d2";
+//   npm 0.9.1(태그 npm-v0.9.1 = 커밋 fe1089ab51)은 기본 루브릭을 플러그인 references/default-severity-rubric.md 에서
+//   생성한다(fa117a2227 #2260, 스캔 채점과 공유). 원문을 검토했다: Critical·High 를 세 조건 목록으로 정리했고
+//   Medium 이하는 문장이 같다. 머리말의 "Use the supplied report and evidence; do not perform new validation." 한
+//   문장이 빠졌다(스캔 채점과 공유하기 때문). 이 스킬의 판정 서브에이전트는 도구가 없어 새 검증을 할 수 없으므로
+//   판정 기준에 주는 영향은 없다고 본다. 0.8.3 의 중간 원문(SHA 2be64b35…)은 검토하지 않았다 — drift 로 알린다.
+//   같은 0.8.3 부터 상류 rubricSha256 은 workflowDigest 가 아니라 루브릭 원문(단일 문서)의 일반 SHA-256 이고,
+//   체크포인트 바인딩에는 rubricCheckpointSha256(= workflowDigest)이 따로 쓰인다(cafc6c2651 #2262). 이 스킬은 두
+//   값을 상류 결과에서 그대로 옮기므로 계산을 바꿀 것이 없다.
+// 검토한 원문의 SHA-256 목록. 첫 항목이 최신이다.
+const UPSTREAM_DEFAULT_RUBRIC_SHA256S = Object.freeze([
+  "b718f8314712b307690d31d9c6f533c113ad1754f725b8d37856b6dc58a42043", // npm 0.9.1
+  "f0b96eb697d7a5c103bf67c2cf94852e164bd57aa69e0036326df6baee7673d2", // npm 0.6.0~0.8.2
+]);
 // 상류 오류 문구(classify-severity.ts / classify-scan-severity.ts / severity-store.ts). 보고에 원문으로 싣는다.
 const UPSTREAM_MESSAGES = {
   invalid: "Severity classification returned an invalid assessment.",
@@ -250,7 +262,7 @@ function parseUpstreamPrompt(input) {
   const dataLine = cut < 0 ? input : input.slice(cut + 2);
   if (instructions !== UPSTREAM_INSTRUCTION_TEXT) {
     throw new GatewayError(
-      "상류 분류 프롬프트의 지시부가 이 스킬이 고정한 영문 리터럴(npm-v0.1.29, v0.8.2 까지 같음)과 다르다. 상류가 바뀌었다 — " +
+      "상류 분류 프롬프트의 지시부가 이 스킬이 고정한 영문 리터럴(npm-v0.1.29, v0.9.1 까지 같음)과 다르다. 상류가 바뀌었다 — " +
         "신뢰 구획에 들어갈 문장을 다시 검토하기 전에는 진행하지 않는다. classify_severity.mjs 의 " +
         "UPSTREAM_CLASSIFY_INSTRUCTIONS 출처 주석을 따라 상류 classify-severity.ts 를 다시 대조하라.",
       { upstreamPromptDrift: true },
@@ -490,7 +502,7 @@ async function severityContract(sdkDist) {
   if (hasDefaultRubric !== (runsSchema !== null)) {
     throw new GatewayError(
       "설치된 상류 dist 의 심각도 계약을 판별할 수 없다(기본 루브릭 모듈과 classificationRunsSchema 중 하나만 있다). " +
-        "이 스킬이 검토한 npm 0.2.0~0.8.2 설치본으로 다시 실행하라.",
+        "이 스킬이 검토한 npm 0.2.0~0.9.1 설치본으로 다시 실행하라.",
     );
   }
   if (!hasDefaultRubric) return { reviews: false, defaultRubric: null, runsSchema: null };
@@ -709,7 +721,7 @@ async function handlePrepare(args) {
       subagentCalls: items.length,
       rubricSource: rubricPath === undefined ? "upstream-default" : "user",
       ...(rubricPath === undefined
-        ? { defaultRubricSha256, defaultRubricDrift: defaultRubricSha256 !== UPSTREAM_DEFAULT_RUBRIC_SHA256 }
+        ? { defaultRubricSha256, defaultRubricDrift: !UPSTREAM_DEFAULT_RUBRIC_SHA256S.includes(defaultRubricSha256) }
         : {}),
       rubricSha256: dryRun.rubricSha256,
       knowledgeBaseSha256: dryRun.knowledgeBaseSha256,
@@ -1126,8 +1138,8 @@ async function handleCleanup(args) {
 export function upstreamLiteralFragments() {
   return {
     instructions: [...UPSTREAM_CLASSIFY_INSTRUCTIONS],
-    // 0.6.0 이상 기본 루브릭 원문의 SHA-256(회귀 스크립트가 설치된 dist 의 defaultSeverityRubric 과 대조한다).
-    defaultRubricSha256: UPSTREAM_DEFAULT_RUBRIC_SHA256,
+    // 0.6.0 이상 기본 루브릭 원문의 검토한 SHA-256 목록(회귀 스크립트가 설치된 dist 의 defaultSeverityRubric 과 대조한다).
+    defaultRubricSha256s: [...UPSTREAM_DEFAULT_RUBRIC_SHA256S],
     // 파일별로 둔다 — 회귀 스크립트가 설치된 dist 의 해당 모듈과 대조한다.
     "classify-severity.js": [UPSTREAM_MESSAGES.invalid, UPSTREAM_MESSAGES.mismatch],
     "classify-scan-severity.js": [UPSTREAM_MESSAGES.selection],

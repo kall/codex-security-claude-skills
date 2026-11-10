@@ -1212,7 +1212,7 @@ else
   bad "H14a-4: threatModelMarkdown=$H14A4_GOT, 스키마 기대=$H14A4_WANT"
 fi
 
-# H14a-5. npm 패키지 version(npmVersion). 매니페스트 버전은 npm 0.1.26~0.8.2 가 모두 0.1.95 라서
+# H14a-5. npm 패키지 version(npmVersion). 매니페스트 버전은 npm 0.1.26~0.9.1 이 모두 0.1.95 라서
 #         사람이 읽는 구분 축은 이 값뿐이다. 기대값은 package.json 을 직접 읽어 정한다.
 H14A5_WANT="$(PY - "$PLUGIN" <<'EOF'
 import json, pathlib, sys
@@ -1483,8 +1483,9 @@ fi
 # H14g. 1 MiB 를 넘는 SECURITY.md. npm 0.6.0 이하 헬퍼는 exit 2(`SECURITY.md exceeds 1 MiB`)로
 #       끝나고, 스킬은 이 종료코드로 건너뛰기 분기를 탄다(중단하면 저장소가 자기 스캔을 막을 수
 #       있다). npm 0.7.0 은 이 한도를 지웠다(상류 0b70ee90f #1883) — 같은 파일이 exit 0 으로
-#       해결된다. 매니페스트 버전이 같으므로 헬퍼 번들(helpers.mjs.br.part-*)에 한도 문구가
-#       있는지로 기대값을 고른다. 번들은 brotli 압축이라 Node 로 푼다.
+#       해결된다. 매니페스트 버전이 같으므로 헬퍼 번들에 한도 문구가 있는지로 기대값을 고른다.
+#       번들은 brotli 압축이라 Node 로 푼다. npm 0.8.x 이하는 조각(helpers.mjs.br.part-*),
+#       npm 0.9.1 은 단일 파일(helpers.mjs.br)이다 — 둘 다 받는다.
 BIG="$RUN/big-target"
 mkdir -p "$BIG"
 PY -c 'import sys; open(sys.argv[1], "w").write("# Security\n" + "a" * (1024 * 1024 + 16))' "$BIG/SECURITY.md"
@@ -1503,7 +1504,8 @@ else
   H14G_NODE_RAW="$(jget "$RUN/h14g.json" '(d.get("node") or {}).get("path") or ""')"
   H14G_LIMIT="$("$H14G_NODE_RAW" -e '
 const fs = require("fs"), zlib = require("zlib"), dir = process.argv[1];
-const parts = fs.readdirSync(dir).filter((f) => /^helpers\.mjs\.br\.part-\d+$/.test(f)).sort();
+let parts = fs.readdirSync(dir).filter((f) => /^helpers\.mjs\.br\.part-\d+$/.test(f)).sort();
+if (!parts.length && fs.existsSync(dir + "/helpers.mjs.br")) parts = ["helpers.mjs.br"];
 if (!parts.length) process.exit(3);
 const text = zlib.brotliDecompressSync(Buffer.concat(parts.map((f) => fs.readFileSync(dir + "/" + f))));
 console.log(text.includes("SECURITY.md exceeds 1 MiB") ? "yes" : "no");
