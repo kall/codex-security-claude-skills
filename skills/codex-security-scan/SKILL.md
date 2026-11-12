@@ -114,15 +114,15 @@ fallbacks"보다 우선한다고 쓰기 때문이다. 그래서 상류 문서가
      대상 저장소 밖의 Git을 고른다(상류 `50b0e186`). 이 변수는 `env -i`로 구성한 자식 환경에 들어가지
      않고, `workbench_glue.py`도 상속값을 지운다(`repro-u7` I18). 상류 SDK도 사용자 값을 쓰지 않는다.
    - **시작 고지**: 선택된 플러그인의 절대 경로, `pluginVersion`, `npmVersion`을 사용자에게 알린다.
-     `pluginVersion`이 이 번역 지침 작성 기준(**매니페스트 0.1.95**, npm 0.9.1)과 다르면 "플러그인 버전이
+     `pluginVersion`이 이 번역 지침 작성 기준(**매니페스트 0.1.95**, npm 0.10.0)과 다르면 "플러그인 버전이
      매핑 기준과 다름 — 워크플로 지시가 바뀌었을 수 있음"을 경고한다. 이 값은 매니페스트
-     버전이며 npm 패키지 버전과 다른 축이다(npm 0.9.1 = 매니페스트 0.1.95).
-     `npmVersion`이 `null`이 아니고 `0.9.1`과 다르면 같은 경고를 낸다. `null`(소스 체크아웃 등)이면
+     버전이며 npm 패키지 버전과 다른 축이다(npm 0.10.0 = 매니페스트 0.1.95).
+     `npmVersion`이 `null`이 아니고 `0.10.0`과 다르면 같은 경고를 낸다. `null`(소스 체크아웃 등)이면
      npm 버전을 알 수 없다고만 적는다. `npmVersion`은 고지용이다. 동작 분기는 아래 파일 프로브로 한다.
    - **표기 규약**: 이 저장소의 문서는 두 축을 **항상 이름으로 구분해** 쓴다 — `npm 0.7.0`,
      `매니페스트 0.1.95`. 축 없이 "플러그인 0.1.x"로 쓰지 않는다. 두 축의 숫자 범위가 겹쳐서
      (npm 0.1.20과 매니페스트 0.1.20이 둘 다 존재) 축을 생략하면 어느 쪽인지 알 수 없다.
-   - **경고로 구분되지 않는 구간(P6-KTD1)**: npm 0.1.26~0.9.1은 모두 매니페스트 0.1.95다. 그래서
+   - **경고로 구분되지 않는 구간(P6-KTD1)**: npm 0.1.26~0.10.0은 모두 매니페스트 0.1.95다. 그래서
      이 경고는 이 구간의 버전을 구분하지 못한다. 버전 대신 **파일 존재로 판별한 필드**를 쓴다.
      - npm 0.1.26에는 Node 헬퍼(`securityMdHelper`)가 없어서 3번 정책 해결이 고지와 함께
        건너뛰어진다(`securityMdHelper.available: false`). 헬퍼는 npm 0.1.27부터 있다.
@@ -148,7 +148,7 @@ fallbacks"보다 우선한다고 쓰기 때문이다. 그래서 상류 문서가
        경로다. 출력 집합과 실패 동작(줄바꿈 경로 exit 2, 빈 스코프는 빈 목록으로 exit 0)은 두 경로가
        같다(`repro-u4.sh` G·I·J 블록, 0.6.0·0.7.0 실측).
 
-     검증된 조합인 npm 0.9.1 설치를 권장한다. npm 0.8.2 이하도 동작한다(자기채점 스크립트가 0.9.1·0.8.2를
+     검증된 조합인 npm 0.10.0 설치를 권장한다. npm 0.9.1 이하도 동작한다(자기채점 스크립트가 0.10.0·0.9.1을
      모두 검사한다). npm 0.1.32 이하는 0.2.0 기준 검토 때 확인한 경로를 남겨 두었지만 이번에 다시
      검증하지 않았다. 버전별 동작은 해당 절에 적었다.
    - **후보 정규화 확인**: `candidateNormalizer.available`이 `false`이면 **중단**한다. 후보가 1건이라도
@@ -259,6 +259,22 @@ fallbacks"보다 우선한다고 쓰기 때문이다. 그래서 상류 문서가
 읽는다(경로는 `<plugin_dir>` 기준):
 `skills/security-scan/SKILL.md`, `references/core-scan.md`,
 `references/scan-artifacts.md`, `references/final-report.md`, `references/finding-detail-fields.md`.
+npm 0.10.0부터는 `references/baseline-auditor.md`와 `references/focused-investigator.md`도 읽는다(파일이 있을 때만).
+`core-scan.md`가 링크하는 나머지 두 문서는 따로 읽지 않는다. `references/default-severity-rubric.md`는 4단계 attack-path
+`severity-policy.md`가 가리키는 기본 루브릭으로 읽고, `references/validate-scan-findings.md`는 아래 문단처럼 3단계로 대신한다.
+`core-scan.md`가 새 문서를 링크하면 `repro-u4` M 블록이 실패한다. 그 문서를 읽을지 정해 이 문단에 적는다.
+
+**감사 지시의 분리(npm 0.10.0, 매니페스트는 0.1.95 그대로, 상류 `e90a30ac25` #2046).** 상류 `core-scan.md`는 워커 프롬프트 절
+(`## Shared Worker Instructions`·`## Baseline Auditor Prompt`·`## Focused Investigator Prompt`)을 지우고 같은 문장을
+`references/baseline-auditor.md`·`references/focused-investigator.md`로 옮겼다. 취약점 유형 점검 목록(객체 읽기의
+인가, 쿼리·렌더러·인터프리터 주입, 파일·네트워크 경계, XML·요청 밀반입·프로토타입 오염·자원 고갈)과 내장 자격증명
+점검이 baseline 브리프에만 있다. 그래서 `core-scan.md`만 읽으면 이 점검이 빠진다. 2단계 전 파일 리뷰에서 두 브리프의
+**점검 항목과 추적 방법**을 직접 따른다. 상류도 위임이 없으면 "read the baseline brief, follow its audit checks yourself"라고
+쓴다. 브리프의 워커 전용 부분은 적용하지 않는다. 위임·`tool_search`·`fork_turns` 지시는 따르지 않는다(이 스킬은 단일
+에이전트다). 반환 JSON(`findings`·`resolved_questions`·`reviewed_files`)은 쓰지 않고 2단계 원시 후보 형식을 쓴다.
+`core-scan.md` 7항은 검증을 `references/validate-scan-findings.md`로 넘긴다. 이 스킬은 3단계 compact validation 절차를
+그대로 쓴다. 이 파일은 같은 판정 기준을 짧게 적은 것이므로 따로 읽지 않아도 된다. 0.9.1 이하에는 두 브리프 파일이 없고 같은
+문장이 `core-scan.md` 안에 있다.
 
 **상류 문서 이동 주의(매니페스트 0.1.16~0.1.95 구간):** `skills/security-scan/references/repository-wide-scan.md`는
 **매니페스트 0.1.20**(npm 0.1.12에 처음 실림)에서 삭제되고 내용이 `references/core-scan.md`로 옮겨졌다. 또 상류 표준 스캔은 후보 원장
@@ -387,7 +403,8 @@ diff 작업 목록 헬퍼 명령)가 이 규약의 남은 상류 서술이다.
 
    인벤토리를 손으로 만들거나 분모를 추측하지 않는다(P5-KTD3). 실패한 인벤토리로 리뷰를 시작하지
    않는다.
-2. **목록의 모든 파일을 처음부터 끝까지 리뷰**한다. 예제·데모·픽스처·테스트라고 건너뛰지 않는다.
+2. **목록의 모든 파일을 처음부터 끝까지 리뷰**한다(점검 항목은 `core-scan.md`와, npm 0.10.0부터는 위 두 브리프).
+   예제·데모·픽스처·테스트라고 건너뛰지 않는다.
    한 파일에서 버그 하나 찾고 멈추지 않는다. 리뷰 불가(바이너리·생성물)는 그렇게 명시 열거한다.
 3. **리뷰 로그(R8)**: 파일 하나를 리뷰할 때마다 `<scan_dir>/artifacts/02_discovery/review_log.jsonl`에
    `{"path": "<repo-relative>", "reviewed_at": "<ISO8601>", "outcome": "reviewed|not_reviewable"}` 1행씩
@@ -555,7 +572,7 @@ npm 0.4.0 `final-report.md`는
    `severity.level`·`confidence.level`·`confidence.rationale`·`taxonomy.category`·`taxonomy.cwe`(근거가
    없으면 빈 배열)·`locations`(1개 이상)·`remediation`·`provenance.source`(이 스킬이 찾은 finding은
    `local_plugin`)다. **`identity`도 필수다**: `{"anchor": "<소문자 slug>"}`(선택 `instance`). 상류 스키마의
-   required 목록에는 없지만 finalizer가 객체를 요구한다(0.7.0~0.9.1 코드, 0.8.1 실측: 빠지면
+   required 목록에는 없지만 finalizer가 객체를 요구한다(0.7.0~0.10.0 코드, 0.8.1 실측: 빠지면
    `finding.identity: expected an object`로 거부).
 3. 각 `explanation`이 "이 단계의 공격자 제어 값 → 다음 호출·상태 → 불변식 보존 또는 위반"의 **연결
    추론**인가. 코드를 다시 읽어주는 문장이 아니다.
@@ -750,7 +767,7 @@ PYTHONDONTWRITEBYTECODE=1 <python_command> <plugin_dir>/scripts/validate_scan_co
 
 스캔 완료 시 사용자에게 한국어로 다음을 보고한다:
 - 파인딩 수와 심각도 분포(critical/high/medium/low, informational이 있으면 그 수도).
-  npm 0.9.1 `report.md`는 informational finding의 개수만 적고 세부 내용을 싣지 않는다(상류 faf4bd9394 #155,
+  npm 0.9.1부터 `report.md`는 informational finding의 개수만 적고 세부 내용을 싣지 않는다(상류 faf4bd9394 #155,
   `final-report.md` "The generated `report.md` counts informational findings and omits their details."). 그래서
   informational finding이 있으면 그 사실과 `findings.json`(또는 SARIF·CSV 내보내기)에서 읽으라는 안내를 보고에 적는다.
 - `report.md`의 **절대 경로**(주 가독 산출물)와 SARIF 경로.
