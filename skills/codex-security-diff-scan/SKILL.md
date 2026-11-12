@@ -162,7 +162,8 @@ finalizer·`complete-scan`은 이 경로를 받아들인다(`repro-u4.sh` I 블�
      0.1.25에도 있었다. 그 경로는 Phase 1 SKILL.md 2단계의 탐색 명령(`<스코프>`는 `.`)으로 찾아
      사용자에게 보여 준다. 이름을 바꾸기 전에는 이 diff를 스캔할 수 없다.
 
-   인벤토리의 변경 파일만 리뷰한다. 후보는 Phase 1 2단계 5번의 정규화 명령(`candidateNormalizer.kind`로
+   인벤토리의 변경 파일만 리뷰한다. 점검 항목은 Phase 1 2단계 2번과 같다(npm 0.10.0부터 `references/baseline-auditor.md`·
+   `references/focused-investigator.md` 포함). 후보는 Phase 1 2단계 5번의 정규화 명령(`candidateNormalizer.kind`로
    고름)으로 단일 원장에 병합하되, **diff 스캔은 `--allow-missing-in-scope`를 반드시 붙인다**. 두 경로 모두
    이 인자를 받는다:
    ```bash

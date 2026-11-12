@@ -203,7 +203,7 @@ expect_exit 2 "$?" "E finalize (실패 기대)"
 #   deferred 0건 + needs_follow_up surface -> invocations 없음(SARIF 만으로는 불완전을 모름)
 #
 # 어느 형상인지는 버전 문자열이 아니라 플러그인 스키마로 고른다(매니페스트 버전은
-# npm 0.1.26~0.9.1 이 모두 0.1.95 다). 스킬 bootstrap 의 coverageCompleteness 와 같은 축이다.
+# npm 0.1.26~0.10.0 이 모두 0.1.95 다). 스킬 bootstrap 의 coverageCompleteness 와 같은 축이다.
 # ---------------------------------------------------------------------------
 step "F. SARIF 성공 판정 형상 (완전 / deferred 있음 / deferred 없는 불완전)"
 COVERAGE_COMPLETENESS="$(PY -c 'import json,sys
@@ -1264,6 +1264,28 @@ EOF
   fi
 else
   printf 'NOTE L3: 이 사본의 scan-draft 스키마는 root_cause 를 금지하지 않습니다(npm 0.2.0 이하) — 해당 없음\n'
+fi
+
+# ---------------------------------------------------------------------------
+# M. 상류 core-scan.md 가 링크하는 문서를 스캔 스킬이 모두 다루는가 (npm 0.10.0 교훈)
+#    0.10.0 은 core-scan.md 의 점검 목록을 baseline-auditor.md 등 별도 파일로 옮겼다. 스킬은 core-scan.md 를
+#    런타임에 읽는 단일 에이전트라, 링크된 문서를 읽기 목록에 넣지 않으면 점검 항목을 조용히 잃는다. 자기채점의
+#    다른 블록은 이 손실을 잡지 못했다. 여기서는 링크된 .md 파일 이름이 스캔 SKILL.md 에 하나도 없으면 실패한다.
+# ---------------------------------------------------------------------------
+step "M. core-scan.md 링크 문서와 스캔 스킬 읽기 목록"
+SCAN_SKILL_MD="${CODEX_SECURITY_SCAN_SKILL_MD:-$WORK/../../../skills/codex-security-scan/SKILL.md}"
+if [ ! -f "$SCAN_SKILL_MD" ] || [ ! -f "$PLUGIN/references/core-scan.md" ]; then
+  skip "M: 스캔 SKILL.md 또는 상류 references/core-scan.md 가 없습니다"
+else
+  M_LINKS="$(grep -oE '\]\([^)#]+\.md\)' "$PLUGIN/references/core-scan.md" | sed -E 's/^\]\((.*)\)$/\1/' | sed -E 's#.*/##' | sort -u)"
+  for m_doc in $M_LINKS; do
+    if grep -qF "$m_doc" "$SCAN_SKILL_MD"; then
+      ok "M core-scan.md 링크 $m_doc 를 스캔 SKILL.md 가 다룬다"
+    else
+      bad "M core-scan.md 가 링크한 $m_doc 를 스캔 SKILL.md 가 언급하지 않는다 — 읽기 목록에 넣을지(점검 항목이면 넣는다), 왜 읽지 않는지를 「표준 스캔 워크플로」 첫 문단에 적어라"
+    fi
+  done
+  [ -n "$M_LINKS" ] || ok "M core-scan.md 에 마크다운 문서 링크가 없다(0.9.1 이하)"
 fi
 
 printf '\n=== 결과 ===\n'
