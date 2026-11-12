@@ -1,7 +1,7 @@
 // classify_severity.mjs — codex-security-classify-severity 스킬의 결정론 부분.
 // 서브에이전트 판정(finding × 리뷰 횟수만큼)과 사용자 보고는 부모 세션이 한다.
 //
-// 상류 `codex-security classify-severity`(기준 npm 0.9.1 — 계약은 0.6.0 과 같음, 0.2.0~0.5.1 도 지원)를 **상류 dist 함수 그대로** 돌린다.
+// 상류 `codex-security classify-severity`(기준 npm 0.10.0 — 계약은 0.6.0 과 같음, 0.2.0~0.5.1 도 지원)를 **상류 dist 함수 그대로** 돌린다.
 // 모델 호출 자리(runReadOnlyCodex → startReadOnlyCodexThread 의 `options.codex`)에만 가짜 Codex 를 넣는다.
 //   근거(주입 가능성): sdk/typescript/src/classify-severity.ts
 //     36행  ClassifySeverityOptions.codex ("@internal Test client for the shared read-only runtime")
@@ -36,7 +36,7 @@
 //   재대조(태그 npm-v0.8.2 = 커밋 79ff4bde8a4685b9c31ad8f449bdb40df8f468f7): 위 여섯 파일 모두 0.8.1 과 같다.
 //
 // 그래서 이 파일이 **소유하지 않는 것**(상류 코드가 한다): 스캔 해석·봉인 확인, finding 선택 규칙,
-// 루브릭·지식 베이스 읽기(0.2.0 prepareKnowledgeBase / 0.4.0 readKnowledgeBaseDocuments), 0.6.0 기본 루브릭,
+// 루브릭·지식 베이스 읽기(0.2.0 prepareKnowledgeBase / 0.4.0 readKnowledgeBaseDocuments / 0.10.0 readKnowledgeBaseSnapshot), 0.6.0 기본 루브릭,
 // rubric/knowledgeBase/finding digest(workflowDigest), 리뷰 횟수 검사(classificationRunsSchema)와 다수결
 // (reviewSeverity), 저장 평가 재사용 규칙, 상류 프롬프트 조립, 7키 strict 스키마와 일관성 검사, 워크벤치
 // begin/save, severity-classification.json 원자적 기록, 0.5.1 이하의 루브릭 없는 상속 경로(CLI 위임).
@@ -158,9 +158,10 @@ const UPSTREAM_INSTRUCTION_TEXT = UPSTREAM_CLASSIFY_INSTRUCTIONS.join("\n\n");
 //   같은 0.8.3 부터 상류 rubricSha256 은 workflowDigest 가 아니라 루브릭 원문(단일 문서)의 일반 SHA-256 이고,
 //   체크포인트 바인딩에는 rubricCheckpointSha256(= workflowDigest)이 따로 쓰인다(cafc6c2651 #2262). 이 스킬은 두
 //   값을 상류 결과에서 그대로 옮기므로 계산을 바꿀 것이 없다.
+//   npm 0.10.0(태그 npm-v0.10.0 = 커밋 f465432bc4)은 dist/default-severity-rubric.js 가 0.9.1 과 바이트 단위로 같다.
 // 검토한 원문의 SHA-256 목록. 첫 항목이 최신이다.
 const UPSTREAM_DEFAULT_RUBRIC_SHA256S = Object.freeze([
-  "b718f8314712b307690d31d9c6f533c113ad1754f725b8d37856b6dc58a42043", // npm 0.9.1
+  "b718f8314712b307690d31d9c6f533c113ad1754f725b8d37856b6dc58a42043", // npm 0.9.1~0.10.0
   "f0b96eb697d7a5c103bf67c2cf94852e164bd57aa69e0036326df6baee7673d2", // npm 0.6.0~0.8.2
 ]);
 // 상류 오류 문구(classify-severity.ts / classify-scan-severity.ts / severity-store.ts). 보고에 원문으로 싣는다.
@@ -262,7 +263,7 @@ function parseUpstreamPrompt(input) {
   const dataLine = cut < 0 ? input : input.slice(cut + 2);
   if (instructions !== UPSTREAM_INSTRUCTION_TEXT) {
     throw new GatewayError(
-      "상류 분류 프롬프트의 지시부가 이 스킬이 고정한 영문 리터럴(npm-v0.1.29, v0.9.1 까지 같음)과 다르다. 상류가 바뀌었다 — " +
+      "상류 분류 프롬프트의 지시부가 이 스킬이 고정한 영문 리터럴(npm-v0.1.29, v0.10.0 까지 같음)과 다르다. 상류가 바뀌었다 — " +
         "신뢰 구획에 들어갈 문장을 다시 검토하기 전에는 진행하지 않는다. classify_severity.mjs 의 " +
         "UPSTREAM_CLASSIFY_INSTRUCTIONS 출처 주석을 따라 상류 classify-severity.ts 를 다시 대조하라.",
       { upstreamPromptDrift: true },
@@ -394,12 +395,20 @@ function scanInput(args) {
  * --scan: classify-scan-severity.ts classifyScanSeverityInternal 55–78행과 같은 resolveCompletedScan 호출.
  * --scan-dir: loadContractWithScanDirectory.
  */
-async function resolveScan(sdkDist, input, environment, repository) {
+async function resolveScan(sdkDist, input, environment, repository, documents = false) {
   const runtime = await loadUpstream(sdkDist, "runtime.js");
   const contractModule = await loadUpstream(sdkDist, "contract.js");
   const pluginRoot = await runtime.bundledPluginRoot();
   let requestedDirectory = input.scanDir;
   let expectedScanId;
+  // 문서 경로 검사 루트(npm 0.10.0, 상류 bbf65774a3 #2430). 상류 apply 경로와 같은 값을 dry-run 에도 넘겨,
+  // 링크를 거친 루브릭·지식 베이스 경로가 판정 뒤 apply 에서야 거부되는 일을 막는다.
+  //   --scan: classifyScanSeverityInternal 이 remediationAvailable·targetPath 로 documentSourceRoot 를 구한다.
+  //           구하지 못하면 null(= 링크를 거친 경로는 모두 거부).
+  //   --scan-dir: classifyScanDirectorySeverityInternal 의 기본값 [] → [scanDirectory].
+  // 0.9.1 이하 targets.js 에는 documentSourceRoot 가 없다. 그때는 넘기지 않는다(상류도 이 인자가 없다).
+  let sourceRoots = [];
+  let documentRootsSupported = false;
   if (input.scanRef !== null) {
     const savedScan = await loadUpstream(sdkDist, "saved-scan.js");
     const scan = await savedScan.resolveCompletedScan(input.scanRef, {
@@ -417,12 +426,30 @@ async function resolveScan(sdkDist, input, environment, repository) {
     });
     requestedDirectory = scan.scanDir;
     expectedScanId = scan.scanId;
+    const targets = await loadUpstream(sdkDist, "targets.js");
+    documentRootsSupported = typeof targets.documentSourceRoot === "function";
+    if (documentRootsSupported) {
+      const target = scan["targetPath"];
+      const sourceRoot =
+        documents && scan["remediationAvailable"] === true && typeof target === "string"
+          ? await targets.documentSourceRoot(target).catch(targets.nullIfMissingPath)
+          : null;
+      sourceRoots = sourceRoot === null ? null : [sourceRoot];
+    }
+  } else {
+    const targets = await loadUpstream(sdkDist, "targets.js");
+    documentRootsSupported = typeof targets.documentSourceRoot === "function";
   }
   const { contract, scanDirectory } = await contractModule.loadContractWithScanDirectory(requestedDirectory, {
     pluginRoot,
     expectedScanId,
   });
-  return { scanId: contract.manifest.scan.id, scanDir: scanDirectory, findings: contract.findings.findings };
+  return {
+    scanId: contract.manifest.scan.id,
+    scanDir: scanDirectory,
+    findings: contract.findings.findings,
+    documentRoots: documentRootsSupported ? sourceRoots && [scanDirectory, ...sourceRoots] : undefined,
+  };
 }
 
 function selectFindings(scanSeverity, findings, findingIds) {
@@ -502,7 +529,7 @@ async function severityContract(sdkDist) {
   if (hasDefaultRubric !== (runsSchema !== null)) {
     throw new GatewayError(
       "설치된 상류 dist 의 심각도 계약을 판별할 수 없다(기본 루브릭 모듈과 classificationRunsSchema 중 하나만 있다). " +
-        "이 스킬이 검토한 npm 0.2.0~0.9.1 설치본으로 다시 실행하라.",
+        "이 스킬이 검토한 npm 0.2.0~0.10.0 설치본으로 다시 실행하라.",
     );
   }
   if (!hasDefaultRubric) return { reviews: false, defaultRubric: null, runsSchema: null };
@@ -548,7 +575,7 @@ function selectionArgs(args) {
  */
 async function dryRunCapture(
   sdkDist,
-  { environment, python, scanDir, scanId, findings, rubricPath, knowledgeBasePaths, reprocess, classificationRuns },
+  { environment, python, scanDir, scanId, findings, rubricPath, knowledgeBasePaths, reprocess, classificationRuns, documentRoots },
 ) {
   const classifySeverity = await loadUpstream(sdkDist, "classify-severity.js");
   const findingIds = findings.map((finding) => finding.findingId);
@@ -594,6 +621,7 @@ async function dryRunCapture(
     },
     "cli",
     checkpoint,
+    ...(documentRoots === undefined ? [] : [documentRoots]),
   );
   return { captured, outputSchema, result };
 }
@@ -618,7 +646,13 @@ async function handlePrepare(args) {
 
   const runtime = await loadUpstream(sdkDist, "runtime.js");
   const scanSeverity = await loadUpstream(sdkDist, "classify-scan-severity.js");
-  const scan = await resolveScan(sdkDist, input, environment, repository);
+  const scan = await resolveScan(
+    sdkDist,
+    input,
+    environment,
+    repository,
+    rubricPath !== undefined || knowledgeBasePaths.length > 0,
+  );
   const findings = selectFindings(scanSeverity, scan.findings, findingIds);
 
   // 상태 디렉터리 위치: 상류 SeverityStore.resolveOptions 와 같은 검사(스캔 디렉터리 밖).
@@ -644,6 +678,7 @@ async function handlePrepare(args) {
     knowledgeBasePaths,
     reprocess,
     classificationRuns,
+    documentRoots: scan.documentRoots,
   });
 
   // 크기 상한: 시작 전에 전부 검사하고, 넘는 것이 있으면 작업 디렉터리를 만들지 않는다.

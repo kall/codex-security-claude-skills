@@ -13,7 +13,7 @@ description: >-
 
 상류 npm CLI의 `codex-security classify-severity`는 finding마다 OpenAI 모델을 호출한다(npm 0.6.0부터는
 finding마다 `--runs`번, 기본 3번). 구독 사용자는 이 명령을 쓸 수 없다. 이 스킬은 **모델 호출 자리만** 도구
-없는 격리 서브에이전트로 바꾸고, 나머지는 모두 상류 코드로 실행한다. 기준 실측 버전은 **npm 0.9.1**이다.
+없는 격리 서브에이전트로 바꾸고, 나머지는 모두 상류 코드로 실행한다. 기준 실측 버전은 **npm 0.10.0**이다.
 npm 0.7.0·0.8.0의 분류 계약은 0.6.0과 같다(아래 "0.7.0 재대조"·"0.8.0 재대조"). npm 0.2.0~0.5.1도 같은 스크립트로 동작한다(그 버전
 계약으로 — 아래 "버전별 계약"). `repro-u8` S 블록이 0.7.0·0.6.0과 0.5.1에서 확인한다.
 
@@ -62,7 +62,7 @@ finding 10개에 30번이다. `prepare` 결과의 `subagentCalls`가 이번 실�
   새 모듈 `severity-review.ts`의 `severityReviewInstructions`로 옮겼다(#1662, 호스트 리뷰와 공유). 문장과 조립 순서는 같다.
   행 번호만 바뀌었다 — `classify-severity.ts` 36·102·164–174행, `scan-comparison.ts` 149·540–541·688–708행,
   `classify-scan-severity.ts` 98·125행. 스키마는 `z.strictObject`·`SCAN_SEVERITIES`로 표기만 바뀌었다(같은 7키,
-  같은 레벨 5개). 지식 베이스는 `readKnowledgeBaseDocuments`로 읽는다.
+  같은 레벨 5개). 지식 베이스는 `readKnowledgeBaseDocuments`로 읽는다(0.10.0은 `readKnowledgeBaseSnapshot`, 아래 0.10.0 재대조).
 - **0.6.0의 breaking 변경**(태그 `npm-v0.6.0` = 커밋 `13dcc6fec00aaf4c23a6fa7e375ccc1726b22836`, 상류 커밋
   `8c00f36cd` "fix!: classify severity with a default rubric and configurable reviews" #1765): 주입 경로와 지시
   8문단(`severity-review.ts` 27행 `severityReviewInstructions`)은 같다. 바뀐 계약은 다음과 같다.
@@ -76,6 +76,15 @@ finding 10개에 30번이다. `prepare` 결과의 `subagentCalls`가 이번 실�
     세 표에 `classification_runs` 열을 더했다. `severity-classification.json`에 `classificationRuns`가 실린다.
   - CLI: `classify-severity --runs N`(1–10, 기본 3).
   - `classify-scan-severity.ts`는 바뀌지 않았다. options를 그대로 넘기므로 `classificationRuns`도 전달된다.
+- **0.10.0 재대조**(태그 `npm-v0.10.0` = 커밋 `f465432bc4`): 지시 8문단(`severity-review.ts`), 기본 루브릭(설치본
+  `dist/default-severity-rubric.js`가 0.9.1과 바이트 단위로 같음), digest 계약, `severity-store.ts`는 같다. 바뀐 것은 문서 읽기다
+  (`bbf65774a3` #2430). `readKnowledgeBaseDocuments`가 없어지고 `readKnowledgeBaseSnapshot`을 직접 쓴다(문서 이름순 정렬은
+  같다). 루브릭·지식 베이스 경로가 디렉터리 링크를 거치면 문서 루트로 검사한다. `--scan`이면 워크벤치가 기록한 대상 체크아웃
+  (`remediationAvailable`일 때 `documentSourceRoot(targetPath)`)과 스캔 디렉터리가 루트이고, 대상을 확인하지 못하면 링크를 거친
+  경로를 모두 거부한다("Select the document by its canonical path when the source checkout is unknown."). `--scan-dir`이면 스캔
+  디렉터리가 루트다. 루트 안의 디렉터리 링크가 루트 밖 문서를 가리키면 거부한다. apply는 상류 함수를 그대로 부르므로 이 검사를
+  그대로 받는다. prepare의 dry-run(`classifySeverityInternal`)에도 같은 루트를 넘겨 판정 전에 같은 오류로 멈춘다(`repro-u8` S6L).
+  0.9.1 이하에는 이 검사가 없으므로 루트를 넘기지 않는다.
 - **0.9.1 재대조**(태그 `npm-v0.9.1` = 커밋 `fe1089ab51`, 0.8.3 포함): 지시 8문단(`severity-review.ts`)과 분류 계약은 같다.
   바뀐 것은 셋이다. (1) 기본 루브릭이 플러그인 `references/default-severity-rubric.md`에서 생성되고 원문이 정리됐다
   (`fa117a2227` #2260, 스캔 채점과 공유). 원문을 검토해 SHA-256을 검토 목록(`UPSTREAM_DEFAULT_RUBRIC_SHA256S`)에
@@ -107,7 +116,7 @@ finding 10개에 30번이다. `prepare` 결과의 `subagentCalls`가 이번 실�
   `SeverityStore.checkpoint(scanId, findingIds, reprocess)` 호출 형태는 같아서 이 스킬은 버전을 가리지 않고
   상류 `SeverityStore`를 그대로 부른다.
 - **상류가 하는 일**(재구현 없음): 스캔 해석과 봉인 확인, finding 선택(`selectClassificationFindings`),
-  루브릭·지식 베이스 읽기(0.2.0 `prepareKnowledgeBase` / 0.4.0 `readKnowledgeBaseDocuments`), 0.6.0 기본 루브릭,
+  루브릭·지식 베이스 읽기(0.2.0 `prepareKnowledgeBase` / 0.4.0 `readKnowledgeBaseDocuments` / 0.10.0 `readKnowledgeBaseSnapshot`과 문서 루트 검사), 0.6.0 기본 루브릭,
   세 digest(`workflowDigest`), 리뷰 횟수 검사(`classificationRunsSchema`)와 다수결(`reviewSeverity`), 저장 평가 재사용 규칙,
   프롬프트 조립, 7키 strict 스키마와 결정 일관성 검사, 워크벤치 `begin`/`save`(`SeverityStore`),
   `severity-classification.json` 원자적 기록, 0.5.1 이하의 루브릭 없는 상속 경로(CLI).
@@ -181,7 +190,7 @@ env -i <trusted_child_env> <node> <classify_script> <하위 명령> --sdk-dist <
 - 출력은 JSON 1개다(`prompt`만 원문 텍스트). exit 0 = 성공, 2 = 거부·실패(`error`와 상류 원문
   `upstreamError`가 실림), 1 = 사용법 오류.
 
-**시작 고지**: 플러그인 경로와 `pluginVersion`(기준 npm 0.9.1 — 다르면 "플러그인 버전이 기준과
+**시작 고지**: 플러그인 경로와 `pluginVersion`(기준 npm 0.10.0 — 다르면 "플러그인 버전이 기준과
 다름 — 상류 계약이 바뀌었을 수 있음" 경고), 스캔 입력, 루브릭 유무(0.6.0 이상에서 없으면 "상류 기본 루브릭"),
 리뷰 횟수와 서브에이전트 호출 수(`prepare`의 `classificationRuns`·`subagentCalls`), 그리고 **"스캔 산출물과
 저장소 파일은 바꾸지 않고 `severity-classification.json`과 워크벤치 평가만 쓴다"**를 알린다.
