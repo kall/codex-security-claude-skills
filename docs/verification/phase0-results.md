@@ -1795,3 +1795,28 @@ FAIL·SKIP·NOTE 0이다. Node v24.22.2.
 리뷰(focused, 독립 적대적 리뷰 1회. Codex 교차 모델은 로그인되어 있지 않아 로컬 리뷰어로 대체)는 지적 0건이었다. 남은 위험으로 짚은 낡은 주석과 0.8.3 행 서술은 고쳤다.
 
 확인하지 못한 것: 상류 CLI가 만든 새 형상 번들(coverage.json 없음) 사용, standard↔deep 교차 모드 scan-match(상류 공식 Deep 스캔 필요), 모델 판단 품질.
+
+## 부록 — npm 0.10.0(매니페스트 0.1.95) 재실측 (2026-11-12)
+
+기준선을 npm 0.9.1에서 상류 태그 `npm-v0.10.0`(커밋 `f465432bc4`)으로 올리면서 재실측한 결과다. 상세는 `docs/plans/2026-11-12-1500-chore-codex-security-0100-alignment.md`다.
+
+### 정합 작업 전 (수정 전 스킬, npm 0.10.0)
+
+자기채점 다섯 개와 `repro-u3`이 모두 통과했다(`repro-u4` OK 84, `repro-u1` 96, `repro-u7` 73, `repro-u5` 714, `repro-u8` 332, `repro-u3` 요약은 0.9.1과 같음). 부트스트랩은 `npmVersion: 0.10.0`을 보고하고 사용 불가 항목이 없었다. 스킬이 `loadUpstream`으로 쓰는 dist 멤버의 대조 결과는 0.9.1과 같았고, 스킬이 인용한 상류 영문 문장 중 사라진 것도 없었다.
+
+### 정합 작업 뒤 재검증
+
+| 스크립트 | npm 0.10.0 | npm 0.9.1 |
+| --- | --- | --- |
+| `repro-u4.sh` | exit 0, OK 88 | exit 0, OK 85 |
+| `repro-u1-search-command.sh` | exit 0, OK 96 | exit 0, OK 96 |
+| `repro-u7-coverage-recovery.sh` | exit 0, OK 73 | exit 0, OK 73 |
+| `repro-u5-match-validator.sh` | exit 0, OK 714 | exit 0, OK 714 |
+| `repro-u8-policy-severity.sh` | exit 0, OK 336 | exit 0, OK 334 |
+| `repro-u3.sh` 요약 | S5 0, S6 0, S9 1, S9b 0 | 같음 |
+
+FAIL·SKIP·NOTE 0이다. Node v24.22.3. `repro-u8` 수치 차이는 새 S6L 검사의 버전 분기다. `repro-u4`의 새 M 블록(`core-scan.md` 링크 문서를 스캔 SKILL.md가 다루는지)은 0.10.0에서 링크 4개, 0.9.1에서 1개를 확인한다. 수정 전 SKILL.md로 돌리면 0.10.0에서 4건 실패한다. 수정을 끄고 돌리면 0.10.0에서 S6L 3건이 실패한다(회귀 검출 확인).
+
+이번에는 종단간 스모크 테스트를 하지 않았다. 바뀐 실행 코드는 classify-severity prepare뿐이고 `repro-u8`이 prepare·apply를 실행으로 검증한다. 스캔 스킬의 변경(감사 브리프 읽기)은 모델 지시라 결정론 검증 대상이 아니다.
+
+리뷰(`ce-code-review` lite)는 지적 1건(P3, `node:sqlite` 최소 Node 버전 문구)이었고 고쳤다.
