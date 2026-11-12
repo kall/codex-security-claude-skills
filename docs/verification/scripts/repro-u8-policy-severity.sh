@@ -1121,6 +1121,37 @@ mv "$SEV/in/rubric-1char.bak" "$SEV/in/rubric-1char.md"
 RC cleanup --work-dir "$S6W" >/dev/null
 
 # ---------------------------------------------------------------------------
+# S6L. 링크를 거친 문서 경로 — npm 0.10.0(상류 bbf65774a3 #2430)부터 상류 apply 경로는 디렉터리 링크를 거친
+#      루브릭·지식 베이스 경로를 문서 루트로 검사한다. prepare dry-run 도 같은 루트를 넘겨 판정 전에 거부해야 한다
+#      (그러지 않으면 서브에이전트 판정이 끝난 뒤 apply 에서야 거부된다). 0.9.1 이하 상류에는 이 검사가 없다.
+# ---------------------------------------------------------------------------
+step "S6L. 링크를 거친 지식 베이스 경로"
+mkdir -p "$SEV/kbreal"; printf 'Internal note: admin routes are VPN-only.\n' >"$SEV/kbreal/kb.txt"
+# 스캔 대상 체크아웃(합성 import 는 상태 디렉터리의 imports/json-* 이다) 안의 디렉터리 링크가 그 밖을 가리킨다.
+# 상류가 막는 모양이다. 대상 밖에 둔 링크는 상류도 허용한다.
+S6L_TARGETS=("$SSTATE"/imports/json-*)
+[ "${#S6L_TARGETS[@]}" -eq 1 ] && [ -d "${S6L_TARGETS[0]}" ] || bad "S6L 합성 스캔 대상 디렉터리를 하나로 찾지 못함: ${S6L_TARGETS[*]}"
+S6L_LINK="${S6L_TARGETS[0]}/kblink"
+ln -sfn "$SEV/kbreal" "$S6L_LINK"
+W0="$(count_work)"
+RC prepare "${CS_ARGS[@]}" --scan "$SCAN_ID" --repository "$SEV/repo" --rubric "$SEV/in/rubric.md" --knowledge-base "$S6L_LINK/kb.txt" >"$SEV/s6l.json" 2>"$SEV/s6l.err"; code=$?
+if grep -q 'documentSourceRoot' "$DIST/targets.js" 2>/dev/null; then
+  expect_exit 2 "$code" "S6L 0.10.0+: 링크를 거친 지식 베이스 경로는 prepare 에서 거부"
+  case "$(cat "$SEV/s6l.json" "$SEV/s6l.err")" in
+    *"Select the document by its canonical path"*|*"Input files must not follow repository directory links"*) ok "S6L 상류 문서 경로 검사 문구" ;;
+    *) bad "S6L 상류 문구 없음: $(head -c 300 "$SEV/s6l.json")" ;;
+  esac
+  expect_eq "$W0" "$(count_work)" "S6L 거부 시 작업 디렉터리를 만들지 않음"
+else
+  expect_exit 0 "$code" "S6L 0.9.1 이하: 상류에 문서 루트 검사가 없어 prepare 통과"
+  RC cleanup --work-dir "$(jget "$SEV/s6l.json" 'd["workDir"]')" >/dev/null
+fi
+RC prepare "${CS_ARGS[@]}" --scan "$SCAN_ID" --repository "$SEV/repo" --rubric "$SEV/in/rubric.md" --knowledge-base "$SEV/kbreal/kb.txt" >"$SEV/s6l2.json"; code=$?
+expect_exit 0 "$code" "S6L 대조군: 정규 경로의 지식 베이스는 prepare 통과"
+RC cleanup --work-dir "$(jget "$SEV/s6l2.json" 'd["workDir"]')" >/dev/null
+rm -f "$S6L_LINK"
+
+# ---------------------------------------------------------------------------
 # S7. 루브릭 없는 경로 — 0.5.1 이하: 상류 CLI 위임, 결과가 스킬 stateDir 워크벤치에 저장
 #     0.6.0 이상: 상속 경로가 없으므로 inherit 거부, 루브릭 생략 prepare = 상류 기본 루브릭으로 서브에이전트 판정
 # ---------------------------------------------------------------------------
