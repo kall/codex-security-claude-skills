@@ -852,7 +852,7 @@ async function handlePrepare(args) {
     if (typeof checkPolicyOutputDirectory !== "function") {
       throw new GatewayError(
         "상류 runtime.js 에 정책 출력 디렉터리 검사 함수(preparePolicyOutputDirectory·" +
-          "requirePrivatePolicyOutputDirectory)가 없다. 이 스킬이 검토한 npm 0.2.0~0.9.1 설치본으로 다시 실행하라.",
+          "requirePrivatePolicyOutputDirectory)가 없다. 이 스킬이 검토한 npm 0.2.0~0.10.0 설치본으로 다시 실행하라.",
       );
     }
     await checkPolicyOutputDirectory(outputDir);
