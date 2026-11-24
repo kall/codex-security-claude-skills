@@ -1298,7 +1298,12 @@ lit = json.load(open(sys.argv[1])); dist = sys.argv[2]
 read = lambda name: open(os.path.join(dist, name), encoding="utf-8").read()
 # npm 0.5.0(#1662)은 지시 8문단을 severity-review.js 로 옮겼다. 그 모듈이 있으면 거기서 찾는다.
 instr = "severity-review.js" if os.path.exists(os.path.join(dist, "severity-review.js")) else "classify-severity.js"
-missing = [s for s in lit["instructions"] if s not in read(instr)]
+# 검토한 지시부 변형 중 설치된 dist 에 문장이 모두 있는 것을 고른다(가장 긴 것). 정확한 일치는 아래 프롬프트 검사가 본다.
+# npm 0.1.29~0.10.0 은 8문단, 0.10.1(#2619)부터 9문단이다.
+text = read(instr)
+matched = [v for v in lit["instructionVariants"] if all(s in text for s in v)]
+chosen = max(matched, key=len) if matched else []
+missing = [] if matched else ["no reviewed instruction variant matches " + instr]
 for name, fragments in lit.items():
     if name.endswith(".js"):
         missing += [f"{name}: {s}" for s in fragments if s not in read(name)]
@@ -1312,17 +1317,18 @@ if os.path.exists(os.path.join(dist, "default-severity-rubric.js")):
         text = None
     if text is None or hashlib.sha256(text.encode()).hexdigest() not in lit.get("defaultRubricSha256s", []):
         missing.append("default-severity-rubric.js: SHA-256 not in reviewed defaultRubricSha256s")
-print("ok" if not missing and len(lit["instructions"]) == 8 else "missing " + json.dumps(missing))
+json.dump(chosen, open(sys.argv[1] + ".chosen", "w"))
+print("ok" if not missing else "missing " + json.dumps(missing))
 PYEOF
-expect_eq "ok" "$(cat "$SEV/s12lit.check")" "S12 고정 리터럴 8문단·상류 오류 문구가 설치된 dist 모듈에 그대로 있다"
+expect_eq "ok" "$(cat "$SEV/s12lit.check")" "S12 검토한 지시부 변형(8문단 또는 9문단)·상류 오류 문구가 설치된 dist 모듈에 그대로 있다"
 RC prepare "${CS_ARGS[@]}" --scan-dir "$SCAN_DIR" --rubric "$SEV/in/rubric-1char.md" >"$SEV/s12p.json"
 S12W="$(jget "$SEV/s12p.json" 'd["workDir"]')"
 RC prompt --work-dir "$S12W" --index 1 >"$SEV/s12a.txt"; expect_exit 0 $? "S12 prompt 1"
 RC prompt --work-dir "$S12W" --index 1 >"$SEV/s12b.txt"
-PY - "$SEV/s12a.txt" "$SEV/s12b.txt" "$S12W/upstream/1.txt" "$SEV/s12lit.json" <<'PYEOF' >"$SEV/s12.check"
+PY - "$SEV/s12a.txt" "$SEV/s12b.txt" "$S12W/upstream/1.txt" "$SEV/s12lit.json.chosen" <<'PYEOF' >"$SEV/s12.check"
 import json, re, sys
 a, b, up = (open(p, encoding="utf-8").read() for p in sys.argv[1:4])
-lit = json.load(open(sys.argv[4]))["instructions"]
+lit = json.load(open(sys.argv[4]))
 bad = []
 ma = re.search(r"\[TRUSTED_INSTRUCTIONS ([0-9a-f]{16})\]", a); mb = re.search(r"\[TRUSTED_INSTRUCTIONS ([0-9a-f]{16})\]", b)
 if not ma or not mb: bad.append("marker")

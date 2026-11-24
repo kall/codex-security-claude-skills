@@ -298,8 +298,8 @@ codex-security의 스캔 기능은 공식적으로 Codex 바이너리(OpenAI 인
    `dist/`가 없으므로 이 방식을 쓰는 스킬(`codex-security-policy`·`codex-security-classify-severity`)은 npm
    설치본에서만 동작한다.
    → `skills/codex-security-scan/scripts/workflow_digest.mjs`(공용 관문), `skills/codex-security-policy/scripts/policy_draft.mjs`,
-   `skills/codex-security-classify-severity/scripts/classify_severity.mjs`(가짜 Codex 주입과 `UPSTREAM_CLASSIFY_INSTRUCTIONS`
-   드리프트 검사), `skills/codex-security-scan-match/scripts/validate_matches.py`(이식본). 회귀는
+   `skills/codex-security-classify-severity/scripts/classify_severity.mjs`(가짜 Codex 주입과 `UPSTREAM_CLASSIFY_INSTRUCTION_VARIANTS`
+   드리프트 검사. 상류가 지시를 바꾸면 기존 변형을 고치지 않고 검토한 새 변형을 더해 옛 버전 지원을 유지한다), `skills/codex-security-scan-match/scripts/validate_matches.py`(이식본). 회귀는
    `repro-u5-match-validator.sh` 블록 S(가짜 Codex로 돌린 상류 dist 결과 대조)와 `repro-u8-policy-severity.sh`
    P1·P2·P7·P11·S1·S12가 고정한다.
 
