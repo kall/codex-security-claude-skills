@@ -12,7 +12,7 @@ description: >-
 공식 CLI의 `scans match`는 SDK가 유일하게 Codex 스레드를 직접 여는 지점이라 OpenAI 인증 없이는
 막혀 있다. 이 스킬은 매칭 판정을 **도구를 제한한 격리 서브에이전트**가 수행하게 해 그 공백을 메운다.
 매칭 계약의 정본은 상류 `sdk/typescript/src/scan-comparison.ts`와 `finding-catalogue.ts`다.
-기준 실측 버전은 **npm 0.10.0(매니페스트 0.1.95)**다.
+기준 실측 버전은 **npm 0.11.0(매니페스트 0.1.95)**다.
 
 **판정 규칙은 이 문서가 직접 서술하고, 검증·조정 규칙은 `scripts/validate_matches.py`가 소유한다
 (P5-KTD4).** 다른 스킬처럼 상류 문서를 런타임에 읽는 방식은 이 항목에서 쓸 수 없다 — 판정 문장은
@@ -174,6 +174,8 @@ control or fix is unclear." 상류는 `compare-scans` 입력에 `crossModeOccurr
 태그 `npm-v0.10.0`(커밋 `f465432bc4`)도 `comparisonPrompt()`와 `finding-catalogue.ts`를 바꾸지 않았다(설치본 `dist/finding-catalogue.js`가
 0.9.1과 바이트 단위로 같다). `scan-comparison.ts`는 워크벤치 이력에서 비교할 이전 스캔을 고르는 `matchCompletedScan`만 바꿨다
 (`knownScanIds`, `list-unmatched-scan-pairs --after-scan-id`). 이 스킬은 사용자가 고른 두 스캔을 비교하고 그 경로를 쓰지 않으므로 영향이 없다.
+`npm-v0.10.1`·`npm-v0.11.0`(커밋 `353fbf8f5c`)도 `comparisonPrompt()`와 `finding-catalogue.ts`를 바꾸지 않았다(dist 바이트 같음).
+`scan-comparison.ts`는 워크벤치 매칭 계획의 finding 묶음(`findingsByScanId`, #149)만 바꿨다. 같은 이유로 영향이 없다.
 0.2.0~0.4.0 구간의 변경은 읽기 전용 스레드 구성(권한 프로필·요청 메타데이터·zod 표기),
 `validateComparison`의 도달 불가 분기 삭제(`2b759675b`, 4단계 5번), 저장 프로토콜 고정(`1d54bd702`, 아래
 「저장 전 능력 프로브」)이다. 판정 문장·카탈로그 JSON·조정 결과는 같다. TypeScript 소스는 npm 번들에 없지만, 같은 문자열이
