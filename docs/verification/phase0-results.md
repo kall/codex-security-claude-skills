@@ -1820,3 +1820,26 @@ FAIL·SKIP·NOTE 0이다. Node v24.22.3. `repro-u8` 수치 차이는 새 S6L 검
 이번에는 종단간 스모크 테스트를 하지 않았다. 바뀐 실행 코드는 classify-severity prepare뿐이고 `repro-u8`이 prepare·apply를 실행으로 검증한다. 스캔 스킬의 변경(감사 브리프 읽기)은 모델 지시라 결정론 검증 대상이 아니다.
 
 리뷰(`ce-code-review` lite)는 지적 1건(P3, `node:sqlite` 최소 Node 버전 문구)이었고 고쳤다.
+
+## 부록 — npm 0.11.0(매니페스트 0.1.95, 태그 소스 빌드) 재실측 (2026-11-24)
+
+기준선을 npm 0.10.0에서 상류 태그 `npm-v0.11.0`(커밋 `353fbf8f5c`, 0.10.1 포함)으로 올리면서 재실측한 결과다. 0.11.0은 npm에 없어 태그 소스로 빌드한 패키지를 썼다(`docs/releasing.md` 7.1절, native 바이너리는 0.10.1 배포본에서 가져옴). 상세는 `docs/plans/2026-11-24-1500-chore-codex-security-0110-alignment.md`다.
+
+### 정합 작업 전 (수정 전 스킬)
+
+npm 0.11.0(태그 빌드)과 0.10.1 모두 `repro-u8`이 exit 1(OK 244, FAIL 93)이었다. 상류 분류 지시가 9문단이 되어 classify-severity prepare가 `upstreamPromptDrift`로 멈춘다. `repro-u4`(OK 88)·`repro-u1`(96)·`repro-u7`(73)·`repro-u5`(714)는 통과했고 `repro-u3` 요약은 0.10.0과 같았다. 스킬이 인용한 상류 문장·파일·식별자 중 사라진 것은 없고, `loadUpstream` dist 멤버 33개도 모두 있다.
+
+### 정합 작업 뒤 재검증
+
+| 스크립트 | npm 0.11.0(태그 빌드) | npm 0.10.1 |
+| --- | --- | --- |
+| `repro-u4.sh` | exit 0, OK 88 | exit 0, OK 88 |
+| `repro-u1-search-command.sh` | exit 0, OK 96 | exit 0, OK 96 |
+| `repro-u7-coverage-recovery.sh` | exit 0, OK 73 | exit 0, OK 73 |
+| `repro-u5-match-validator.sh` | exit 0, OK 714 | exit 0, OK 714 |
+| `repro-u8-policy-severity.sh` | exit 0, OK 336 | exit 0, OK 336 |
+| `repro-u3.sh` 요약 | S5 0, S6 0, S9 1, S9b 0 | 같음 |
+
+FAIL·SKIP·NOTE 0이다. Node v24.22.3. npm 0.10.0에서도 `repro-u8`이 exit 0(OK 336)이다(8문단 변형 경로).
+
+종단간 스모크 테스트는 하지 않았다. 바뀐 실행 코드는 classify-severity의 지시부 대조뿐이고 `repro-u8`이 prepare·apply로 검증한다. patch·verify-fix 변경은 모델 지시다.
