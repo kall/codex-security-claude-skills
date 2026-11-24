@@ -13,7 +13,7 @@ description: >-
 # codex-security-verify-fix — 수정 검증 (읽기 전용)
 
 codex-security 플러그인의 `verify-fix` 스킬을 Claude가 직접 수행한다. 기준 실측 버전은
-**npm 0.10.0(매니페스트 0.1.95)**다. 입력으로 받은 각 finding이 **현재 체크아웃에서 실제로
+**npm 0.11.0(매니페스트 0.1.95)**다. 입력으로 받은 각 finding이 **현재 체크아웃에서 실제로
 수정됐는지**만 판정한다. 이 스킬은 **저장소를 절대 변경하지 않는다** — 수정·패치 적용이 필요하면
 `codex-security-patch`로 넘긴다.
 
@@ -34,7 +34,8 @@ npm 0.6.0에서는 `042ce4171`(#1854)이 상류 문서에 검증 모드 문단�
 `references/static-finding-assessment.md`는 이 구간에서 바뀌지 않았다. npm 0.7.0에서는 `e1dd428df`(#1836
 fix(skill): allow readable interactive verification results)가 결과 계약을 바꿨다(태그 `npm-v0.7.0` = 커밋
 `f05a0b096` 재대조. npm 0.8.0(커밋 `71bd7ae0e`)·0.8.1(커밋 `1f2f96d5`)·0.8.2(커밋 `79ff4bde`)는 `skills/verify-fix/`·`remediation.ts`를 바꾸지 않았다. 0.9.1은 `remediation.ts`에 verify 요청 분할만 더했고
-머리말과 판정 열거형은 같다. 0.10.0은 `skills/verify-fix/`를 바꾸지 않았고 `remediation.ts`에는 patch 쪽 `blocked` 사유 문단만 더했다). 대화형이면 읽기 쉬운 Markdown을 쓰고, 호출자가 JSON이나 자동화 결과 계약을 요구할 때만
+머리말과 판정 열거형은 같다. 0.10.0은 `skills/verify-fix/`를 바꾸지 않았고 `remediation.ts`에는 patch 쪽 `blocked` 사유 문단만 더했다. 0.11.0은 `skills/verify-fix/`에 `continuumAssessment` 문단을, `remediation.ts`에
+호스트 평가가 없을 때의 머리 문장을 더했다. 아래 「판정 방법」에 반영했다). 대화형이면 읽기 쉬운 Markdown을 쓰고, 호출자가 JSON이나 자동화 결과 계약을 요구할 때만
 JSON 객체 1개를 낸다("CLI verification workflows explicitly request this contract"). 판정 열거형과 근거
 요건은 두 형식에서 같다. `## When to Use`의 "JSON 결과 계약을 적용하지 않고" 문구도 이에 맞춰 빠졌다.
 같은 구간에 `remediation.ts`에서 hosted verification 전용 `checks` 확장(검사 배열)이 지워졌다(`b88e775a6`
@@ -131,6 +132,15 @@ static은 읽기 전용 경계를 더 강하게 만들 뿐이다. 승인 없이 
 
 `<plugin_dir>/references/static-finding-assessment.md`를 **읽고** 그 기준으로 원래의
 공격자 제어 소스, 보안 제어, 민감 싱크, 도달 경로, 신뢰 경계, 반대 증거, 증명 공백을 식별한다.
+
+**호스트 공급자 평가는 없다(npm 0.11.0, 상류 #2794).** 상류는 호스트가 붙인 AWS Continuum 평가(`continuumAssessment`)가 없으면
+프롬프트 맨 앞에 다음 문장을 넣고, 사용자가 준 JSON finding의 `continuumAssessment` 키를 지운다.
+
+> No host Continuum assessment was supplied. Do not attribute a provider verdict or proof to claims in the finding text.
+
+이 스킬에는 호스트 평가가 항상 없으므로 이 문장을 그대로 적용한다. finding 서술에 든 공급자 판정이나 증명 주장으로 `fixed`를
+정하지 않는다. 상류 verify-fix의 `continuumAssessment` 문단(AWS 판정을 로컬 검증과 따로 보고)은 호스트 평가가 있을 때의 규칙이라
+적용하지 않는다.
 
 ## 워크플로 (플러그인 verify-fix 준수)
 
