@@ -13,7 +13,7 @@ description: >-
 
 상류 npm CLI의 `codex-security classify-severity`는 finding마다 OpenAI 모델을 호출한다(npm 0.6.0부터는
 finding마다 `--runs`번, 기본 3번). 구독 사용자는 이 명령을 쓸 수 없다. 이 스킬은 **모델 호출 자리만** 도구
-없는 격리 서브에이전트로 바꾸고, 나머지는 모두 상류 코드로 실행한다. 기준 실측 버전은 **npm 0.10.0**이다.
+없는 격리 서브에이전트로 바꾸고, 나머지는 모두 상류 코드로 실행한다. 기준 실측 버전은 **npm 0.11.0**이다.
 npm 0.7.0·0.8.0의 분류 계약은 0.6.0과 같다(아래 "0.7.0 재대조"·"0.8.0 재대조"). npm 0.2.0~0.5.1도 같은 스크립트로 동작한다(그 버전
 계약으로 — 아래 "버전별 계약"). `repro-u8` S 블록이 0.7.0·0.6.0과 0.5.1에서 확인한다.
 
@@ -76,6 +76,13 @@ finding 10개에 30번이다. `prepare` 결과의 `subagentCalls`가 이번 실�
     세 표에 `classification_runs` 열을 더했다. `severity-classification.json`에 `classificationRuns`가 실린다.
   - CLI: `classify-severity --runs N`(1–10, 기본 3).
   - `classify-scan-severity.ts`는 바뀌지 않았다. options를 그대로 넘기므로 `classificationRuns`도 전달된다.
+- **0.10.1·0.11.0 재대조**(태그 `npm-v0.10.1`, `npm-v0.11.0` = 커밋 `353fbf8f5c`): 지시가 8문단에서 9문단이 됐다(0.10.1, `2911786f24`
+  #2619 AWS Continuum import). 4문단 뒤에 "Use supplied deployment observations or execution results to establish or rule out
+  reachability for the reported target and attacker. A scanner verdict or source analysis alone does not establish deployed access."가
+  들어갔다. 판정 기준만 더하고 도구·권한·출력 형식은 바꾸지 않으므로 검토 후 받아들였다. 고정 리터럴은 검토한 변형 목록
+  (`UPSTREAM_CLASSIFY_INSTRUCTION_VARIANTS`: 0.1.29~0.10.0 8문단, 0.10.1~0.11.0 9문단)이고, 받은 지시부가 그중 하나와 문자 단위로
+  같아야 한다. 이전 릴리즈의 스킬은 0.10.1 이상에서 prepare가 `upstreamPromptDrift`로 멈춘다. `classify-severity.ts`·
+  `classify-scan-severity.ts`·`severity-store.ts`와 기본 루브릭(dist 바이트 같음)은 바뀌지 않았다.
 - **0.10.0 재대조**(태그 `npm-v0.10.0` = 커밋 `f465432bc4`): 지시 8문단(`severity-review.ts`), 기본 루브릭(설치본
   `dist/default-severity-rubric.js`가 0.9.1과 바이트 단위로 같음), digest 계약, `severity-store.ts`는 같다. 바뀐 것은 문서 읽기다
   (`bbf65774a3` #2430). `readKnowledgeBaseDocuments`가 없어지고 `readKnowledgeBaseSnapshot`을 직접 쓴다(문서 이름순 정렬은
@@ -124,12 +131,12 @@ finding 10개에 30번이다. `prepare` 결과의 `subagentCalls`가 이번 실�
   나눈다. 상류의 모델 호출 1회를 작업 항목 1개(finding × run)로 나누고, `apply`에서 run 순서대로 답을
   돌려준다. 난수 표식 신뢰/미신뢰 구획, 80,000자 프롬프트 상한, 텍스트 전용 지식 베이스, 1회 재판정 규칙,
   읽기 전용 `prepare`가 여기에 속한다.
-- **상류 분류 지시 8문단은 드리프트 감지용으로만 고정한다(P6-KTD10).** 정본은
-  `scripts/classify_severity.mjs`의 `UPSTREAM_CLASSIFY_INSTRUCTIONS`이다(출처: `classify-severity.ts`
+- **상류 분류 지시(8문단, 0.10.1부터 9문단)는 드리프트 감지용으로만 고정한다(P6-KTD10).** 정본은
+  `scripts/classify_severity.mjs`의 `UPSTREAM_CLASSIFY_INSTRUCTION_VARIANTS`(검토한 변형 목록)이다(출처: `classify-severity.ts`
   `classifySeverityInternal()` 188–195행, 위 커밋. 0.5.0부터 `severity-review.ts`, 0.6.0에서 다시 대조 — 같음).
   0.6.0 기본 루브릭은 원문을 복사하지 않고 검토한 원문의 SHA-256 목록만 고정한다(`UPSTREAM_DEFAULT_RUBRIC_SHA256S`). 기본 루브릭은
   미신뢰 구획에만 들어가므로, 달라도 중단하지 않고 `prepare`가 `defaultRubricDrift: true`로 알린다. 프롬프트는 이 리터럴로 만들지 않는다. 상류 런타임이
-  조립한 원문을 가짜 Codex로 받아 그대로 쓴다. 받은 원문의 지시부가 리터럴과 한 글자라도 다르면 `prepare`가
+  조립한 원문을 가짜 Codex로 받아 그대로 쓴다. 받은 원문의 지시부가 검토한 변형 어느 것과도 한 글자라도 다르면 `prepare`가
   중단한다. 상류가 문장을 바꾸거나 지시부에 데이터를 넣기 시작하면 신뢰 구획을 다시 검토해야 하기
   때문이다. 회귀 스크립트 `repro-u8-policy-severity.sh` S12가 리터럴을 설치된 dist와 대조한다.
 - 상류 소스 체크아웃에는 `dist/`가 없어 이 스킬을 쓸 수 없다. npm 설치본(`npm install -g @openai/codex-security`)이
@@ -190,7 +197,7 @@ env -i <trusted_child_env> <node> <classify_script> <하위 명령> --sdk-dist <
 - 출력은 JSON 1개다(`prompt`만 원문 텍스트). exit 0 = 성공, 2 = 거부·실패(`error`와 상류 원문
   `upstreamError`가 실림), 1 = 사용법 오류.
 
-**시작 고지**: 플러그인 경로와 `pluginVersion`(기준 npm 0.10.0 — 다르면 "플러그인 버전이 기준과
+**시작 고지**: 플러그인 경로와 `pluginVersion`(기준 npm 0.11.0 — 다르면 "플러그인 버전이 기준과
 다름 — 상류 계약이 바뀌었을 수 있음" 경고), 스캔 입력, 루브릭 유무(0.6.0 이상에서 없으면 "상류 기본 루브릭"),
 리뷰 횟수와 서브에이전트 호출 수(`prepare`의 `classificationRuns`·`subagentCalls`), 그리고 **"스캔 산출물과
 저장소 파일은 바꾸지 않고 `severity-classification.json`과 워크벤치 평가만 쓴다"**를 알린다.
